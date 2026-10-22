@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_ALLOWED_USER_IDS_RAW: str = Field(default="", validation_alias="TELEGRAM_ALLOWED_USER_IDS")
 
+    # LINE Messaging API Configuration
+    LINE_CHANNEL_SECRET: str = ""
+    LINE_CHANNEL_ACCESS_TOKEN: str = ""
+    LINE_ALLOWED_USER_IDS_RAW: str = Field(default="", validation_alias="LINE_ALLOWED_USER_IDS")
+
     @field_validator("DATABASE_PATH")
     @classmethod
     def resolve_db_path(cls, v: str) -> str:
@@ -58,5 +63,11 @@ class Settings(BaseSettings):
             if s.lstrip("-").isdigit():
                 res.append(int(s))
         return res
+
+    @property
+    def line_allowed_ids(self) -> List[str]:
+        if not self.LINE_ALLOWED_USER_IDS_RAW:
+            return []
+        return [x.strip() for x in self.LINE_ALLOWED_USER_IDS_RAW.split(",") if x.strip()]
 
 settings = Settings()

@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
 from app.database import init_db
-from app.routers import items_router, categories_router, ingest_router
+from app.routers import items_router, categories_router, ingest_router, line_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,6 +34,7 @@ app.add_middleware(
 app.include_router(items_router)
 app.include_router(categories_router)
 app.include_router(ingest_router)
+app.include_router(line_router)
 
 # Mount Static Files for Web Dashboard & PWA
 static_dir = Path(__file__).parent.parent / "static"
