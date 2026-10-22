@@ -7,7 +7,9 @@ from app.pipeline import run_pipeline
 router = APIRouter(prefix="/api/ingest", tags=["Ingestion"])
 
 class IngestRequest(BaseModel):
-    url: str
+    url: Optional[str] = None
+    content: Optional[str] = None
+    text: Optional[str] = None
     category: Optional[str] = None
     async_mode: Optional[bool] = False
 
@@ -25,22 +27,24 @@ async def ingest_url(
     background_tasks: BackgroundTasks,
     authenticated: bool = Query(True)
 ):
-    url = req.url.strip()
-    if not url.startswith("http://") and not url.startswith("https://"):
-        raise HTTPException(status_code=400, detail="Invalid URL protocol")
+    raw_input = req.content or req.text or req.url
+    if not raw_input or not raw_input.strip():
+        raise HTTPException(status_code=400, detail="請提供網址或文字段落內容 (URL or text is required)")
+
+    clean_input = raw_input.strip()
 
     # If async_mode requested (e.g. quick return for iOS shortcut)
     if req.async_mode:
-        background_tasks.add_task(run_pipeline, url, req.category)
+        background_tasks.add_task(run_pipeline, clean_input, req.category)
         return {
             "success": True,
             "status": "queued",
-            "message": "URL enqueued for two-stage analysis"
+            "message": "Content enqueued for two-stage analysis"
         }
 
     # Otherwise process and return full item
     try:
-        item = await run_pipeline(url, req.category)
+        item = await run_pipeline(clean_input, req.category)
         return {
             "success": True,
             "status": "completed",

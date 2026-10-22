@@ -195,6 +195,7 @@ def get_items(
     category: Optional[str] = None,
     query: Optional[str] = None,
     is_starred: Optional[bool] = None,
+    is_read: Optional[bool] = None,
     limit: int = 50,
     offset: int = 0
 ) -> List[Dict[str, Any]]:
@@ -217,6 +218,9 @@ def get_items(
         if is_starred is not None:
             sql += " AND i.is_starred = ?"
             params.append(1 if is_starred else 0)
+        if is_read is not None:
+            sql += " AND i.is_read = ?"
+            params.append(1 if is_read else 0)
         sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         cursor.execute(sql, params)
@@ -229,6 +233,9 @@ def get_items(
         if is_starred is not None:
             sql += " AND is_starred = ?"
             params.append(1 if is_starred else 0)
+        if is_read is not None:
+            sql += " AND is_read = ?"
+            params.append(1 if is_read else 0)
         sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         cursor.execute(sql, params)
@@ -280,3 +287,17 @@ def delete_item(item_id: str) -> bool:
     ok = cursor.rowcount > 0
     conn.close()
     return ok
+
+def get_status_counts() -> Dict[str, int]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM items WHERE is_read = 0")
+    inbox = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM items WHERE is_starred = 1")
+    starred = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM items WHERE is_read = 1")
+    archived = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM items")
+    total = cursor.fetchone()[0]
+    conn.close()
+    return {"inbox": inbox, "starred": starred, "archived": archived, "total": total}

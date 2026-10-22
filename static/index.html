@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>OmniKeep - 多模態情報雷達與第二大腦</title>
   <link rel="manifest" href="/static/manifest.json">
-  <meta name="theme-color" content="#0f172a">
-  <!-- Tailwind CSS CDN -->
+  <meta name="theme-color" content="#09090b">
+  <!-- Tailwind CSS CDN with Zinc color palette -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -14,11 +14,16 @@
       theme: {
         extend: {
           colors: {
-            brand: {
-              50: '#eff6ff',
-              500: '#3b82f6',
-              600: '#2563eb',
-              700: '#1d4ed8',
+            zinc: {
+              850: '#1e1e24',
+              925: '#111115',
+              950: '#09090b',
+            },
+            accent: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
             }
           }
         }
@@ -29,486 +34,934 @@
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <!-- Marked.js for Markdown rendering -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
   <style>
-    /* Custom scrollbar */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #1e293b; }
-    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #64748b; }
-    .prose-dark { color: #cbd5e1; }
-    .prose-dark h1, .prose-dark h2, .prose-dark h3 { color: #f8fafc; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.5rem; }
-    .prose-dark p { margin-bottom: 0.75rem; line-height: 1.6; }
-    .prose-dark ul, .prose-dark ol { padding-left: 1.25rem; margin-bottom: 0.75rem; }
-    .prose-dark li { list-style-type: disc; margin-bottom: 0.25rem; }
-    .prose-dark code { background-color: #334155; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.875rem; color: #38bdf8; }
-    .prose-dark pre { background-color: #0f172a; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-bottom: 1rem; }
+    /* Custom refined scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+    /* Prose markdown styles for reader */
+    .prose-reader { color: #d4d4d8; font-size: 0.9375rem; line-height: 1.75; }
+    .prose-reader h1, .prose-reader h2, .prose-reader h3, .prose-reader h4 {
+      color: #fafafa; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.6rem; letter-spacing: -0.02em;
+    }
+    .prose-reader h1 { font-size: 1.5rem; border-bottom: 1px solid #27272a; padding-bottom: 0.5rem; }
+    .prose-reader h2 { font-size: 1.25rem; }
+    .prose-reader h3 { font-size: 1.1rem; }
+    .prose-reader p { margin-bottom: 1rem; }
+    .prose-reader ul, .prose-reader ol { padding-left: 1.4rem; margin-bottom: 1rem; }
+    .prose-reader li { list-style-type: disc; margin-bottom: 0.35rem; }
+    .prose-reader ol li { list-style-type: decimal; }
+    .prose-reader code {
+      background-color: #27272a; padding: 0.15rem 0.4rem; border-radius: 0.3rem; font-size: 0.85rem; color: #a5b4fc; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .prose-reader pre {
+      background-color: #121215; border: 1px solid #27272a; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-bottom: 1.25rem;
+    }
+    .prose-reader pre code { background-color: transparent; padding: 0; color: #e4e4e7; }
+    .prose-reader blockquote {
+      border-left: 3px solid #6366f1; padding-left: 1rem; color: #a1a1aa; font-style: italic; margin: 1rem 0;
+    }
+    .prose-reader table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.875rem; }
+    .prose-reader th, .prose-reader td { border: 1px solid #27272a; padding: 0.5rem 0.75rem; }
+    .prose-reader th { background: #18181b; color: #fafafa; }
+    .prose-reader a { color: #818cf8; text-decoration: underline; text-underline-offset: 3px; }
+
+    /* Transitions */
+    .fade-enter-active, .fade-leave-active { transition: opacity 0.15s ease; }
+    .fade-enter-from, .fade-leave-to { opacity: 0; }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen antialiased selection:bg-blue-600 selection:text-white">
-  <div id="app" class="flex flex-col min-h-screen">
+<body class="bg-zinc-950 text-zinc-100 min-h-screen antialiased selection:bg-indigo-600 selection:text-white flex flex-col h-screen overflow-hidden font-sans">
+  <div id="app" class="flex flex-col h-full w-full">
 
-    <!-- Top Navigation Bar -->
-    <header class="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        
-        <!-- Brand Logo -->
-        <div class="flex items-center gap-3 cursor-pointer" @click="resetFilters">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <span class="text-xl">🧠</span>
-          </div>
-          <div>
-            <h1 class="font-bold text-lg tracking-tight bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">OmniKeep</h1>
-            <p class="text-[10px] text-slate-400 -mt-1 font-mono">INTELLIGENCE RADAR</p>
-          </div>
-        </div>
-
-        <!-- Search Bar -->
-        <div class="flex-1 max-w-xl relative">
-          <input 
-            type="text" 
-            v-model="searchQuery" 
-            @input="debounceSearch"
-            placeholder="搜尋白話重點、新技術標籤或全文 (FTS5)..."
-            class="w-full bg-slate-800/80 border border-slate-700/80 rounded-xl px-4 py-2 pl-10 text-sm text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-          >
-          <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+    <!-- =========================================================================
+         TOP WORKBENCH HEADER
+         ========================================================================= -->
+    <header class="h-14 border-b border-zinc-800/80 bg-zinc-925/90 backdrop-blur-md px-4 flex items-center justify-between gap-3 shrink-0 z-30">
+      
+      <!-- Brand & Status -->
+      <div class="flex items-center gap-2.5 min-w-[190px]">
+        <div class="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a9 9 0 0 0-9 9c0 3.6 2.1 6.7 5.2 8.1l.8 2.9h6l.8-2.9c3.1-1.4 5.2-4.5 5.2-8.1a9 9 0 0 0-9-9z"/>
+            <path d="M9 10h6"/>
+            <path d="M10 14h4"/>
           </svg>
-          <button v-if="searchQuery" @click="searchQuery=''; loadItems()" class="absolute right-3 top-2.5 text-slate-400 hover:text-white text-xs">✕</button>
         </div>
-
-        <!-- Action Buttons -->
-        <div class="flex items-center gap-2">
-          <button 
-            @click="starredOnly = !starredOnly; loadItems()"
-            :class="starredOnly ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'"
-            class="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-colors"
-          >
-            <span>⭐</span>
-            <span>星標</span>
-          </button>
-
-          <button 
-            @click="showCategoryModal = true"
-            class="bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 px-3 py-2 rounded-xl text-xs font-medium transition-colors"
-            title="管理分類"
-          >
-            ⚙️ 分類
-          </button>
-
-          <button 
-            @click="showIngestModal = true"
-            class="bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-lg shadow-blue-600/30 transition-all flex items-center gap-1.5"
-          >
-            <span>+</span>
-            <span>存入網址</span>
-          </button>
+        <div class="flex items-baseline gap-1.5">
+          <span class="font-bold text-sm tracking-tight text-zinc-100">OmniKeep</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60">WORKBENCH</span>
         </div>
       </div>
 
-      <!-- Categories Pills Scroll Area -->
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar border-t border-slate-800/60">
+      <!-- Quick-Add Omnibox (Paste URL or Text Snippet & Enter) -->
+      <div class="flex-1 max-w-2xl relative flex items-center gap-2">
+        <div class="relative flex-1 flex items-center">
+          <div class="absolute left-3 text-zinc-500 pointer-events-none">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+          </div>
+          <input 
+            ref="quickInput"
+            type="text" 
+            v-model="quickUrl" 
+            @keyup.enter="handleQuickIngest"
+            placeholder="貼上網址、技術段落或思考 (按 Enter 存入，按 N 聚焦)..."
+            :disabled="isIngesting"
+            class="w-full bg-zinc-900 border border-zinc-700/80 rounded-lg pl-9 pr-24 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
+          >
+          <div class="absolute right-1.5 flex items-center gap-1">
+            <button 
+              @click="handleQuickIngest"
+              :disabled="!quickUrl.trim() || isIngesting"
+              class="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white rounded text-[11px] font-medium transition-colors flex items-center gap-1 shadow-sm"
+            >
+              <svg v-if="isIngesting" class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+                <path d="M12 2a10 10 0 0 1 10 10"/>
+              </svg>
+              <span>{{ isIngesting ? '解析中' : '存入' }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Dedicated Note / Multi-line Snippet Modal Button -->
+        <button 
+          @click="showNoteModal = true"
+          class="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg text-xs transition-colors flex items-center gap-1 shrink-0 border border-zinc-800"
+          title="貼入多行段落/筆記長文 (Shift+N)"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+          <span class="hidden md:inline text-[11px] font-medium">長文筆記</span>
+        </button>
+      </div>
+
+      <!-- Right Toolbar (Search, Density Switcher, Shortcuts) -->
+      <div class="flex items-center gap-2">
+        <!-- Search Input -->
+        <div class="relative w-44 lg:w-56">
+          <input 
+            ref="searchInput"
+            type="text" 
+            v-model="searchQuery" 
+            @input="debounceSearch"
+            placeholder="全文搜尋 (/)..."
+            class="w-full bg-zinc-900 border border-zinc-700/80 rounded-lg pl-7 pr-6 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition-all"
+          >
+          <svg class="w-3.5 h-3.5 text-zinc-500 absolute left-2 top-2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.3-4.3"/>
+          </svg>
+          <button v-if="searchQuery" @click="searchQuery=''; loadItems()" class="absolute right-2 top-1.5 text-zinc-500 hover:text-zinc-300 text-xs">✕</button>
+        </div>
+
+        <!-- Density Toggle (Compact List vs Card Grid) -->
+        <div class="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5">
+          <button 
+            @click="viewMode = 'list'"
+            :class="viewMode === 'list' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'"
+            class="p-1.5 rounded text-xs transition-colors"
+            title="精簡清單視圖 (Compact List)"
+          >
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="8" y1="6" x2="21" y2="6"/>
+              <line x1="8" y1="12" x2="21" y2="12"/>
+              <line x1="8" y1="18" x2="21" y2="18"/>
+              <line x1="3" y1="6" x2="3.01" y2="6"/>
+              <line x1="3" y1="12" x2="3.01" y2="12"/>
+              <line x1="3" y1="18" x2="3.01" y2="18"/>
+            </svg>
+          </button>
+          <button 
+            @click="viewMode = 'cards'"
+            :class="viewMode === 'cards' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'"
+            class="p-1.5 rounded text-xs transition-colors"
+            title="卡片串流視圖 (Cards)"
+          >
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"/>
+              <rect x="14" y="3" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Shortcuts Help Button -->
+        <button 
+          @click="showShortcutsModal = true"
+          class="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg text-xs transition-colors"
+          title="鍵盤快捷鍵指南 (?)"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- =========================================================================
+         SUB-HEADER: TRIAGE VIEWS & CATEGORY CHIPS
+         ========================================================================= -->
+    <div class="h-10 border-b border-zinc-800/80 bg-zinc-950 px-4 flex items-center justify-between gap-4 shrink-0 text-xs z-20">
+      
+      <!-- Triage Lifecycle Tabs (Inbox / Starred / Archive / All) -->
+      <div class="flex items-center gap-1">
+        <button 
+          @click="setTriageView('inbox')"
+          :class="triageView === 'inbox' ? 'bg-zinc-800 text-zinc-100 font-semibold shadow-inner' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'"
+          class="px-2.5 py-1 rounded-md flex items-center gap-1.5 transition-colors"
+        >
+          <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
+            <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+          </svg>
+          <span>待讀 Inbox</span>
+          <span class="text-[10px] font-mono px-1 py-0.2 rounded bg-zinc-900 text-zinc-400">{{ stats.inbox }}</span>
+        </button>
+
+        <button 
+          @click="setTriageView('starred')"
+          :class="triageView === 'starred' ? 'bg-zinc-800 text-amber-300 font-semibold' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'"
+          class="px-2.5 py-1 rounded-md flex items-center gap-1.5 transition-colors"
+        >
+          <svg class="w-3.5 h-3.5 text-amber-400 fill-amber-400/20" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+          </svg>
+          <span>星標</span>
+          <span class="text-[10px] font-mono px-1 py-0.2 rounded bg-zinc-900 text-zinc-400">{{ stats.starred }}</span>
+        </button>
+
+        <button 
+          @click="setTriageView('archived')"
+          :class="triageView === 'archived' ? 'bg-zinc-800 text-emerald-300 font-semibold' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'"
+          class="px-2.5 py-1 rounded-md flex items-center gap-1.5 transition-colors"
+        >
+          <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="21 8 21 21 3 21 3 8"/>
+            <rect x="1" y="3" width="22" height="5"/>
+            <line x1="10" y1="12" x2="14" y2="12"/>
+          </svg>
+          <span>封存</span>
+          <span class="text-[10px] font-mono px-1 py-0.2 rounded bg-zinc-900 text-zinc-400">{{ stats.archived }}</span>
+        </button>
+
+        <button 
+          @click="setTriageView('all')"
+          :class="triageView === 'all' ? 'bg-zinc-800 text-zinc-100 font-semibold' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'"
+          class="px-2.5 py-1 rounded-md flex items-center gap-1.5 transition-colors"
+        >
+          <span>全部</span>
+          <span class="text-[10px] font-mono px-1 py-0.2 rounded bg-zinc-900 text-zinc-400">{{ stats.total }}</span>
+        </button>
+      </div>
+
+      <!-- Categories Pills (Horizontal Scroll) -->
+      <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
         <button 
           @click="selectCategory('全部')"
-          :class="currentCategory === '全部' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'"
-          class="px-3.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all"
+          :class="currentCategory === '全部' ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/40' : 'text-zinc-400 hover:text-zinc-200 border-zinc-800 bg-zinc-900/60'"
+          class="px-2.5 py-0.5 rounded-full text-[11px] font-medium border whitespace-nowrap transition-colors"
         >
-          全部 ({{ totalItemsCount }})
+          全部分類
         </button>
 
         <button 
           v-for="cat in categories" 
           :key="cat.id"
           @click="selectCategory(cat.name)"
-          :class="currentCategory === cat.name ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'"
-          class="px-3.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5"
+          :class="currentCategory === cat.name ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/40' : 'text-zinc-400 hover:text-zinc-200 border-zinc-800 bg-zinc-900/60'"
+          class="px-2.5 py-0.5 rounded-full text-[11px] font-medium border whitespace-nowrap transition-colors flex items-center gap-1"
         >
           <span>{{ cat.name }}</span>
-          <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-900/50 text-slate-300 font-mono">{{ cat.item_count || 0 }}</span>
+          <span class="text-[9px] font-mono text-zinc-500">{{ cat.item_count || 0 }}</span>
         </button>
 
         <button 
-          @click="selectCategory('Inbox')"
-          :class="currentCategory === 'Inbox' ? 'bg-amber-600 text-white' : 'bg-slate-800/80 text-amber-400/80 hover:bg-slate-800'"
-          class="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all"
+          @click="showAddCategoryModal = true"
+          class="px-2 py-0.5 rounded-full text-[11px] font-medium text-zinc-500 hover:text-zinc-200 border border-dashed border-zinc-800 hover:border-zinc-700 whitespace-nowrap transition-colors"
         >
-          📥 Inbox
+          + 分類
         </button>
-
-        <button 
-          @click="showAddCategoryPrompt"
-          class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white bg-slate-900 border border-dashed border-slate-700 hover:border-slate-500 whitespace-nowrap transition-all"
-        >
-          + 新增
-        </button>
-      </div>
-    </header>
-
-    <!-- Main Content Area -->
-    <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
-
-      <!-- Loading State -->
-      <div v-if="loading" class="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
-        <div class="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-        <p class="text-sm">情報加載中...</p>
-      </div>
-
-      <!-- Empty State -->
-      <div v-else-if="items.length === 0" class="flex flex-col items-center justify-center py-20 text-slate-500 gap-4">
-        <div class="text-5xl">📡</div>
-        <p class="text-base text-slate-400 font-medium">目前尚無此分類的內容</p>
-        <p class="text-xs text-slate-500 max-w-sm text-center">點擊右上角「+ 存入網址」或透過 iPhone 捷徑將 YouTube、GitHub 或技術長文傳入大腦。</p>
-        <button @click="showIngestModal = true" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-medium transition-all">
-          立即存入第一個項目
-        </button>
-      </div>
-
-      <!-- Card Stream (L1 At-a-Glance Grid) -->
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        <div 
-          v-for="item in items" 
-          :key="item.id"
-          class="group bg-slate-900 border border-slate-800/90 hover:border-blue-500/50 rounded-2xl p-4 flex flex-col justify-between transition-all duration-200 hover:shadow-xl hover:shadow-blue-500/5 hover:-translate-y-0.5"
-        >
-          <div>
-            <!-- Header Badges -->
-            <div class="flex items-center justify-between text-xs mb-3">
-              <div class="flex items-center gap-2">
-                <span 
-                  :class="getSourceBadgeClass(item.source_type)"
-                  class="px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold uppercase tracking-wider"
-                >
-                  {{ item.source_type }}
-                </span>
-                <span class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-[11px] font-medium border border-slate-700/60">
-                  {{ item.category_name }}
-                </span>
-              </div>
-              <div class="flex items-center gap-2">
-                <button 
-                  @click.stop="toggleStar(item)" 
-                  class="text-slate-400 hover:text-amber-400 transition-colors p-1"
-                >
-                  {{ item.is_starred ? '⭐' : '☆' }}
-                </button>
-                <span class="text-[11px] text-slate-500">{{ formatRelativeTime(item.created_at) }}</span>
-              </div>
-            </div>
-
-            <!-- Thumbnail (if exists) -->
-            <div v-if="item.cover_image && !item.cover_image.includes('favicons')" class="w-full h-36 mb-3 rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
-              <img :src="item.cover_image" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" onerror="this.style.display='none'">
-            </div>
-
-            <!-- L1 Title (Clickable to open L2 Deep Dive) -->
-            <h3 
-              @click="openDeepDive(item)"
-              class="font-semibold text-base text-slate-100 group-hover:text-blue-400 cursor-pointer line-clamp-2 leading-snug mb-2 transition-colors"
-            >
-              {{ item.title_l1 }}
-            </h3>
-
-            <!-- L1 One-Sentence Plain Core Highlight -->
-            <div 
-              @click="openDeepDive(item)"
-              class="bg-slate-950/60 border-l-2 border-blue-500 px-3 py-2 rounded-r-lg cursor-pointer mb-3.5 hover:bg-slate-950 transition-colors"
-            >
-              <p class="text-xs text-slate-300 leading-relaxed line-clamp-3">
-                {{ item.summary_l1 }}
-              </p>
-            </div>
-
-            <!-- L1 Tech Tags -->
-            <div class="flex flex-wrap gap-1.5 mb-2">
-              <span 
-                v-for="tag in item.tech_tags" 
-                :key="tag"
-                class="px-2 py-0.5 bg-slate-800/80 hover:bg-slate-800 text-blue-300 text-[11px] rounded-md border border-slate-700/50 font-mono"
-              >
-                #{{ tag }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Bottom Footer -->
-          <div class="pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs">
-            <a 
-              :href="item.url" 
-              target="_blank" 
-              rel="noopener"
-              class="text-slate-400 hover:text-slate-200 flex items-center gap-1 truncate max-w-[180px]"
-              title="前往原始網址"
-            >
-              <span>🔗</span>
-              <span class="truncate">{{ cleanHost(item.url) }}</span>
-            </a>
-
-            <button 
-              @click="openDeepDive(item)"
-              class="text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
-            >
-              <span>深入剖析</span>
-              <span>➔</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </main>
-
-    <!-- L2 Deep-Dive Drawer / Modal -->
-    <div v-if="activeItem" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-        
-        <!-- Modal Header -->
-        <div class="p-5 border-b border-slate-800 flex items-start justify-between gap-4 bg-slate-900/90">
-          <div class="flex-1">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="px-2 py-0.5 rounded-md font-mono text-xs font-semibold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                {{ activeItem.source_type }}
-              </span>
-              <!-- Change Category Dropdown -->
-              <select 
-                v-model="activeItem.category_name" 
-                @change="updateItemCategory(activeItem)"
-                class="bg-slate-800 border border-slate-700 text-xs rounded-lg px-2 py-1 text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option v-for="c in categories" :key="c.id" :value="c.name">{{ c.name }}</option>
-                <option value="Inbox">Inbox</option>
-              </select>
-              <button @click="toggleStar(activeItem)" class="text-sm p-1">
-                {{ activeItem.is_starred ? '⭐ 已星標' : '☆ 加星標' }}
-              </button>
-            </div>
-            <h2 class="text-lg sm:text-xl font-bold text-slate-100 leading-snug">{{ activeItem.title_l1 }}</h2>
-            <a :href="activeItem.url" target="_blank" class="text-xs text-blue-400 hover:underline mt-1 inline-block truncate max-w-lg">
-              原始連結: {{ activeItem.url }} ↗
-            </a>
-          </div>
-
-          <button @click="activeItem = null" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center">
-            ✕
-          </button>
-        </div>
-
-        <!-- Modal Tabs -->
-        <div class="flex items-center px-5 border-b border-slate-800 gap-4 bg-slate-950/40 text-xs">
-          <button 
-            @click="activeTab = 'analysis'"
-            :class="activeTab === 'analysis' ? 'border-b-2 border-blue-500 text-blue-400 font-semibold' : 'text-slate-400 hover:text-slate-200'"
-            class="py-3 px-1 transition-colors"
-          >
-            📊 L2 深入技術剖析
-          </button>
-          <button 
-            @click="activeTab = 'reader'"
-            :class="activeTab === 'reader' ? 'border-b-2 border-blue-500 text-blue-400 font-semibold' : 'text-slate-400 hover:text-slate-200'"
-            class="py-3 px-1 transition-colors"
-          >
-            📖 原文純淨閱讀器 (Reader View)
-          </button>
-        </div>
-
-        <!-- Modal Body Scroll Area -->
-        <div class="p-6 overflow-y-auto flex-1 prose-dark">
-          <!-- L1 Overview Box inside Deep Dive -->
-          <div class="mb-6 bg-slate-950 border border-slate-800 rounded-xl p-4">
-            <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-1">⚡ 白話核心痛點與價值</h4>
-            <p class="text-sm text-slate-200 leading-relaxed">{{ activeItem.summary_l1 }}</p>
-            <div class="flex flex-wrap gap-1.5 mt-3">
-              <span v-for="t in activeItem.tech_tags" :key="t" class="px-2 py-0.5 bg-slate-800 text-blue-300 text-xs rounded-md border border-slate-700">
-                #{{ t }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Tab Content: L2 Deep Analysis -->
-          <div v-if="activeTab === 'analysis'">
-            <div v-if="activeItem.deep_analysis" v-html="renderMarkdown(activeItem.deep_analysis)"></div>
-            <div v-else class="text-slate-500 py-10 text-center">暫無深度剖析內容</div>
-          </div>
-
-          <!-- Tab Content: Reader View -->
-          <div v-if="activeTab === 'reader'">
-            <div v-if="activeItem.content_raw" v-html="renderMarkdown(activeItem.content_raw)"></div>
-            <div v-else class="text-slate-500 py-10 text-center">暫無原文快照</div>
-          </div>
-        </div>
-
-        <!-- Modal Footer -->
-        <div class="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between text-xs">
-          <button 
-            @click="deleteItem(activeItem)"
-            class="text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
-          >
-            🗑️ 刪除此項目
-          </button>
-
-          <div class="flex items-center gap-2">
-            <button 
-              @click="copySummary(activeItem)"
-              class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
-            >
-              📋 複製白話摘要
-            </button>
-            <button 
-              @click="activeItem = null"
-              class="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
-            >
-              關閉
-            </button>
-          </div>
-        </div>
       </div>
     </div>
 
-    <!-- Quick Ingest Modal -->
-    <div v-if="showIngestModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-        <h3 class="text-base font-bold text-slate-100 mb-1">存入網址到 OmniKeep</h3>
-        <p class="text-xs text-slate-400 mb-4">支援 YouTube 影片、GitHub Repo、技術長文或文章。</p>
-        
-        <div class="space-y-4">
+    <!-- =========================================================================
+         MASTER-DETAIL WORKBENCH BODY
+         ========================================================================= -->
+    <div class="flex-1 flex overflow-hidden w-full relative">
+
+      <!-- MASTER STREAM (Left Column) -->
+      <div 
+        :class="activeItem ? 'w-full lg:w-1/2 xl:w-5/12' : 'w-full'"
+        class="h-full flex flex-col border-r border-zinc-800/80 bg-zinc-950 overflow-hidden transition-all duration-200"
+      >
+        <!-- Stream Toolbar -->
+        <div class="h-8 border-b border-zinc-800/60 px-4 flex items-center justify-between text-[11px] text-zinc-500 shrink-0 bg-zinc-925/50 font-mono">
           <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1">目標網址 (URL)</label>
-            <input 
-              type="url" 
-              v-model="newIngestUrl" 
-              placeholder="https://..." 
-              class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              @keyup.enter="submitIngest"
-            >
+            <span>項目數: {{ items.length }}</span>
+            <span v-if="searchQuery" class="ml-2 text-indigo-400">搜尋: "{{ searchQuery }}"</span>
+          </div>
+          <div class="hidden sm:flex items-center gap-2">
+            <span>[J/K] 上下巡航</span>
+            <span>[E] 歸檔</span>
+            <span>[S] 星標</span>
+            <span>[Enter] 閱讀</span>
+          </div>
+        </div>
+
+        <!-- Stream Items Scroll Area -->
+        <div class="flex-1 overflow-y-auto divide-y divide-zinc-850/60">
+          
+          <!-- Loading State -->
+          <div v-if="loading" class="flex flex-col items-center justify-center py-20 text-zinc-500 gap-2">
+            <svg class="w-6 h-6 animate-spin text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+              <path d="M12 2a10 10 0 0 1 10 10"/>
+            </svg>
+            <p class="text-xs font-mono">讀取情報庫中...</p>
           </div>
 
-          <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1">指定分類 (選填，預設由 AI 自動研判)</label>
-            <select 
-              v-model="newIngestCategory"
-              class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          <!-- Empty State -->
+          <div v-else-if="items.length === 0" class="flex flex-col items-center justify-center py-24 text-zinc-500 gap-3 px-6 text-center">
+            <div class="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400">
+              <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-zinc-300">此視圖目前無內容</p>
+              <p class="text-xs text-zinc-500 mt-1 max-w-sm">
+                請在頂部網址列貼上連結並按 Enter，或使用 iPhone 捷徑一鍵存入。
+              </p>
+            </div>
+          </div>
+
+          <!-- MODE 1: COMPACT LIST VIEW -->
+          <div v-else-if="viewMode === 'list'">
+            <div 
+              v-for="(item, idx) in items" 
+              :key="item.id"
+              @click="selectItem(item)"
+              :class="[
+                activeItem && activeItem.id === item.id ? 'bg-zinc-900/90 border-l-2 border-indigo-500' : 'hover:bg-zinc-900/50 border-l-2 border-transparent',
+                item.is_read ? 'opacity-70 hover:opacity-100' : ''
+              ]"
+              class="group px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors relative"
             >
-              <option value="">🤖 AI 自動分類</option>
+              <!-- Unread status dot / Read check -->
+              <button 
+                @click.stop="toggleRead(item)"
+                class="mt-1 shrink-0 text-zinc-500 hover:text-indigo-400 transition-colors"
+                :title="item.is_read ? '標記為未讀' : '標記為已讀/封存 (E)'"
+              >
+                <div v-if="!item.is_read" class="w-2 h-2 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50"></div>
+                <div v-else class="w-2 h-2 rounded-full bg-zinc-700"></div>
+              </button>
+
+              <!-- Main Content Column -->
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                  <!-- Source badge -->
+                  <span 
+                    :class="getSourceBadgeClass(item.source_type)"
+                    class="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase font-bold tracking-wider"
+                  >
+                    {{ item.source_type }}
+                  </span>
+                  <!-- Category tag -->
+                  <span class="text-[10px] text-zinc-400 bg-zinc-900 px-1.5 py-0.2 rounded border border-zinc-800">
+                    {{ item.category_name }}
+                  </span>
+                  <!-- Host Domain -->
+                  <span class="text-[11px] text-zinc-500 truncate font-mono">
+                    {{ cleanHost(item.url) }}
+                  </span>
+                  <!-- Relative Time -->
+                  <span class="text-[10px] text-zinc-600 ml-auto shrink-0 font-mono">
+                    {{ formatRelativeTime(item.created_at) }}
+                  </span>
+                </div>
+
+                <!-- L1 Title -->
+                <h3 
+                  :class="activeItem && activeItem.id === item.id ? 'text-indigo-300' : 'text-zinc-200 group-hover:text-zinc-100'"
+                  class="font-medium text-xs sm:text-sm leading-snug truncate transition-colors"
+                >
+                  {{ item.title_l1 }}
+                </h3>
+
+                <!-- L1 One-Line Plain Takeaway -->
+                <p class="text-xs text-zinc-400 line-clamp-1 mt-1 leading-relaxed">
+                  {{ item.summary_l1 }}
+                </p>
+
+                <!-- Tags Pill -->
+                <div class="flex items-center gap-1.5 mt-2 flex-wrap">
+                  <span 
+                    v-for="tag in (item.tech_tags || []).slice(0, 3)" 
+                    :key="tag"
+                    class="text-[10px] font-mono text-zinc-400 bg-zinc-900/80 px-1.5 py-0.2 rounded border border-zinc-800/80"
+                  >
+                    #{{ tag }}
+                  </span>
+                  <span v-if="(item.tech_tags || []).length > 3" class="text-[10px] text-zinc-600 font-mono">
+                    +{{ (item.tech_tags || []).length - 3 }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Row Hover Quick Actions -->
+              <div class="hidden group-hover:flex items-center gap-1 shrink-0 self-center pl-2">
+                <!-- Star Action -->
+                <button 
+                  @click.stop="toggleStar(item)" 
+                  class="p-1 rounded text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 transition-colors"
+                  :title="item.is_starred ? '取消星標 (S)' : '標記星標 (S)'"
+                >
+                  <svg class="w-3.5 h-3.5" :class="item.is_starred ? 'text-amber-400 fill-amber-400' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                  </svg>
+                </button>
+                <!-- Archive Action -->
+                <button 
+                  @click.stop="toggleRead(item)" 
+                  class="p-1 rounded text-zinc-400 hover:text-emerald-400 hover:bg-zinc-800 transition-colors"
+                  :title="item.is_read ? '移至未讀 (E)' : '封存歸檔 (E)'"
+                >
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="21 8 21 21 3 21 3 8"/>
+                    <rect x="1" y="3" width="22" height="5"/>
+                    <line x1="10" y1="12" x2="14" y2="12"/>
+                  </svg>
+                </button>
+                <!-- Open External -->
+                <a 
+                  :href="item.url" 
+                  target="_blank" 
+                  @click.stop
+                  class="p-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                  title="開啟原始網頁"
+                >
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                    <polyline points="15 3 21 3 21 9"/>
+                    <line x1="10" y1="14" x2="21" y2="3"/>
+                  </svg>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- MODE 2: CLEAN CARDS VIEW -->
+          <div v-else class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div 
+              v-for="item in items" 
+              :key="item.id"
+              @click="selectItem(item)"
+              :class="[
+                activeItem && activeItem.id === item.id ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-zinc-800 hover:border-zinc-700',
+                item.is_read ? 'opacity-70' : ''
+              ]"
+              class="group bg-zinc-900/80 rounded-xl p-4 border flex flex-col justify-between cursor-pointer transition-all hover:shadow-lg"
+            >
+              <div>
+                <div class="flex items-center justify-between text-[11px] mb-2 font-mono">
+                  <div class="flex items-center gap-1.5">
+                    <span :class="getSourceBadgeClass(item.source_type)" class="px-1.5 py-0.2 rounded text-[9px] uppercase font-bold">
+                      {{ item.source_type }}
+                    </span>
+                    <span class="text-zinc-400 bg-zinc-950 px-1.5 py-0.2 rounded border border-zinc-800">
+                      {{ item.category_name }}
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-1 text-zinc-500">
+                    <button @click.stop="toggleStar(item)" class="p-1 hover:text-amber-400">
+                      <svg class="w-3.5 h-3.5" :class="item.is_starred ? 'text-amber-400 fill-amber-400' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                      </svg>
+                    </button>
+                    <span>{{ formatRelativeTime(item.created_at) }}</span>
+                  </div>
+                </div>
+
+                <h3 class="font-semibold text-sm text-zinc-100 group-hover:text-indigo-400 line-clamp-2 leading-snug mb-2 transition-colors">
+                  {{ item.title_l1 }}
+                </h3>
+
+                <p class="text-xs text-zinc-400 line-clamp-2 leading-relaxed mb-3">
+                  {{ item.summary_l1 }}
+                </p>
+
+                <div class="flex flex-wrap gap-1 mb-2">
+                  <span 
+                    v-for="tag in (item.tech_tags || []).slice(0, 4)" 
+                    :key="tag"
+                    class="px-1.5 py-0.2 bg-zinc-950 text-zinc-400 text-[10px] rounded border border-zinc-800 font-mono"
+                  >
+                    #{{ tag }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs text-zinc-500 font-mono">
+                <span class="truncate max-w-[140px]">{{ cleanHost(item.url) }}</span>
+                <button 
+                  @click.stop="toggleRead(item)"
+                  class="text-[11px] hover:text-emerald-400 px-2 py-0.5 rounded bg-zinc-800/60"
+                >
+                  {{ item.is_read ? '已封存' : '封存 (E)' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- DETAIL INSPECTION & READER PANE (Right Column / Split View) -->
+      <div 
+        v-if="activeItem" 
+        class="fixed inset-0 z-40 lg:static lg:z-auto flex-1 h-full bg-zinc-900 border-l border-zinc-800 flex flex-col overflow-hidden shadow-2xl lg:shadow-none"
+      >
+        <!-- Reader Pane Header -->
+        <div class="h-14 border-b border-zinc-800 px-5 flex items-center justify-between gap-3 bg-zinc-925 shrink-0">
+          
+          <!-- Category & Status Controls -->
+          <div class="flex items-center gap-2">
+            <!-- Source Badge -->
+            <span :class="getSourceBadgeClass(activeItem.source_type)" class="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold">
+              {{ activeItem.source_type }}
+            </span>
+
+            <!-- Category Switcher Dropdown -->
+            <select 
+              v-model="activeItem.category_name" 
+              @change="updateItemCategory(activeItem)"
+              class="bg-zinc-800 border border-zinc-700 text-xs rounded px-2 py-1 text-zinc-200 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+            >
               <option v-for="c in categories" :key="c.id" :value="c.name">{{ c.name }}</option>
               <option value="Inbox">Inbox</option>
             </select>
-          </div>
 
-          <div v-if="ingestError" class="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
-            {{ ingestError }}
-          </div>
-
-          <div class="flex items-center justify-end gap-2 pt-2">
+            <!-- Triage Status Badge (Click to toggle) -->
             <button 
-              @click="showIngestModal = false; ingestError = ''"
-              class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium"
+              @click="toggleRead(activeItem)"
+              :class="activeItem.is_read ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'"
+              class="px-2 py-1 rounded text-xs font-mono font-medium border flex items-center gap-1 transition-colors"
+              title="按 E 切換狀態"
             >
-              取消
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <span>{{ activeItem.is_read ? '已封存 (E)' : '待消化 (E)' }}</span>
             </button>
+          </div>
+
+          <!-- Actions Toolbar -->
+          <div class="flex items-center gap-1.5">
+            <!-- Star Button -->
             <button 
-              @click="submitIngest"
-              :disabled="ingesting || !newIngestUrl"
-              class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-medium flex items-center gap-1.5"
+              @click="toggleStar(activeItem)"
+              class="p-1.5 rounded-lg text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 transition-colors"
+              :title="activeItem.is_starred ? '取消星標 (S)' : '加星標 (S)'"
             >
-              <span v-if="ingesting" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-              <span>{{ ingesting ? 'AI 深度解析中...' : '開始存入' }}</span>
+              <svg class="w-4 h-4" :class="activeItem.is_starred ? 'text-amber-400 fill-amber-400' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+            </button>
+
+            <!-- Copy Takeaway -->
+            <button 
+              @click="copySummary(activeItem)"
+              class="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              title="複製白話重點"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
+
+            <!-- Open External Link -->
+            <a 
+              :href="activeItem.url" 
+              target="_blank" 
+              rel="noopener"
+              class="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              title="前往原始網址"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            </a>
+
+            <!-- Delete Item -->
+            <button 
+              @click="deleteItem(activeItem)"
+              class="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors"
+              title="刪除項目"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+            </button>
+
+            <!-- Close Pane Button -->
+            <button 
+              @click="activeItem = null"
+              class="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors ml-1"
+              title="關閉閱覽面板 (Esc)"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Reader Pane Sub-Nav (Tabs) -->
+        <div class="h-10 border-b border-zinc-800 px-5 flex items-center justify-between bg-zinc-950 text-xs shrink-0">
+          <div class="flex items-center gap-4">
+            <button 
+              @click="detailTab = 'analysis'"
+              :class="detailTab === 'analysis' ? 'border-b-2 border-indigo-500 text-indigo-400 font-semibold' : 'text-zinc-400 hover:text-zinc-200'"
+              class="py-2.5 transition-colors flex items-center gap-1.5"
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+              <span>L1 / L2 深度架構解構</span>
+            </button>
+
+            <button 
+              @click="detailTab = 'reader'"
+              :class="detailTab === 'reader' ? 'border-b-2 border-indigo-500 text-indigo-400 font-semibold' : 'text-zinc-400 hover:text-zinc-200'"
+              class="py-2.5 transition-colors flex items-center gap-1.5"
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+              </svg>
+              <span>純淨原文閱讀器 (Reader View)</span>
+            </button>
+          </div>
+
+          <!-- Reader Font Size Toggle -->
+          <div v-if="detailTab === 'reader'" class="flex items-center gap-1 text-[11px] text-zinc-500 font-mono">
+            <span>字級:</span>
+            <button @click="readerFontSize = Math.max(13, readerFontSize - 1)" class="px-1.5 py-0.5 rounded bg-zinc-800 hover:text-zinc-200">A-</button>
+            <span class="w-6 text-center text-zinc-300">{{ readerFontSize }}px</span>
+            <button @click="readerFontSize = Math.min(20, readerFontSize + 1)" class="px-1.5 py-0.5 rounded bg-zinc-800 hover:text-zinc-200">A+</button>
+          </div>
+        </div>
+
+        <!-- Reader Scroll Content -->
+        <div class="flex-1 overflow-y-auto p-6 lg:p-8">
+          
+          <!-- Article Title Header -->
+          <div class="mb-6 max-w-3xl">
+            <h1 class="text-xl lg:text-2xl font-bold text-zinc-100 tracking-tight leading-snug mb-2">
+              {{ activeItem.title_l1 }}
+            </h1>
+            <div class="flex items-center gap-2 text-xs text-zinc-500 font-mono">
+              <span>{{ cleanHost(activeItem.url) }}</span>
+              <span>•</span>
+              <span>{{ activeItem.published_date || formatRelativeTime(activeItem.created_at) }}</span>
+              <span v-if="activeItem.author">• {{ activeItem.author }}</span>
+            </div>
+          </div>
+
+          <!-- TAB 1: L1/L2 DEEP TECH ANALYSIS -->
+          <div v-if="detailTab === 'analysis'" class="max-w-3xl space-y-6">
+            
+            <!-- L1 Plain Core Highlight Box -->
+            <div class="bg-zinc-925 border border-zinc-800/90 rounded-xl p-4 relative overflow-hidden">
+              <div class="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500"></div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-mono uppercase tracking-wider text-indigo-400 font-bold">
+                  L1 速覽 • 白話痛點與核心論點
+                </span>
+                <span class="text-[10px] text-zinc-500 font-mono">AI AUTO TRIAGE</span>
+              </div>
+              <p class="text-sm text-zinc-200 leading-relaxed">
+                {{ activeItem.summary_l1 }}
+              </p>
+              
+              <!-- Tech Tags -->
+              <div class="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-zinc-800/60">
+                <span 
+                  v-for="tag in activeItem.tech_tags" 
+                  :key="tag"
+                  class="px-2 py-0.5 rounded bg-zinc-900 text-indigo-300 text-xs font-mono border border-zinc-700/60"
+                >
+                  #{{ tag }}
+                </span>
+              </div>
+            </div>
+
+            <!-- L2 Deep Architecture Breakdown -->
+            <div>
+              <h3 class="text-xs font-mono uppercase tracking-wider text-zinc-500 mb-3 font-bold">
+                L2 深度技術架構解構
+              </h3>
+              <div v-if="activeItem.deep_analysis" class="prose-reader" v-html="renderMarkdown(activeItem.deep_analysis)"></div>
+              <div v-else class="text-zinc-500 text-xs py-8 text-center bg-zinc-925 rounded-xl border border-zinc-800">
+                此項目無深入解構內容
+              </div>
+            </div>
+
+          </div>
+
+          <!-- TAB 2: CLEAN READER VIEW (RAW TEXT MARKDOWN) -->
+          <div v-if="detailTab === 'reader'" class="max-w-3xl">
+            <div 
+              v-if="activeItem.content_raw" 
+              class="prose-reader" 
+              :style="{ fontSize: readerFontSize + 'px' }"
+              v-html="renderMarkdown(activeItem.content_raw)"
+            ></div>
+            <div v-else class="text-zinc-500 text-xs py-12 text-center bg-zinc-925 rounded-xl border border-zinc-800 font-mono">
+              未抓取到原文快照或純淨內文。
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- =========================================================================
+         KEYBOARD SHORTCUTS MODAL (?)
+         ========================================================================= -->
+    <div v-if="showShortcutsModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" @click.self="showShortcutsModal = false">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+        <div class="flex items-center justify-between pb-3 border-b border-zinc-800 mb-4">
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-sm text-zinc-100">鍵盤極速操控指南</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">VIM / LINEAR</span>
+          </div>
+          <button @click="showShortcutsModal = false" class="text-zinc-500 hover:text-zinc-300">✕</button>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <div class="flex items-center justify-between py-1">
+            <span class="text-zinc-300">巡航至下一個項目</span>
+            <kbd class="px-2 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 font-mono">J / ↓</kbd>
+          </div>
+          <div class="flex items-center justify-between py-1">
+            <span class="text-zinc-300">巡航至上一個項目</span>
+            <kbd class="px-2 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 font-mono">K / ↑</kbd>
+          </div>
+          <div class="flex items-center justify-between py-1">
+            <span class="text-zinc-300">標記已讀 / 封存</span>
+            <kbd class="px-2 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 font-mono">E</kbd>
+          </div>
+          <div class="flex items-center justify-between py-1">
+            <span class="text-zinc-300">標記 / 取消星標</span>
+            <kbd class="px-2 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 font-mono">S</kbd>
+          </div>
+          <div class="flex items-center justify-between py-1">
+            <span class="text-zinc-300">開啟 / 聚焦閱覽面板</span>
+            <kbd class="px-2 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 font-mono">Enter / Space</kbd>
+          </div>
+          <div class="flex items-center justify-between py-1">
+            <span class="text-zinc-300">關閉閱覽面板</span>
+            <kbd class="px-2 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 font-mono">Esc</kbd>
+          </div>
+          <div class="flex items-center justify-between py-1">
+            <span class="text-zinc-300">聚焦頂部快速存入輸入框</span>
+            <kbd class="px-2 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 font-mono">N</kbd>
+          </div>
+          <div class="flex items-center justify-between py-1">
+            <span class="text-zinc-300">聚焦全文搜尋框</span>
+            <kbd class="px-2 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-200 font-mono">/</kbd>
+          </div>
+        </div>
+
+        <div class="mt-5 pt-3 border-t border-zinc-800 flex justify-end">
+          <button @click="showShortcutsModal = false" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded text-xs font-medium">
+            我知道了
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================================
+         ADD NOTE / SNIPPET MODAL
+         ========================================================================= -->
+    <div v-if="showNoteModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" @click.self="showNoteModal = false">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-2xl p-6 shadow-2xl flex flex-col gap-4">
+        <div class="flex items-center justify-between pb-3 border-b border-zinc-800">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <span class="font-bold text-sm text-zinc-100">存入長篇段落 / 技術筆記</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">MARKDOWN / SNIPPET</span>
+          </div>
+          <button @click="showNoteModal = false" class="text-zinc-500 hover:text-zinc-300">✕</button>
+        </div>
+
+        <div>
+          <label class="block text-xs font-mono text-zinc-400 mb-1.5">內容（支援 Markdown、程式碼片段、技術論述或內含網址之長文）：</label>
+          <textarea 
+            v-model="noteContent" 
+            rows="8" 
+            placeholder="在此貼上任何長篇段落、GitHub 專案心得、架構解說或零碎思考..." 
+            class="w-full bg-zinc-950 border border-zinc-700/80 rounded-xl p-3 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 font-mono leading-relaxed resize-none"
+          ></textarea>
+        </div>
+
+        <div class="flex items-center justify-between pt-2">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="text-zinc-500 font-mono">指定分類:</span>
+            <select 
+              v-model="noteCategory"
+              class="bg-zinc-800 border border-zinc-700 text-xs rounded px-2 py-1 text-zinc-200 focus:outline-none"
+            >
+              <option value="">🤖 AI 自動研判</option>
+              <option v-for="c in categories" :key="c.id" :value="c.name">{{ c.name }}</option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button @click="showNoteModal = false" class="px-3 py-1.5 text-zinc-400 hover:text-zinc-200 text-xs">取消</button>
+            <button 
+              @click="submitNoteIngest" 
+              :disabled="!noteContent.trim() || isIngesting"
+              class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded text-xs font-medium transition-colors flex items-center gap-1.5"
+            >
+              <svg v-if="isIngesting" class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+                <path d="M12 2a10 10 0 0 1 10 10"/>
+              </svg>
+              <span>{{ isIngesting ? 'AI 解析中...' : '存入大腦' }}</span>
             </button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Category Management Modal -->
-    <div v-if="showCategoryModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-base font-bold text-slate-100">管理分類字典</h3>
-          <button @click="showCategoryModal = false" class="text-slate-400 hover:text-white text-sm">✕</button>
-        </div>
-
-        <!-- Add Category Inline -->
-        <div class="flex gap-2 mb-4">
-          <input 
-            type="text" 
-            v-model="newCategoryName" 
-            placeholder="新增分類名稱 (例如: 機器人學)" 
-            class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            @keyup.enter="addNewCategory"
-          >
-          <button 
-            @click="addNewCategory"
-            class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-xl"
-          >
-            新增
-          </button>
-        </div>
-
-        <!-- Category List -->
-        <div class="space-y-2 max-h-60 overflow-y-auto pr-1">
-          <div 
-            v-for="c in categories" 
-            :key="c.id"
-            class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 text-xs"
-          >
-            <div class="flex items-center gap-2">
-              <span class="font-medium text-slate-200">{{ c.name }}</span>
-              <span class="text-slate-500 font-mono text-[10px]">({{ c.item_count }} 篇)</span>
-            </div>
-            <button 
-              @click="deleteCategory(c.name)"
-              class="text-red-400 hover:text-red-300 text-xs px-2 py-0.5 rounded hover:bg-red-500/10"
-            >
-              刪除
-            </button>
-          </div>
+    <!-- =========================================================================
+         ADD CATEGORY MODAL
+         ========================================================================= -->
+    <div v-if="showAddCategoryModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-xs p-5 shadow-2xl">
+        <h4 class="text-sm font-bold text-zinc-100 mb-2">新增分類字典</h4>
+        <input 
+          type="text" 
+          v-model="newCatName" 
+          placeholder="例如：量化交易、機器學習..." 
+          class="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500 mb-3"
+          @keyup.enter="submitNewCategory"
+        >
+        <div class="flex justify-end gap-2 text-xs">
+          <button @click="showAddCategoryModal = false" class="px-2.5 py-1 text-zinc-400 hover:text-zinc-200">取消</button>
+          <button @click="submitNewCategory" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium">新增</button>
         </div>
       </div>
+    </div>
+
+    <!-- =========================================================================
+         FLOATING TOAST NOTIFICATION
+         ========================================================================= -->
+    <div v-if="toastMessage" class="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-zinc-900 border border-zinc-700 text-zinc-100 px-3.5 py-2.5 rounded-lg shadow-xl text-xs font-medium transition-all animate-bounce">
+      <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+        <polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>
+      <span>{{ toastMessage }}</span>
     </div>
 
   </div>
 
-  <!-- Vue 3 Application Script -->
+  <!-- VUE APPLICATION LOGIC -->
   <script>
-    const { createApp, ref, computed, onMounted } = Vue;
+    const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
 
     createApp({
       setup() {
+        // Data States
         const items = ref([]);
         const categories = ref([]);
+        const stats = ref({ inbox: 0, starred: 0, archived: 0, total: 0 });
         const loading = ref(false);
-        const searchQuery = ref('');
+        const viewMode = ref('list'); // 'list' or 'cards'
+        const triageView = ref('inbox'); // 'inbox', 'starred', 'archived', 'all'
         const currentCategory = ref('全部');
-        const starredOnly = ref(false);
-
-        // Modals state
+        const searchQuery = ref('');
         const activeItem = ref(null);
-        const activeTab = ref('analysis');
-        const showIngestModal = ref(false);
-        const showCategoryModal = ref(false);
+        const detailTab = ref('analysis'); // 'analysis' or 'reader'
+        const readerFontSize = ref(15);
+        
+        // Quick Omnibox Ingest State
+        const quickUrl = ref('');
+        const isIngesting = ref(false);
+        const quickInput = ref(null);
+        const searchInput = ref(null);
 
-        // Ingest form
-        const newIngestUrl = ref('');
-        const newIngestCategory = ref('');
-        const ingesting = ref(false);
-        const ingestError = ref('');
+        // Modals & Toasts
+        const showShortcutsModal = ref(false);
+        const showAddCategoryModal = ref(false);
+        const showNoteModal = ref(false);
+        const noteContent = ref('');
+        const noteCategory = ref('');
+        const newCatName = ref('');
+        const toastMessage = ref('');
+        let toastTimer = null;
 
-        // Category form
-        const newCategoryName = ref('');
+        // Show Toast
+        const triggerToast = (msg) => {
+          toastMessage.value = msg;
+          clearTimeout(toastTimer);
+          toastTimer = setTimeout(() => { toastMessage.value = ''; }, 3000);
+        };
 
-        let searchTimeout = null;
-
-        const totalItemsCount = computed(() => {
-          return categories.value.reduce((acc, cur) => acc + (cur.item_count || 0), 0);
-        });
-
-        const loadCategories = async () => {
+        // Fetch Stats
+        const loadStats = async () => {
           try {
-            const res = await fetch('/api/categories');
-            categories.value = await res.json();
+            const res = await fetch('/api/items/stats');
+            if (res.ok) {
+              stats.value = await res.json();
+            }
           } catch (e) {
-            console.error('Failed to load categories', e);
+            console.error('Failed to load stats:', e);
           }
         };
 
+        // Fetch Categories
+        const loadCategories = async () => {
+          try {
+            const res = await fetch('/api/categories');
+            if (res.ok) {
+              categories.value = await res.json();
+            }
+          } catch (e) {
+            console.error('Failed to load categories:', e);
+          }
+        };
+
+        // Fetch Items
         const loadItems = async () => {
           loading.value = true;
           try {
@@ -519,93 +972,181 @@
             if (searchQuery.value.trim()) {
               params.append('q', searchQuery.value.trim());
             }
-            if (starredOnly.value) {
+            
+            // Triage Filter
+            if (triageView.value === 'inbox') {
+              params.append('read', 'false');
+            } else if (triageView.value === 'archived') {
+              params.append('read', 'true');
+            } else if (triageView.value === 'starred') {
               params.append('starred', 'true');
             }
+
             const res = await fetch(`/api/items?${params.toString()}`);
-            items.value = await res.json();
+            if (res.ok) {
+              const data = await res.json();
+              items.value = data;
+              // If activeItem is still present in list, re-sync it
+              if (activeItem.value) {
+                const refreshed = items.value.find(i => i.id === activeItem.value.id);
+                if (refreshed) {
+                  activeItem.value = refreshed;
+                }
+              }
+            }
           } catch (e) {
-            console.error('Failed to load items', e);
+            console.error('Failed to load items:', e);
           } finally {
             loading.value = false;
           }
         };
 
-        const debounceSearch = () => {
-          clearTimeout(searchTimeout);
-          searchTimeout = setTimeout(() => {
-            loadItems();
-          }, 350);
-        };
-
-        const selectCategory = (name) => {
-          currentCategory.value = name;
+        // Triage View Selector
+        const setTriageView = (v) => {
+          triageView.value = v;
           loadItems();
         };
 
-        const resetFilters = () => {
-          searchQuery.value = '';
-          currentCategory.value = '全部';
-          starredOnly.value = false;
+        // Category Selector
+        const selectCategory = (cat) => {
+          currentCategory.value = cat;
           loadItems();
         };
 
-        const openDeepDive = (item) => {
-          activeItem.value = JSON.parse(JSON.stringify(item));
-          activeTab.value = 'analysis';
+        // Select Item (Open Reader Pane)
+        const selectItem = (item) => {
+          activeItem.value = item;
         };
 
-        const renderMarkdown = (text) => {
-          if (!text) return '';
-          return marked.parse(text);
-        };
+        // Quick Ingest Handler (Accepts URLs OR Free-form Text / Snippets)
+        const handleQuickIngest = async () => {
+          const content = quickUrl.value.trim();
+          if (!content) return;
 
-        const cleanHost = (url) => {
+          isIngesting.value = true;
+          triggerToast('正在由 AI 深入解析情報與技術段落 (L1/L2)...');
+          
           try {
-            return new URL(url).hostname;
-          } catch {
-            return url;
+            const res = await fetch('/api/ingest', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': 'omnifs888'
+              },
+              body: JSON.stringify({
+                content: content,
+                async_mode: false
+              })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+              quickUrl.value = '';
+              triggerToast('已成功存入並生成兩段式解構！');
+              await loadStats();
+              await loadCategories();
+              await loadItems();
+              if (data.item) {
+                activeItem.value = data.item;
+              }
+            } else {
+              triggerToast('解析失敗: ' + (data.detail || '未知錯誤'));
+            }
+          } catch (e) {
+            triggerToast('網路請求失敗: ' + e.message);
+          } finally {
+            isIngesting.value = false;
           }
         };
 
-        const formatRelativeTime = (isoString) => {
-          if (!isoString) return '';
+        // Dedicated Note / Multi-line Snippet Ingest Handler
+        const submitNoteIngest = async () => {
+          const content = noteContent.value.trim();
+          if (!content) return;
+
+          isIngesting.value = true;
+          triggerToast('正在由 AI 深入解析技術筆記 (L1/L2)...');
+
           try {
-            const d = new Date(isoString);
-            const now = new Date();
-            const diffMs = now - d;
-            const diffMin = Math.floor(diffMs / 60000);
-            if (diffMin < 1) return '剛剛';
-            if (diffMin < 60) return `${diffMin} 分鐘前`;
-            const diffHr = Math.floor(diffMin / 60);
-            if (diffHr < 24) return `${diffHr} 小時前`;
-            const diffDay = Math.floor(diffHr / 24);
-            return `${diffDay} 天前`;
-          } catch {
-            return isoString;
+            const res = await fetch('/api/ingest', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': 'omnifs888'
+              },
+              body: JSON.stringify({
+                content: content,
+                category: noteCategory.value || null,
+                async_mode: false
+              })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+              noteContent.value = '';
+              showNoteModal.value = false;
+              triggerToast('技術筆記已成功存入大腦！');
+              await loadStats();
+              await loadCategories();
+              await loadItems();
+              if (data.item) {
+                activeItem.value = data.item;
+              }
+            } else {
+              triggerToast('解析失敗: ' + (data.detail || '未知錯誤'));
+            }
+          } catch (e) {
+            triggerToast('網路請求失敗: ' + e.message);
+          } finally {
+            isIngesting.value = false;
           }
         };
 
-        const getSourceBadgeClass = (source) => {
-          if (source === 'youtube') return 'bg-red-500/20 text-red-400 border border-red-500/30';
-          if (source === 'github') return 'bg-slate-700 text-slate-200 border border-slate-600';
-          return 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
-        };
-
+        // Toggle Star
         const toggleStar = async (item) => {
-          const newVal = item.is_starred ? 0 : 1;
-          item.is_starred = newVal;
+          const nextVal = item.is_starred ? 0 : 1;
           try {
-            await fetch(`/api/items/${item.id}`, {
+            const res = await fetch(`/api/items/${item.id}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ is_starred: newVal })
+              body: JSON.stringify({ is_starred: nextVal })
             });
+            if (res.ok) {
+              item.is_starred = nextVal;
+              triggerToast(nextVal ? '已標記為星標' : '已取消星標');
+              loadStats();
+              if (triageView.value === 'starred') {
+                loadItems();
+              }
+            }
           } catch (e) {
-            console.error(e);
+            triggerToast('星標狀態更新失敗');
           }
         };
 
+        // Toggle Read / Archive
+        const toggleRead = async (item) => {
+          const nextVal = item.is_read ? 0 : 1;
+          try {
+            const res = await fetch(`/api/items/${item.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ is_read: nextVal })
+            });
+            if (res.ok) {
+              item.is_read = nextVal;
+              triggerToast(nextVal ? '已歸檔至封存區' : '已移回待讀 Inbox');
+              loadStats();
+              if (triageView.value === 'inbox' || triageView.value === 'archived') {
+                loadItems();
+              }
+            }
+          } catch (e) {
+            triggerToast('狀態更新失敗');
+          }
+        };
+
+        // Update Item Category
         const updateItemCategory = async (item) => {
           try {
             await fetch(`/api/items/${item.id}`, {
@@ -613,70 +1154,36 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ category_name: item.category_name })
             });
-            await loadCategories();
-            await loadItems();
+            triggerToast(`已更改分類為「${item.category_name}」`);
+            loadCategories();
           } catch (e) {
-            console.error(e);
+            triggerToast('分類更新失敗');
           }
         };
 
+        // Delete Item
         const deleteItem = async (item) => {
-          if (!confirm(`確定要刪除「${item.title_l1}」嗎？`)) return;
+          if (!confirm(`確定要刪除「${item.title_l1}」嗎？此操作不可逆。`)) return;
           try {
-            await fetch(`/api/items/${item.id}`, { method: 'DELETE' });
-            activeItem.value = null;
-            await loadCategories();
-            await loadItems();
-          } catch (e) {
-            console.error(e);
-          }
-        };
-
-        const copySummary = (item) => {
-          const text = `📌 ${item.title_l1}\n⚡ ${item.summary_l1}\n🏷️ ${item.tech_tags.join(' ')}\n🔗 ${item.url}`;
-          navigator.clipboard.writeText(text);
-          alert('白話摘要已複製到剪貼簿！');
-        };
-
-        const submitIngest = async () => {
-          if (!newIngestUrl.value) return;
-          ingesting.value = true;
-          ingestError.value = '';
-          try {
-            const res = await fetch('/api/ingest', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                url: newIngestUrl.value,
-                category: newIngestCategory.value || null
-              })
-            });
-            const data = await res.json();
-            if (!res.ok) {
-              throw new Error(data.detail || '存入失敗');
-            }
-            newIngestUrl.value = '';
-            showIngestModal.value = false;
-            await loadCategories();
-            await loadItems();
-            if (data.item) {
-              openDeepDive(data.item);
+            const res = await fetch(`/api/items/${item.id}`, { method: 'DELETE' });
+            if (res.ok) {
+              triggerToast('已刪除該情報項目');
+              if (activeItem.value && activeItem.value.id === item.id) {
+                activeItem.value = null;
+              }
+              loadStats();
+              loadCategories();
+              loadItems();
             }
           } catch (e) {
-            ingestError.value = e.message;
-          } finally {
-            ingesting.value = false;
+            triggerToast('刪除失敗');
           }
         };
 
-        const showAddCategoryPrompt = () => {
-          const name = prompt('請輸入新分類名稱：');
-          if (name && name.trim()) {
-            addCategoryDirect(name.trim());
-          }
-        };
-
-        const addCategoryDirect = async (name) => {
+        // Add New Category
+        const submitNewCategory = async () => {
+          const name = newCatName.value.trim();
+          if (!name) return;
           try {
             const res = await fetch('/api/categories', {
               method: 'POST',
@@ -684,74 +1191,205 @@
               body: JSON.stringify({ name })
             });
             if (res.ok) {
-              await loadCategories();
-              currentCategory.value = name;
-              await loadItems();
-            } else {
-              const err = await res.json();
-              alert(err.detail || '新增失敗');
+              newCatName.value = '';
+              showAddCategoryModal.value = false;
+              triggerToast(`已新增分類「${name}」`);
+              loadCategories();
             }
           } catch (e) {
-            console.error(e);
+            triggerToast('新增分類失敗');
           }
         };
 
-        const addNewCategory = async () => {
-          if (!newCategoryName.value.trim()) return;
-          await addCategoryDirect(newCategoryName.value.trim());
-          newCategoryName.value = '';
+        // Copy Summary to Clipboard
+        const copySummary = (item) => {
+          const text = `${item.title_l1}\n\n【核心論點】\n${item.summary_l1}\n\n原始連結: ${item.url}`;
+          navigator.clipboard.writeText(text).then(() => {
+            triggerToast('已複製白話重點至剪貼簿！');
+          }).catch(() => {
+            triggerToast('複製失敗，請手動複製');
+          });
         };
 
-        const deleteCategory = async (name) => {
-          if (!confirm(`確定要刪除分類「${name}」嗎？其下項目將被移至 Inbox。`)) return;
+        // Keyboard Shortcuts Handler (J/K, E, S, Enter, Esc, /, N)
+        const handleKeyDown = (e) => {
+          // If typing inside an input or textarea, ignore shortcuts
+          const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+          if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
+            if (e.key === 'Escape') {
+              document.activeElement.blur();
+            }
+            return;
+          }
+
+          if (e.key === '?') {
+            e.preventDefault();
+            showShortcutsModal.value = !showShortcutsModal.value;
+            return;
+          }
+
+          if (e.key === 'Escape') {
+            if (showShortcutsModal.value) {
+              showShortcutsModal.value = false;
+            } else if (activeItem.value) {
+              activeItem.value = null;
+            }
+            return;
+          }
+
+          if (e.key === '/' || e.key === 'Search') {
+            e.preventDefault();
+            if (searchInput.value) {
+              searchInput.value.focus();
+            }
+            return;
+          }
+
+          if (e.key.toLowerCase() === 'n') {
+            e.preventDefault();
+            if (quickInput.value) {
+              quickInput.value.focus();
+            }
+            return;
+          }
+
+          // List navigation with J / K or Arrows
+          if (items.value.length === 0) return;
+
+          const currentIndex = activeItem.value ? items.value.findIndex(i => i.id === activeItem.value.id) : -1;
+
+          if (e.key.toLowerCase() === 'j' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            const nextIdx = Math.min(items.value.length - 1, currentIndex + 1);
+            activeItem.value = items.value[nextIdx];
+          } else if (e.key.toLowerCase() === 'k' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const prevIdx = Math.max(0, currentIndex - 1);
+            activeItem.value = items.value[prevIdx];
+          } else if (e.key.toLowerCase() === 'e') {
+            if (activeItem.value) {
+              e.preventDefault();
+              toggleRead(activeItem.value);
+            }
+          } else if (e.key.toLowerCase() === 's') {
+            if (activeItem.value) {
+              e.preventDefault();
+              toggleStar(activeItem.value);
+            }
+          } else if (e.key === 'Enter') {
+            if (currentIndex === -1 && items.value.length > 0) {
+              activeItem.value = items.value[0];
+            }
+          }
+        };
+
+        // Utility Helpers
+        const cleanHost = (url) => {
+          if (!url) return '';
+          if (url.startsWith('note://')) return '筆記片段';
+          if (url.includes('#snippet-')) {
+            try {
+              return new URL(url).hostname.replace('www.', '') + ' (引文)';
+            } catch {
+              return '技術段落';
+            }
+          }
           try {
-            await fetch(`/api/categories/${encodeURIComponent(name)}`, { method: 'DELETE' });
-            await loadCategories();
-            await loadItems();
-          } catch (e) {
-            console.error(e);
+            return new URL(url).hostname.replace('www.', '');
+          } catch {
+            return '筆記片段';
           }
+        };
+
+        const formatRelativeTime = (timeStr) => {
+          if (!timeStr) return '';
+          const d = new Date(timeStr.replace(' ', 'T') + (timeStr.includes('Z') ? '' : 'Z'));
+          const diffSec = Math.floor((new Date() - d) / 1000);
+          if (diffSec < 60) return '剛才';
+          if (diffSec < 3600) return `${Math.floor(diffSec / 60)} 分鐘前`;
+          if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} 小時前`;
+          if (diffSec < 2592000) return `${Math.floor(diffSec / 86400)} 天前`;
+          return `${d.getMonth() + 1}月${d.getDate()}日`;
+        };
+
+        const getSourceBadgeClass = (source) => {
+          switch ((source || '').toLowerCase()) {
+            case 'youtube': return 'bg-red-500/15 text-red-400 border border-red-500/30';
+            case 'github': return 'bg-purple-500/15 text-purple-300 border border-purple-500/30';
+            case 'snippet':
+            case 'note': return 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+            default: return 'bg-blue-500/15 text-blue-300 border border-blue-500/30';
+          }
+        };
+
+        const renderMarkdown = (text) => {
+          if (!text) return '';
+          try {
+            return marked.parse(text);
+          } catch (e) {
+            return text;
+          }
+        };
+
+        let searchDebounceTimer = null;
+        const debounceSearch = () => {
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = setTimeout(() => {
+            loadItems();
+          }, 250);
         };
 
         onMounted(() => {
+          loadStats();
           loadCategories();
           loadItems();
+          window.addEventListener('keydown', handleKeyDown);
+        });
+
+        onUnmounted(() => {
+          window.removeEventListener('keydown', handleKeyDown);
         });
 
         return {
           items,
           categories,
+          stats,
           loading,
-          searchQuery,
+          viewMode,
+          triageView,
           currentCategory,
-          starredOnly,
-          totalItemsCount,
+          searchQuery,
           activeItem,
-          activeTab,
-          showIngestModal,
-          showCategoryModal,
-          newIngestUrl,
-          newIngestCategory,
-          ingesting,
-          ingestError,
-          newCategoryName,
-          loadItems,
-          debounceSearch,
+          detailTab,
+          readerFontSize,
+          quickUrl,
+          isIngesting,
+          quickInput,
+          searchInput,
+          showShortcutsModal,
+          showAddCategoryModal,
+          showNoteModal,
+          noteContent,
+          noteCategory,
+          newCatName,
+          toastMessage,
+          setTriageView,
           selectCategory,
-          resetFilters,
-          openDeepDive,
-          renderMarkdown,
+          selectItem,
+          handleQuickIngest,
+          submitNoteIngest,
+          toggleStar,
+          toggleRead,
+          updateItemCategory,
+          deleteItem,
+          submitNewCategory,
+          copySummary,
           cleanHost,
           formatRelativeTime,
           getSourceBadgeClass,
-          toggleStar,
-          updateItemCategory,
-          deleteItem,
-          copySummary,
-          submitIngest,
-          showAddCategoryPrompt,
-          addNewCategory,
-          deleteCategory
+          renderMarkdown,
+          debounceSearch,
+          loadItems,
         };
       }
     }).mount('#app');
