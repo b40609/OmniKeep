@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Storage (Always absolute path anchored to Hub root)
     DATABASE_PATH: str = str(BASE_DIR / "omnikeep.db")
 
+    # Telegram Bot Configuration
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_ALLOWED_USER_IDS_RAW: str = Field(default="", validation_alias="TELEGRAM_ALLOWED_USER_IDS")
+
     @field_validator("DATABASE_PATH")
     @classmethod
     def resolve_db_path(cls, v: str) -> str:
@@ -43,5 +47,16 @@ class Settings(BaseSettings):
         if not self.GEMINI_API_KEYS_RAW:
             return []
         return [k.strip() for k in self.GEMINI_API_KEYS_RAW.split(",") if k.strip()]
+
+    @property
+    def telegram_allowed_ids(self) -> List[int]:
+        if not self.TELEGRAM_ALLOWED_USER_IDS_RAW:
+            return []
+        res = []
+        for x in self.TELEGRAM_ALLOWED_USER_IDS_RAW.split(","):
+            s = x.strip()
+            if s.lstrip("-").isdigit():
+                res.append(int(s))
+        return res
 
 settings = Settings()
