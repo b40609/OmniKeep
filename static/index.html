@@ -2,10 +2,17 @@
 <html lang="zh-TW" class="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>OmniKeep - 多模態情報雷達與第二大腦</title>
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#09090b">
+  
+  <!-- Apple iOS PWA Meta Tags -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="OmniKeep">
+  <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/192/brain.png">
+  <meta name="format-detection" content="telephone=no">
   <!-- Tailwind CSS CDN with Zinc color palette -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -71,6 +78,19 @@
     /* Transitions */
     .fade-enter-active, .fade-leave-active { transition: opacity 0.15s ease; }
     .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+    /* Mobile Safe Area & Touch Optimizations */
+    :root {
+      --sat: env(safe-area-inset-top, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left, 0px);
+      --sar: env(safe-area-inset-right, 0px);
+    }
+    .safe-top-pt { padding-top: max(0px, env(safe-area-inset-top)); }
+    .safe-bottom-pb { padding-bottom: max(0px, env(safe-area-inset-bottom)); }
+    button, a, select, input {
+      -webkit-tap-highlight-color: transparent;
+    }
   </style>
 </head>
 <body class="bg-zinc-950 text-zinc-100 min-h-screen antialiased selection:bg-indigo-600 selection:text-white flex flex-col h-screen overflow-hidden font-sans">
@@ -79,10 +99,10 @@
     <!-- =========================================================================
          TOP WORKBENCH HEADER
          ========================================================================= -->
-    <header class="h-14 border-b border-zinc-800/80 bg-zinc-925/90 backdrop-blur-md px-4 flex items-center justify-between gap-3 shrink-0 z-30">
+    <header class="h-14 safe-top-pt border-b border-zinc-800/80 bg-zinc-925/90 backdrop-blur-md px-3 sm:px-4 flex items-center justify-between gap-2 sm:gap-3 shrink-0 z-30">
       
       <!-- Brand & Status -->
-      <div class="flex items-center gap-2.5 min-w-[190px]">
+      <div class="flex items-center gap-2 shrink-0">
         <div class="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2a9 9 0 0 0-9 9c0 3.6 2.1 6.7 5.2 8.1l.8 2.9h6l.8-2.9c3.1-1.4 5.2-4.5 5.2-8.1a9 9 0 0 0-9-9z"/>
@@ -92,15 +112,15 @@
         </div>
         <div class="flex items-baseline gap-1.5">
           <span class="font-bold text-sm tracking-tight text-zinc-100">OmniKeep</span>
-          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60">WORKBENCH</span>
+          <span class="hidden sm:inline-block text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60">WORKBENCH</span>
         </div>
       </div>
 
       <!-- Quick-Add Omnibox (Paste URL or Text Snippet & Enter) -->
-      <div class="flex-1 max-w-2xl relative flex items-center gap-2">
-        <div class="relative flex-1 flex items-center">
-          <div class="absolute left-3 text-zinc-500 pointer-events-none">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <div class="flex-1 max-w-2xl relative flex items-center gap-1.5 sm:gap-2 min-w-0">
+        <div class="relative flex-1 flex items-center min-w-0">
+          <div class="absolute left-2.5 sm:left-3 text-zinc-500 pointer-events-none">
+            <svg class="w-3.5 sm:w-4 h-3.5 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
             </svg>
@@ -110,11 +130,11 @@
             type="text" 
             v-model="quickUrl" 
             @keyup.enter="handleQuickIngest"
-            placeholder="貼上網址、技術段落或思考 (按 Enter 存入，按 N 聚焦)..."
+            placeholder="貼上網址、技術段落或思考 (按 Enter 存入)..."
             :disabled="isIngesting"
-            class="w-full bg-zinc-900 border border-zinc-700/80 rounded-lg pl-9 pr-24 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
+            class="w-full bg-zinc-900 border border-zinc-700/80 rounded-lg pl-8 sm:pl-9 pr-16 sm:pr-24 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
           >
-          <div class="absolute right-1.5 flex items-center gap-1">
+          <div class="absolute right-1 sm:right-1.5 flex items-center gap-1">
             <button 
               @click="handleQuickIngest"
               :disabled="!quickUrl.trim() || isIngesting"
@@ -124,7 +144,7 @@
                 <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
                 <path d="M12 2a10 10 0 0 1 10 10"/>
               </svg>
-              <span>{{ isIngesting ? '解析中' : '存入' }}</span>
+              <span>{{ isIngesting ? '解析' : '存入' }}</span>
             </button>
           </div>
         </div>
@@ -146,9 +166,9 @@
       </div>
 
       <!-- Right Toolbar (Search, Density Switcher, Shortcuts) -->
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <!-- Search Input -->
-        <div class="relative w-44 lg:w-56">
+        <div class="hidden sm:block relative w-36 lg:w-56">
           <input 
             ref="searchInput"
             type="text" 
@@ -165,7 +185,7 @@
         </div>
 
         <!-- Density Toggle (Compact List vs Card Grid) -->
-        <div class="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5">
+        <div class="hidden sm:flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5">
           <button 
             @click="viewMode = 'list'"
             :class="viewMode === 'list' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'"
@@ -199,7 +219,7 @@
         <!-- Shortcuts Help Button -->
         <button 
           @click="showShortcutsModal = true"
-          class="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg text-xs transition-colors"
+          class="hidden sm:block p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg text-xs transition-colors"
           title="鍵盤快捷鍵指南 (?)"
         >
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -208,6 +228,23 @@
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
         </button>
+
+        <!-- Install PWA Button (Visible when beforeinstallprompt fired) -->
+        <button 
+          v-if="deferredPrompt"
+          @click="installPWA"
+          class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-indigo-300 rounded-lg text-xs font-medium border border-indigo-500/30 flex items-center gap-1 shadow-sm"
+          title="安裝為手機/桌面 App"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span class="hidden md:inline">安裝 App</span>
+        </button>
+      </div>
+    </header>
       </div>
     </header>
 
@@ -535,15 +572,27 @@
       <!-- DETAIL INSPECTION & READER PANE (Right Column / Split View) -->
       <div 
         v-if="activeItem" 
-        class="fixed inset-0 z-40 lg:static lg:z-auto flex-1 h-full bg-zinc-900 border-l border-zinc-800 flex flex-col overflow-hidden shadow-2xl lg:shadow-none"
+        class="fixed inset-0 z-40 lg:static lg:z-auto flex-1 h-full bg-zinc-900 border-l border-zinc-800 flex flex-col overflow-hidden shadow-2xl lg:shadow-none safe-top-pt safe-bottom-pb"
       >
         <!-- Reader Pane Header -->
-        <div class="h-14 border-b border-zinc-800 px-5 flex items-center justify-between gap-3 bg-zinc-925 shrink-0">
+        <div class="h-14 border-b border-zinc-800 px-3 sm:px-5 flex items-center justify-between gap-2 sm:gap-3 bg-zinc-925 shrink-0">
           
           <!-- Category & Status Controls -->
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            <!-- Mobile Back to Stream Button -->
+            <button 
+              @click="activeItem = null"
+              class="lg:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-semibold active:scale-95 transition-all border border-zinc-700 shrink-0 mr-0.5 shadow-sm"
+              title="返回情報清單"
+            >
+              <svg class="w-4 h-4 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+              <span>清單</span>
+            </button>
+
             <!-- Source Badge -->
-            <span :class="getSourceBadgeClass(activeItem.source_type)" class="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold">
+            <span :class="getSourceBadgeClass(activeItem.source_type)" class="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold shrink-0">
               {{ activeItem.source_type }}
             </span>
 
@@ -551,7 +600,7 @@
             <select 
               v-model="activeItem.category_name" 
               @change="updateItemCategory(activeItem)"
-              class="bg-zinc-800 border border-zinc-700 text-xs rounded px-2 py-1 text-zinc-200 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+              class="bg-zinc-800 border border-zinc-700 text-xs rounded px-2 py-1 text-zinc-200 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer shrink-0 max-w-[110px] sm:max-w-none truncate"
             >
               <option v-for="c in categories" :key="c.id" :value="c.name">{{ c.name }}</option>
               <option value="Inbox">Inbox</option>
@@ -561,22 +610,23 @@
             <button 
               @click="toggleRead(activeItem)"
               :class="activeItem.is_read ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'"
-              class="px-2 py-1 rounded text-xs font-mono font-medium border flex items-center gap-1 transition-colors"
+              class="px-2 py-1 rounded text-xs font-mono font-medium border flex items-center gap-1 transition-colors shrink-0"
               title="按 E 切換狀態"
             >
               <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-              <span>{{ activeItem.is_read ? '已封存 (E)' : '待消化 (E)' }}</span>
+              <span class="hidden sm:inline">{{ activeItem.is_read ? '已封存 (E)' : '待消化 (E)' }}</span>
+              <span class="sm:hidden">{{ activeItem.is_read ? '已封存' : '待消化' }}</span>
             </button>
           </div>
 
           <!-- Actions Toolbar -->
-          <div class="flex items-center gap-1.5">
+          <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
             <!-- Star Button -->
             <button 
               @click="toggleStar(activeItem)"
-              class="p-1.5 rounded-lg text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 transition-colors"
+              class="p-2 sm:p-1.5 rounded-lg text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 transition-colors"
               :title="activeItem.is_starred ? '取消星標 (S)' : '加星標 (S)'"
             >
               <svg class="w-4 h-4" :class="activeItem.is_starred ? 'text-amber-400 fill-amber-400' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -587,7 +637,7 @@
             <!-- Copy Takeaway -->
             <button 
               @click="copySummary(activeItem)"
-              class="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              class="p-2 sm:p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
               title="複製白話重點"
             >
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -601,7 +651,7 @@
               :href="activeItem.url" 
               target="_blank" 
               rel="noopener"
-              class="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              class="p-2 sm:p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
               title="前往原始網址"
             >
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -614,7 +664,7 @@
             <!-- Delete Item -->
             <button 
               @click="deleteItem(activeItem)"
-              class="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors"
+              class="p-2 sm:p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors"
               title="刪除項目"
             >
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -623,10 +673,10 @@
               </svg>
             </button>
 
-            <!-- Close Pane Button -->
+            <!-- Close Pane Button (Desktop Esc) -->
             <button 
               @click="activeItem = null"
-              class="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors ml-1"
+              class="hidden lg:flex p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors ml-1"
               title="關閉閱覽面板 (Esc)"
             >
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1331,6 +1381,17 @@
           }
         };
 
+        const deferredPrompt = ref(null);
+
+        const installPWA = async () => {
+          if (!deferredPrompt.value) return;
+          deferredPrompt.value.prompt();
+          const { outcome } = await deferredPrompt.value.userChoice;
+          if (outcome === 'accepted') {
+            deferredPrompt.value = null;
+          }
+        };
+
         let searchDebounceTimer = null;
         const debounceSearch = () => {
           clearTimeout(searchDebounceTimer);
@@ -1344,6 +1405,19 @@
           loadCategories();
           loadItems();
           window.addEventListener('keydown', handleKeyDown);
+
+          // PWA Install prompt listener
+          window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt.value = e;
+          });
+
+          // PWA Service Worker Registration
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/sw.js')
+              .then(reg => console.log('[OmniKeep PWA] SW registered:', reg.scope))
+              .catch(err => console.warn('[OmniKeep PWA] SW registration failed:', err));
+          }
         });
 
         onUnmounted(() => {
@@ -1390,6 +1464,8 @@
           renderMarkdown,
           debounceSearch,
           loadItems,
+          deferredPrompt,
+          installPWA,
         };
       }
     }).mount('#app');
