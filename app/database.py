@@ -96,6 +96,65 @@ def init_db():
         END;
     """)
 
+    # 7. Radar Subscriptions table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS radar_sources (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            url TEXT NOT NULL,
+            tier INTEGER DEFAULT 2,
+            hot_hours TEXT DEFAULT '[]',
+            check_interval_minutes INTEGER DEFAULT 60,
+            last_fetched_at TEXT,
+            last_published_at TEXT,
+            etag TEXT,
+            last_modified_header TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 8. User Topic Weights table (Signal Tuner: Boost / Dampen / Mute)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_topic_weights (
+            topic_tag TEXT PRIMARY KEY,
+            weight REAL DEFAULT 1.0,
+            boost_count INTEGER DEFAULT 0,
+            dampen_count INTEGER DEFAULT 0,
+            is_blocked INTEGER DEFAULT 0,
+            last_interacted_at TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 9. Radar Events table (Cross-source deduplication & clustering)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS radar_events (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            primary_item_id TEXT NOT NULL,
+            related_item_ids TEXT DEFAULT '[]',
+            unique_source_count INTEGER DEFAULT 1,
+            score REAL DEFAULT 1.0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 10. Radar Digests table (Batched multi-source digests)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS radar_digests (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            digest_type TEXT NOT NULL,
+            markdown_content TEXT NOT NULL,
+            item_ids TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -331,3 +390,261 @@ def get_status_counts() -> Dict[str, int]:
     total = cursor.fetchone()[0]
     conn.close()
     return {"inbox": inbox, "starred": starred, "archived": archived, "total": total}
+
+# ── Radar Sources & Recommender DAO ──────────────────────────
+
+def get_all_radar_sources(only_active: bool = False) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if only_active:
+        cursor.execute("SELECT * FROM radar_sources WHERE is_active = 1 ORDER BY created_at DESC")
+    else:
+        cursor.execute("SELECT * FROM radar_sources ORDER BY created_at DESC")
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    for r in rows:
+        try:
+            r["hot_hours"] = json.loads(r.get("hot_hours") or "[]")
+        except Exception:
+            r["hot_hours"] = []
+    return rows
+
+def get_radar_source(source_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM radar_sources WHERE id = ?", (source_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    d = dict(row)
+    try:
+        d["hot_hours"] = json.loads(d.get("hot_hours") or "[]")
+    except Exception:
+        d["hot_hours"] = []
+    return d
+
+def save_radar_source(data: Dict[str, Any]) -> str:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    source_id = data.get("id") or f"src_{uuid.uuid4().hex[:8]}"
+    hot_hours_json = json.dumps(data.get("hot_hours") or [])
+    cursor.execute("""
+        INSERT INTO radar_sources (
+            id, name, source_type, url, tier, hot_hours, check_interval_minutes, is_active
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            url = excluded.url,
+            tier = excluded.tier,
+            hot_hours = excluded.hot_hours,
+            check_interval_minutes = excluded.check_interval_minutes,
+            is_active = excluded.is_active
+    """, (
+        source_id,
+        data["name"],
+        data["source_type"],
+        data["url"],
+        data.get("tier", 2),
+        hot_hours_json,
+        data.get("check_interval_minutes", 60),
+        data.get("is_active", 1)
+    ))
+    conn.commit()
+    conn.close()
+    return source_id
+
+def delete_radar_source(source_id: str) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM radar_sources WHERE id = ?", (source_id,))
+    conn.commit()
+    ok = cursor.rowcount > 0
+    conn.close()
+    return ok
+
+def update_radar_source_fetch_meta(
+    source_id: str,
+    last_fetched_at: str,
+    last_published_at: Optional[str] = None,
+    etag: Optional[str] = None,
+    last_modified_header: Optional[str] = None,
+    hot_hours: Optional[List[int]] = None
+):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    updates = ["last_fetched_at = ?"]
+    params = [last_fetched_at]
+    if last_published_at:
+        updates.append("last_published_at = ?")
+        params.append(last_published_at)
+    if etag is not None:
+        updates.append("etag = ?")
+        params.append(etag)
+    if last_modified_header is not None:
+        updates.append("last_modified_header = ?")
+        params.append(last_modified_header)
+    if hot_hours is not None:
+        updates.append("hot_hours = ?")
+        params.append(json.dumps(hot_hours))
+    params.append(source_id)
+    cursor.execute(f"UPDATE radar_sources SET {', '.join(updates)} WHERE id = ?", params)
+    conn.commit()
+    conn.close()
+
+# ── Topic Signal Tuning (Weights) ───────────────────────────
+
+def get_all_topic_weights() -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM user_topic_weights ORDER BY weight DESC, topic_tag ASC")
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def get_topic_weight(tag: str) -> float:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT weight, is_blocked FROM user_topic_weights WHERE topic_tag = ?", (tag.strip(),))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return 1.0
+    if row["is_blocked"]:
+        return -999.0
+    return float(row["weight"])
+
+def tune_topic_signal(tag: str, action: str) -> Dict[str, Any]:
+    """
+    Tune topic signal without tacky emojis:
+    - action 'boost' (Tune Up): weight += 0.5, boost_count += 1
+    - action 'dampen' (Tune Down): weight -= 1.0, dampen_count += 1
+    - action 'mute' (Shield / Block): is_blocked = 1, weight = -10.0
+    - action 'reset': weight = 1.0, is_blocked = 0
+    """
+    clean_tag = tag.strip()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM user_topic_weights WHERE topic_tag = ?", (clean_tag,))
+    row = cursor.fetchone()
+    now_iso = datetime.utcnow().isoformat()
+
+    if not row:
+        cur_weight = 1.0
+        b_count = 0
+        d_count = 0
+        blocked = 0
+    else:
+        cur_weight = float(row["weight"])
+        b_count = int(row["boost_count"])
+        d_count = int(row["dampen_count"])
+        blocked = int(row["is_blocked"])
+
+    if action == "boost":
+        new_weight = min(10.0, cur_weight + 0.5)
+        b_count += 1
+        blocked = 0
+    elif action == "dampen":
+        new_weight = max(-5.0, cur_weight - 1.0)
+        d_count += 1
+    elif action == "mute":
+        new_weight = -10.0
+        blocked = 1
+    elif action == "reset":
+        new_weight = 1.0
+        blocked = 0
+    else:
+        new_weight = cur_weight
+
+    cursor.execute("""
+        INSERT INTO user_topic_weights (
+            topic_tag, weight, boost_count, dampen_count, is_blocked, last_interacted_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(topic_tag) DO UPDATE SET
+            weight = excluded.weight,
+            boost_count = excluded.boost_count,
+            dampen_count = excluded.dampen_count,
+            is_blocked = excluded.is_blocked,
+            last_interacted_at = excluded.last_interacted_at
+    """, (clean_tag, new_weight, b_count, d_count, blocked, now_iso))
+    conn.commit()
+    conn.close()
+
+    return {
+        "topic_tag": clean_tag,
+        "weight": new_weight,
+        "boost_count": b_count,
+        "dampen_count": d_count,
+        "is_blocked": blocked,
+        "last_interacted_at": now_iso
+    }
+
+# ── Radar Events & Digests ──────────────────────────────────
+
+def save_radar_event(data: Dict[str, Any]) -> str:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    event_id = data.get("id") or f"evt_{uuid.uuid4().hex[:10]}"
+    related_json = json.dumps(data.get("related_item_ids") or [])
+    now_iso = datetime.utcnow().isoformat()
+    cursor.execute("""
+        INSERT INTO radar_events (
+            id, title, summary, primary_item_id, related_item_ids, unique_source_count, score, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            title = excluded.title,
+            summary = excluded.summary,
+            related_item_ids = excluded.related_item_ids,
+            unique_source_count = excluded.unique_source_count,
+            score = excluded.score,
+            updated_at = excluded.updated_at
+    """, (
+        event_id,
+        data["title"],
+        data["summary"],
+        data["primary_item_id"],
+        related_json,
+        data.get("unique_source_count", 1),
+        data.get("score", 1.0),
+        now_iso,
+        now_iso
+    ))
+    conn.commit()
+    conn.close()
+    return event_id
+
+def save_radar_digest(data: Dict[str, Any]) -> str:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    digest_id = data.get("id") or f"dig_{uuid.uuid4().hex[:10]}"
+    items_json = json.dumps(data.get("item_ids") or [])
+    now_iso = datetime.utcnow().isoformat()
+    cursor.execute("""
+        INSERT INTO radar_digests (
+            id, title, digest_type, markdown_content, item_ids, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        digest_id,
+        data["title"],
+        data.get("digest_type", "evening"),
+        data["markdown_content"],
+        items_json,
+        now_iso
+    ))
+    conn.commit()
+    conn.close()
+    return digest_id
+
+def get_latest_radar_digests(limit: int = 10) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM radar_digests ORDER BY created_at DESC LIMIT ?", (limit,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    for r in rows:
+        try:
+            r["item_ids"] = json.loads(r["item_ids"])
+        except Exception:
+            r["item_ids"] = []
+    return rows
+
