@@ -1,7 +1,10 @@
 import os
+from pathlib import Path
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
+
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
@@ -18,11 +21,19 @@ class Settings(BaseSettings):
     GEMINI_API_KEYS_RAW: str = Field(default="", validation_alias="GEMINI_API_KEYS")
     GEMINI_MODEL: str = "gemini-2.5-flash"
     
-    # Storage
-    DATABASE_PATH: str = "omnikeep.db"
+    # Storage (Always absolute path anchored to Hub root)
+    DATABASE_PATH: str = str(BASE_DIR / "omnikeep.db")
+
+    @field_validator("DATABASE_PATH")
+    @classmethod
+    def resolve_db_path(cls, v: str) -> str:
+        p = Path(v)
+        if not p.is_absolute():
+            return str((BASE_DIR / p).resolve())
+        return str(p.resolve())
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="ignore"
     )

@@ -203,9 +203,14 @@ def get_items(
     cursor = conn.cursor()
     
     if query and query.strip():
-        # FTS query
-        clean_q = query.strip().replace('"', '""')
-        fts_query = f'"{clean_q}"*'
+        # FTS query with multi-term OR search & graceful LIKE fallback
+        clean_q = query.strip().replace('"', '')
+        words = [w.strip() for w in clean_q.split() if w.strip()]
+        if len(words) > 1:
+            fts_query = " OR ".join([f'"{w}"*' for w in words])
+        else:
+            fts_query = f'"{clean_q}"*'
+            
         sql = """
             SELECT i.* FROM items i
             JOIN items_fts f ON i.id = f.id
@@ -223,7 +228,31 @@ def get_items(
             params.append(1 if is_read else 0)
         sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
-        cursor.execute(sql, params)
+
+        try:
+            cursor.execute(sql, params)
+            db_rows = cursor.fetchall()
+        except Exception:
+            db_rows = []
+
+        if not db_rows:
+            # Fallback to LIKE matching
+            fallback_sql = "SELECT * FROM items WHERE (title_l1 LIKE ? OR summary_l1 LIKE ? OR tech_tags LIKE ? OR deep_analysis LIKE ?)"
+            like_param = f"%{clean_q}%"
+            f_params = [like_param, like_param, like_param, like_param]
+            if category and category != "全部":
+                fallback_sql += " AND category_name = ?"
+                f_params.append(category)
+            if is_starred is not None:
+                fallback_sql += " AND is_starred = ?"
+                f_params.append(1 if is_starred else 0)
+            if is_read is not None:
+                fallback_sql += " AND is_read = ?"
+                f_params.append(1 if is_read else 0)
+            fallback_sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            f_params.extend([limit, offset])
+            cursor.execute(fallback_sql, f_params)
+            db_rows = cursor.fetchall()
     else:
         sql = "SELECT * FROM items WHERE 1=1"
         params = []
@@ -239,9 +268,10 @@ def get_items(
         sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         cursor.execute(sql, params)
+        db_rows = cursor.fetchall()
 
     rows = []
-    for r in cursor.fetchall():
+    for r in db_rows:
         d = dict(r)
         try:
             d["tech_tags"] = json.loads(d["tech_tags"])
