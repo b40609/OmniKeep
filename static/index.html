@@ -216,6 +216,23 @@
           </button>
         </div>
 
+        <!-- Radar Intelligence Panel Toggle -->
+        <button 
+          @click="showRadarModal = true; loadRadarData()"
+          class="p-1.5 text-zinc-400 hover:text-indigo-300 hover:bg-zinc-800 rounded-lg text-xs transition-colors flex items-center gap-1 border border-zinc-800"
+          title="情報雷達：訂閱來源、時段規律與話題信號微調 (R)"
+        >
+          <svg class="w-4 h-4 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="m4.93 4.93 4.24 4.24"/>
+            <path d="m14.83 9.17 4.24-4.24"/>
+            <path d="m14.83 14.83 4.24 4.24"/>
+            <path d="m9.17 14.83-4.24 4.24"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <span class="hidden md:inline text-[11px] font-medium">雷達引擎</span>
+        </button>
+
         <!-- Shortcuts Help Button -->
         <button 
           @click="showShortcutsModal = true"
@@ -444,15 +461,17 @@
                   {{ item.summary_l1 }}
                 </p>
 
-                <!-- Tags Pill -->
+                <!-- Tags Pill (Click to Tune Topic Signal) -->
                 <div class="flex items-center gap-1.5 mt-2 flex-wrap">
-                  <span 
+                  <button 
                     v-for="tag in (item.tech_tags || []).slice(0, 3)" 
                     :key="tag"
-                    class="text-[10px] font-mono text-zinc-400 bg-zinc-900/80 px-1.5 py-0.2 rounded border border-zinc-800/80"
+                    @click.stop="tuneTagSignal(tag, 'boost')"
+                    class="group/tag inline-flex items-center gap-1 text-[10px] font-mono text-zinc-400 hover:text-indigo-300 bg-zinc-900/80 hover:bg-zinc-800 px-1.5 py-0.2 rounded border border-zinc-800/80 hover:border-indigo-500/40 transition-colors"
+                    :title="'點擊提升 #' + tag + ' 權重 (Boost)'"
                   >
-                    #{{ tag }}
-                  </span>
+                    <span>#{{ tag }}</span>
+                  </button>
                   <span v-if="(item.tech_tags || []).length > 3" class="text-[10px] text-zinc-600 font-mono">
                     +{{ (item.tech_tags || []).length - 3 }}
                   </span>
@@ -461,6 +480,26 @@
 
               <!-- Row Hover Quick Actions -->
               <div class="hidden group-hover:flex items-center gap-1 shrink-0 self-center pl-2">
+                <!-- Signal Tune Up (Boost) -->
+                <button 
+                  @click.stop="tuneItemSignal(item, 'boost')"
+                  class="p-1 rounded text-zinc-500 hover:text-indigo-400 hover:bg-zinc-800 transition-colors"
+                  title="增強此類技術權重 (+ / Alt+Up)"
+                >
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="18 15 12 9 6 15"/>
+                  </svg>
+                </button>
+                <!-- Signal Tune Down (Dampen) -->
+                <button 
+                  @click.stop="tuneItemSignal(item, 'dampen')"
+                  class="p-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 transition-colors"
+                  title="降低此類話題頻率 (- / Alt+Down)"
+                >
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                </button>
                 <!-- Star Action -->
                 <button 
                   @click.stop="toggleStar(item)" 
@@ -621,6 +660,38 @@
 
           <!-- Actions Toolbar -->
           <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
+            <!-- Topic Signal Equalizer (Boost / Dampen / Mute) -->
+            <div class="flex items-center bg-zinc-800/80 border border-zinc-700/60 rounded-lg p-0.5 mr-0.5" title="話題訊號調諧器">
+              <button 
+                @click="tuneItemSignal(activeItem, 'boost')"
+                class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-indigo-400 transition-colors"
+                title="增強關注此技術架構 (+ / Alt+Up)"
+              >
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="18 15 12 9 6 15"/>
+                </svg>
+              </button>
+              <button 
+                @click="tuneItemSignal(activeItem, 'dampen')"
+                class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-rose-400 transition-colors"
+                title="降低此類話題出現率 (- / Alt+Down)"
+              >
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+              <button 
+                @click="tuneItemSignal(activeItem, 'mute')"
+                class="p-1 rounded hover:bg-zinc-700 text-zinc-500 hover:text-rose-400 transition-colors"
+                title="徹底屏蔽此項目之核心標籤 (Mute)"
+              >
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="4.5" y1="4.5" x2="19.5" y2="19.5"/>
+                  <circle cx="12" cy="12" r="9"/>
+                </svg>
+              </button>
+            </div>
+
             <!-- Star Button -->
             <button 
               @click="toggleStar(activeItem)"
@@ -931,6 +1002,163 @@
     </div>
 
     <!-- =========================================================================
+         RADAR INTELLIGENCE & SIGNAL TUNING MODAL
+         ========================================================================= -->
+    <div v-if="showRadarModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-3xl p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh]">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-between pb-3 border-b border-zinc-800 shrink-0">
+          <div class="flex items-center gap-2.5">
+            <div class="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="m4.93 4.93 4.24 4.24"/>
+                <path d="m14.83 9.17 4.24-4.24"/>
+                <path d="m14.83 14.83 4.24 4.24"/>
+                <path d="m9.17 14.83-4.24 4.24"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="font-bold text-sm text-zinc-100">情報雷達與自適應調度引擎</h3>
+                <span class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">ADAPTIVE RADAR</span>
+              </div>
+              <p class="text-[11px] text-zinc-400 mt-0.5 font-mono">YouTube 晚間高峰學習 · GitHub ETag · RSS · 信號調諧庫</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button 
+              @click="triggerRadarScan" 
+              :disabled="isScanningRadar"
+              class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 shadow-sm"
+            >
+              <svg v-if="isScanningRadar" class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+                <path d="M12 2a10 10 0 0 1 10 10"/>
+              </svg>
+              <span>{{ isScanningRadar ? '巡檢中...' : '立即自適應巡檢' }}</span>
+            </button>
+            <button @click="showRadarModal = false" class="text-zinc-500 hover:text-zinc-300 p-1">✕</button>
+          </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="flex items-center gap-4 border-b border-zinc-800 text-xs shrink-0 font-medium">
+          <button 
+            @click="radarTab = 'sources'"
+            :class="radarTab === 'sources' ? 'border-b-2 border-indigo-500 text-indigo-400 font-semibold' : 'text-zinc-400 hover:text-zinc-200'"
+            class="py-2 transition-colors flex items-center gap-1.5"
+          >
+            <span>訂閱頻道與來源 ({{ radarSources.length }})</span>
+          </button>
+          <button 
+            @click="radarTab = 'topics'"
+            :class="radarTab === 'topics' ? 'border-b-2 border-indigo-500 text-indigo-400 font-semibold' : 'text-zinc-400 hover:text-zinc-200'"
+            class="py-2 transition-colors flex items-center gap-1.5"
+          >
+            <span>話題信號調諧庫 ({{ radarTopics.length }})</span>
+          </button>
+          <button 
+            @click="radarTab = 'digests'"
+            :class="radarTab === 'digests' ? 'border-b-2 border-indigo-500 text-indigo-400 font-semibold' : 'text-zinc-400 hover:text-zinc-200'"
+            class="py-2 transition-colors flex items-center gap-1.5"
+          >
+            <span>自動焦點戰報 ({{ radarDigests.length }})</span>
+          </button>
+        </div>
+
+        <!-- Tab 1: Sources Management -->
+        <div v-if="radarTab === 'sources'" class="flex-1 overflow-y-auto space-y-4 pr-1">
+          <!-- Add Source Bar -->
+          <div class="bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 space-y-2.5">
+            <span class="text-xs font-semibold text-zinc-300">新增自動追蹤來源</span>
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs">
+              <input v-model="newSource.name" type="text" placeholder="名稱 (如: 3Blue1Brown)" class="bg-zinc-900 border border-zinc-700 rounded px-2.5 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500">
+              <select v-model="newSource.source_type" class="bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-zinc-200 focus:outline-none">
+                <option value="youtube">YouTube 頻道</option>
+                <option value="github">GitHub 倉庫/Trending</option>
+                <option value="rss">技術 Blog / RSS</option>
+              </select>
+              <input v-model="newSource.url" type="text" placeholder="URL 網址或頻道連結" class="bg-zinc-900 border border-zinc-700 rounded px-2.5 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 sm:col-span-2">
+            </div>
+            <div class="flex justify-end pt-1">
+              <button @click="submitAddSource" :disabled="!newSource.name || !newSource.url" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded text-xs font-medium">加入追蹤</button>
+            </div>
+          </div>
+
+          <!-- Existing Sources List -->
+          <div class="space-y-2">
+            <div v-for="src in radarSources" :key="src.id" class="p-3 bg-zinc-950 rounded-xl border border-zinc-800 flex items-center justify-between text-xs">
+              <div class="min-w-0 flex-1 pr-3">
+                <div class="flex items-center gap-2 mb-1">
+                  <span :class="getSourceBadgeClass(src.source_type)" class="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase font-bold">
+                    {{ src.source_type }}
+                  </span>
+                  <span class="font-semibold text-zinc-200 truncate">{{ src.name }}</span>
+                  <span class="text-[10px] text-zinc-500 font-mono">Tier {{ src.tier }}</span>
+                </div>
+                <div class="flex items-center gap-3 text-[11px] text-zinc-500 font-mono truncate">
+                  <span class="truncate max-w-xs">{{ src.url }}</span>
+                  <span v-if="(src.hot_hours || []).length > 0" class="text-indigo-400 bg-indigo-500/10 px-1.5 py-0.2 rounded shrink-0">
+                    學習到時段: {{ src.hot_hours.map(h => h + ':00').join(', ') }}
+                  </span>
+                  <span v-else class="text-zinc-600 shrink-0">時段分析中...</span>
+                </div>
+              </div>
+              <button @click="deleteRadarSource(src.id)" class="text-zinc-600 hover:text-red-400 p-1 shrink-0" title="移除追蹤">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Topic Weights & Tuning Database -->
+        <div v-if="radarTab === 'topics'" class="flex-1 overflow-y-auto space-y-3 pr-1">
+          <div class="text-[11px] text-zinc-400 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800 flex items-center justify-between font-mono">
+            <span>點擊清單項目或閱讀器旁的 ↗ / ↘ 按鈕進行信號調諧；被屏蔽之標籤將自動攔截。</span>
+          </div>
+
+          <div class="divide-y divide-zinc-800/60">
+            <div v-for="tp in radarTopics" :key="tp.topic_tag" class="py-2.5 flex items-center justify-between text-xs font-mono">
+              <div class="flex items-center gap-2.5">
+                <span class="font-semibold" :class="tp.is_blocked ? 'text-zinc-500 line-through' : 'text-zinc-200'">#{{ tp.topic_tag }}</span>
+                <span v-if="tp.is_blocked" class="px-1.5 py-0.2 rounded text-[9px] bg-red-500/15 text-red-400 border border-red-500/30">MUTED</span>
+                <span v-else-if="tp.weight > 1.0" class="px-1.5 py-0.2 rounded text-[9px] bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">+{{ (tp.weight - 1.0).toFixed(1) }}</span>
+                <span v-else-if="tp.weight < 1.0" class="px-1.5 py-0.2 rounded text-[9px] bg-amber-500/15 text-amber-300 border border-amber-500/30">{{ (tp.weight - 1.0).toFixed(1) }}</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button @click="tuneTopicDirectly(tp.topic_tag, 'boost')" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-indigo-300 text-[11px]" title="增益 (+0.5)">↗ 加深</button>
+                <button @click="tuneTopicDirectly(tp.topic_tag, 'dampen')" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-rose-300 text-[11px]" title="降頻 (-1.0)">↘ 降頻</button>
+                <button @click="tuneTopicDirectly(tp.topic_tag, tp.is_blocked ? 'reset' : 'mute')" :class="tp.is_blocked ? 'text-indigo-400' : 'text-zinc-500 hover:text-red-400'" class="px-2 py-0.5 rounded bg-zinc-800 text-[11px]">
+                  {{ tp.is_blocked ? '解除' : '靜音' }}
+                </button>
+              </div>
+            </div>
+            <div v-if="radarTopics.length === 0" class="py-8 text-center text-xs text-zinc-500">
+              尚無調諧記錄，可於主介面卡片點擊 ↗ / ↘ 或對特定標籤點擊加權。
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Batched Digests History -->
+        <div v-if="radarTab === 'digests'" class="flex-1 overflow-y-auto space-y-4 pr-1">
+          <div v-for="dig in radarDigests" :key="dig.id" class="p-4 bg-zinc-950 rounded-xl border border-zinc-800 space-y-3">
+            <div class="flex items-center justify-between text-xs pb-2 border-b border-zinc-800">
+              <span class="font-bold text-zinc-100">{{ dig.title }}</span>
+              <span class="text-zinc-500 font-mono">{{ formatRelativeTime(dig.created_at) }}</span>
+            </div>
+            <div class="prose-reader text-xs max-h-60 overflow-y-auto" v-html="renderMarkdown(dig.markdown_content)"></div>
+          </div>
+          <div v-if="radarDigests.length === 0" class="py-12 text-center text-xs text-zinc-500">
+            尚無焦點戰報。雷達在檢測到同一波峰出現多篇高價值情報時，將自動聚合生成並推播。
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- =========================================================================
          FLOATING TOAST NOTIFICATION
          ========================================================================= -->
     <div v-if="toastMessage" class="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-zinc-900 border border-zinc-700 text-zinc-100 px-3.5 py-2.5 rounded-lg shadow-xl text-xs font-medium transition-all animate-bounce">
@@ -977,6 +1205,131 @@
         const newCatName = ref('');
         const toastMessage = ref('');
         let toastTimer = null;
+
+        // Radar Intelligence State
+        const showRadarModal = ref(false);
+        const radarTab = ref('sources');
+        const radarSources = ref([]);
+        const radarTopics = ref([]);
+        const radarDigests = ref([]);
+        const isScanningRadar = ref(false);
+        const newSource = ref({ name: '', source_type: 'youtube', url: '' });
+
+        const loadRadarData = async () => {
+          try {
+            const [sRes, tRes, dRes] = await Promise.all([
+              fetch('/api/radar/sources'),
+              fetch('/api/radar/topics'),
+              fetch('/api/radar/digests')
+            ]);
+            if (sRes.ok) {
+              const sData = await sRes.json();
+              radarSources.value = sData.sources || [];
+            }
+            if (tRes.ok) {
+              const tData = await tRes.json();
+              radarTopics.value = tData.topics || [];
+            }
+            if (dRes.ok) {
+              const dData = await dRes.json();
+              radarDigests.value = dData.digests || [];
+            }
+          } catch (e) {
+            console.error('Failed to load radar data:', e);
+          }
+        };
+
+        const submitAddSource = async () => {
+          if (!newSource.value.name || !newSource.value.url) return;
+          try {
+            const res = await fetch('/api/radar/sources', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newSource.value)
+            });
+            if (res.ok) {
+              triggerToast(`已成功加入追蹤來源：${newSource.value.name}`);
+              newSource.value = { name: '', source_type: 'youtube', url: '' };
+              await loadRadarData();
+            }
+          } catch (e) {
+            triggerToast('新增來源失敗: ' + e.message);
+          }
+        };
+
+        const deleteRadarSource = async (id) => {
+          if (!confirm('確定要移除此情報來源嗎？')) return;
+          try {
+            const res = await fetch(`/api/radar/sources/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+              triggerToast('已移除情報來源');
+              await loadRadarData();
+            }
+          } catch (e) {
+            triggerToast('移除失敗: ' + e.message);
+          }
+        };
+
+        const triggerRadarScan = async () => {
+          isScanningRadar.value = true;
+          triggerToast('正在啟動自適應巡檢與時段感知採集...');
+          try {
+            const res = await fetch('/api/radar/scan?async_mode=false&force=true', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+              const count = data.result ? data.result.new_items_count : 0;
+              triggerToast(`巡檢完成，捕獲 ${count} 筆新情報！`);
+              await loadStats();
+              await loadCategories();
+              await loadItems();
+              await loadRadarData();
+            }
+          } catch (e) {
+            triggerToast('巡檢異常: ' + e.message);
+          } finally {
+            isScanningRadar.value = false;
+          }
+        };
+
+        const tuneTagSignal = async (tag, action) => {
+          try {
+            const res = await fetch('/api/radar/feedback', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ topic_tag: tag, action: action })
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const actionNames = { boost: '已加深關注', dampen: '已降低頻率', mute: '已徹底靜音', reset: '已重設' };
+              triggerToast(`#${tag} ${actionNames[action] || '已調整'} (當前權重: ${data.result.weight.toFixed(1)})`);
+              await loadRadarData();
+            }
+          } catch (e) {
+            triggerToast('調諧失敗: ' + e.message);
+          }
+        };
+
+        const tuneItemSignal = async (item, action) => {
+          if (!item) return;
+          try {
+            const res = await fetch('/api/radar/feedback', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ item_id: item.id, action: action })
+            });
+            if (res.ok) {
+              const actionNames = { boost: '已加深關注此架構', dampen: '已降低此類頻率', mute: '已屏蔽核心標籤' };
+              triggerToast(`${actionNames[action] || '已調整信號'}`);
+              await loadRadarData();
+            }
+          } catch (e) {
+            triggerToast('調諧失敗: ' + e.message);
+          }
+        };
+
+        const tuneTopicDirectly = async (tag, action) => {
+          await tuneTagSignal(tag, action);
+        };
 
         // Show Toast
         const triggerToast = (msg) => {
@@ -1276,6 +1629,29 @@
             return;
           }
 
+          if (e.key.toLowerCase() === 'r') {
+            e.preventDefault();
+            showRadarModal.value = !showRadarModal.value;
+            if (showRadarModal.value) loadRadarData();
+            return;
+          }
+
+          if (e.key === '+' || e.key === '=') {
+            if (activeItem.value) {
+              e.preventDefault();
+              tuneItemSignal(activeItem.value, 'boost');
+            }
+            return;
+          }
+
+          if (e.key === '-' || e.key === '_') {
+            if (activeItem.value) {
+              e.preventDefault();
+              tuneItemSignal(activeItem.value, 'dampen');
+            }
+            return;
+          }
+
           if (e.key === 'Escape') {
             if (showShortcutsModal.value) {
               showShortcutsModal.value = false;
@@ -1464,6 +1840,20 @@
           loadItems,
           deferredPrompt,
           installPWA,
+          showRadarModal,
+          radarTab,
+          radarSources,
+          radarTopics,
+          radarDigests,
+          isScanningRadar,
+          newSource,
+          loadRadarData,
+          submitAddSource,
+          deleteRadarSource,
+          triggerRadarScan,
+          tuneTagSignal,
+          tuneItemSignal,
+          tuneTopicDirectly,
         };
       }
     }).mount('#app');
