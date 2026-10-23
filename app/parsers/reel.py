@@ -76,41 +76,39 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
 
         frames = sorted([os.path.join(frames_dir, f) for f in os.listdir(frames_dir) if f.endswith(".jpg")])
 
-        # 3. Vision OCR on frames
+        # 3. Vision OCR on frames using parallel execution to prevent multi-image context truncation
         visual_content = ""
         if frames:
-            content_parts = [
-                {
-                    "type": "text",
-                    "text": f"""你是一位頂尖的多模態技術情報分析官。這是一支短影音（Reel）的逐秒影格截圖。
-作者：{author}
-影片說明：{description}
+            provider = get_primary_provider()
+            prompt = """請讀取這張短影音畫面中展示的開源專案卡片資訊，輸出純文字格式：
+編號：(右上角數字)
+專案名稱：
+GitHub 網址：(如 https://github.com/...)
+用途：(一句話說明功能與行銷情境)"""
 
-任務指令：
-1. 仔細 OCR 辨識每張影格中出現的所有開源專案名稱、GitHub Repo 路徑（例如 https://github.com/...）、官方網址、核心特色與使用情境。
-2. 將畫面中出現的所有專案與要點完整、條列化地萃取出來，不可遺漏畫面中的任何專案資訊。
-3. 一律使用繁體中文（台灣習慣用語）輸出結構化清單。"""
-                }
-            ]
-
-            for fp in frames:
+            async def _analyze_frame(fp: str, idx: int):
                 try:
                     with open(fp, "rb") as f:
                         b64 = base64.b64encode(f.read()).decode("utf-8")
-                        content_parts.append({
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
-                        })
+                    res = await provider.client.chat.completions.create(
+                        model=provider.model,
+                        messages=[{
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+                            ]
+                        }],
+                        temperature=0.1
+                    )
+                    return res.choices[0].message.content.strip()
                 except Exception:
-                    continue
+                    return ""
 
-            provider = get_primary_provider()
-            res = await provider.client.chat.completions.create(
-                model=provider.model,
-                messages=[{"role": "user", "content": content_parts}],
-                temperature=0.2,
-            )
-            visual_content = res.choices[0].message.content or ""
+            # Run parallel analysis across all extracted frames
+            tasks = [_analyze_frame(fp, i) for i, fp in enumerate(frames, 1)]
+            frame_texts = await asyncio.gather(*tasks)
+            visual_content = "\n\n".join([t for t in frame_texts if t.strip()])
 
         # 4. Synthesize raw content combining description + visual OCR
         combined_raw = f"""# {cleaned_title}
