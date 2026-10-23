@@ -11,6 +11,7 @@ from app.database import (
     save_citation
 )
 from app.parsers import is_youtube_url, fetch_youtube_metadata, parse_web_page
+from app.parsers.reel import is_video_reel_url, parse_video_reel
 from app.providers import get_primary_provider, get_gemini_provider
 from app.config import settings
 
@@ -126,6 +127,30 @@ URL：{url}
             cover_image = meta.get("cover_image", "")
             author = meta.get("author", "")
             default_title = meta.get("title", "未命名項目")
+
+        elif is_video_reel_url(url):
+            # Short Video Reel (Facebook / Instagram Reels with Vision OCR)
+            source_type = "reel"
+            reel_data = await parse_video_reel(url)
+            content_raw = reel_data.get("content_raw", "")
+            cover_image = reel_data.get("cover_image", "")
+            author = reel_data.get("author", "")
+            default_title = reel_data.get("title", "短影音情報")
+
+            primary = get_primary_provider()
+            prompt = f"""請深度分析以下短影音情報與畫面視覺 OCR 辨識結果：
+影片標題：{default_title}
+作者/發布者：{author}
+URL：{url}
+
+候選分類清單：[{cat_list_str}]
+
+=== 短影音內容與影格 OCR 辨識 ===
+{content_raw[:15000]}
+=== 內容結束 ===
+
+請依據規範輸出結構化 JSON。若影片畫面中有推薦多個專案/工具，請務必將 is_composite 設為 true，並於 sub_entities 完整抽離所有專案！"""
+            ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
 
         else:
             # Standard Web Page / GitHub / Article
