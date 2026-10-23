@@ -49,6 +49,16 @@ def is_pure_url(text: str) -> bool:
         return False
     return clean.startswith("http://") or clean.startswith("https://")
 
+def extract_target_url(text: str) -> Optional[str]:
+    clean = text.strip()
+    if is_pure_url(clean):
+        return clean
+    # Detect single URL within mobile share text snippets
+    urls = re.findall(r'https?://[^\s<>"]+', clean)
+    if len(urls) == 1 and len(clean) < 500:
+        return urls[0]
+    return None
+
 async def _spawn_child_entity_background(source_parent_id: str, cit_id: str, target_name: str, target_url: str, mention_context: str):
     """Background worker to ingest an unpacked sub-project into its own standalone entry and link citation"""
     try:
@@ -86,9 +96,10 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     cat_list_str = ", ".join(category_names)
     clean_input = content_input.strip()
 
-    # 2. Route by input type (Pure URL vs Text Snippet/Note)
-    if is_pure_url(clean_input):
-        url = clean_input
+    # 2. Route by input type (Pure URL / Mobile Share Snippet vs Text Note)
+    detected_url = extract_target_url(clean_input)
+    if detected_url:
+        url = detected_url
         if is_youtube_url(url):
             source_type = "youtube"
             meta = await fetch_youtube_metadata(url)
