@@ -1,8 +1,15 @@
 import json
 import re
 import uuid
+import asyncio
 from typing import Dict, Any, Optional
-from app.database import get_all_categories, save_item
+from app.database import (
+    get_all_categories,
+    save_item,
+    normalize_canonical_url,
+    find_item_by_canonical_or_url,
+    save_citation
+)
 from app.parsers import is_youtube_url, fetch_youtube_metadata, parse_web_page
 from app.providers import get_primary_provider, get_gemini_provider
 from app.config import settings
@@ -13,14 +20,27 @@ ANALYSIS_SYSTEM_PROMPT = """你是一位頂尖的資深系統架構師與技術�
 嚴格規則：
 1. 一律使用繁體中文（台灣習慣用語）。
 2. 極簡、高密度乾貨，絕對禁止廢話與無意義客套套話（如「值得注意的是」、「總結來說」）。
-3. 嚴格輸出合法的 JSON 物件，格式如下：
+3. 判斷該內容是否為「多專案/多工具/多庫盤點彙總」（例如：5大精選開源專案、10個必備工具、年度推薦庫列表、整合評測）。
+4. 嚴格輸出合法的 JSON 物件，格式如下：
 {
   "category": "從分類清單中精選1個，若皆不符合請填 Inbox",
   "title_l1": "簡潔有力、直擊本質的中文標題（25字以內）",
   "summary_l1": "白話核心重點（1-2句話說清楚這個專案/文章在做什麼，解決什麼核心痛點）",
   "tech_tags": ["新技術項1", "新技術項2", "專有名詞/核心依賴"],
-  "deep_analysis": "L2 深入技術剖析（Markdown 格式，條列架構設計、核心規格參數、落地步驟與潛在限制）"
-}"""
+  "deep_analysis": "L2 深入技術剖析（Markdown 格式，條列架構設計、核心規格參數、落地步驟與潛在限制）",
+  "is_composite": false,
+  "sub_entities": [
+    {
+      "name": "專案或工具名稱（如 OpenHands）",
+      "canonical_url": "專案 GitHub 倉庫或官方網站網址（若文中提及或已知請填寫標準網址，未知填空字串）",
+      "reason": "文中對此專案的評價、亮點或核心功能（1句話）"
+    }
+  ]
+}
+
+注意事項：
+- 若內容只介紹單一專案、單篇新聞或單一概念，is_composite 請設為 false，且 sub_entities 設為空陣列 []。
+- 若內容為盤點文、多專案推薦影片或清單彙總，is_composite 必須設為 true，並於 sub_entities 完整抽離列出每一個提及的獨立專案/工具，不可遺漏。"""
 
 def is_pure_url(text: str) -> bool:
     clean = text.strip()
@@ -28,7 +48,37 @@ def is_pure_url(text: str) -> bool:
         return False
     return clean.startswith("http://") or clean.startswith("https://")
 
-async def run_pipeline(content_input: str, manual_category: Optional[str] = None) -> Dict[str, Any]:
+async def _spawn_child_entity_background(source_parent_id: str, cit_id: str, target_name: str, target_url: str, mention_context: str):
+    """Background worker to ingest an unpacked sub-project into its own standalone entry and link citation"""
+    try:
+        clean_url = normalize_canonical_url(target_url)
+        # Check again if already exists
+        existing = find_item_by_canonical_or_url(clean_url)
+        if existing:
+            save_citation({
+                "id": cit_id,
+                "source_parent_id": source_parent_id,
+                "target_item_id": existing["id"],
+                "target_canonical_url": clean_url,
+                "target_name": target_name or existing.get("title_l1", ""),
+                "mention_context": mention_context
+            })
+            return
+
+        child_item = await run_pipeline(clean_url, manual_category="Github" if "github.com" in clean_url else None, is_sub_task=True)
+        if child_item and "id" in child_item:
+            save_citation({
+                "id": cit_id,
+                "source_parent_id": source_parent_id,
+                "target_item_id": child_item["id"],
+                "target_canonical_url": clean_url,
+                "target_name": target_name or child_item.get("title_l1", ""),
+                "mention_context": mention_context
+            })
+    except Exception as e:
+        print(f"[Entity Fan-out] Background spawn failed for {target_url}: {e}")
+
+async def run_pipeline(content_input: str, manual_category: Optional[str] = None, is_sub_task: bool = False) -> Dict[str, Any]:
     # 1. Fetch available categories
     cat_rows = get_all_categories()
     category_names = [c["name"] for c in cat_rows]
@@ -159,4 +209,48 @@ URL：{url}
 
     item_id = save_item(item_record)
     item_record["id"] = item_id
+
+    # 3. Entity Fan-out & Citation Linking (Deduplication & Unpacking)
+    sub_entities = ai_result.get("sub_entities", [])
+    if isinstance(sub_entities, list) and sub_entities and not is_sub_task:
+        for sub in sub_entities:
+            if not isinstance(sub, dict):
+                continue
+            raw_name = (sub.get("name") or "").strip()
+            raw_url = (sub.get("canonical_url") or "").strip()
+            reason = (sub.get("reason") or "").strip()
+            if not raw_name and not raw_url:
+                continue
+
+            canon_url = normalize_canonical_url(raw_url) if raw_url else ""
+            target_item_id = None
+
+            # Deduplication check: Is this entity already indexed in OmniKeep?
+            existing = find_item_by_canonical_or_url(canon_url or raw_url)
+            if existing:
+                # Existing entry found -> Instant citation link without duplicate item
+                target_item_id = existing["id"]
+                save_citation({
+                    "source_parent_id": item_id,
+                    "target_item_id": target_item_id,
+                    "target_canonical_url": canon_url or raw_url,
+                    "target_name": raw_name or existing.get("title_l1", "未命名專案"),
+                    "mention_context": reason
+                })
+            else:
+                # First time seen -> Record citation first
+                cit_id = save_citation({
+                    "source_parent_id": item_id,
+                    "target_item_id": None,
+                    "target_canonical_url": canon_url or raw_url,
+                    "target_name": raw_name,
+                    "mention_context": reason
+                })
+                # If valid HTTP/HTTPS URL, spawn background ingestion
+                if canon_url and (canon_url.startswith("http://") or canon_url.startswith("https://")):
+                    try:
+                        asyncio.create_task(_spawn_child_entity_background(item_id, cit_id, raw_name, canon_url, reason))
+                    except Exception as e:
+                        print(f"[Entity Fan-out] Error scheduling child spawn: {e}")
+
     return item_record

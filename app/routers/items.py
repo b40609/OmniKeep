@@ -1,7 +1,15 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-from app.database import get_items, get_item_by_id, update_item_field, delete_item, get_status_counts
+from app.database import (
+    get_items,
+    get_item_by_id,
+    update_item_field,
+    delete_item,
+    get_status_counts,
+    get_citations_for_target,
+    get_sub_entities_for_parent
+)
 
 router = APIRouter(prefix="/api/items", tags=["Items"])
 
@@ -32,6 +40,10 @@ async def get_item(item_id: str):
     item = get_item_by_id(item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    
+    # Enrich with citations (which digests cited this item) & sub_entities (items/projects packed inside this digest)
+    item["citations"] = get_citations_for_target(item_id)
+    item["sub_entities"] = get_sub_entities_for_parent(item_id)
     return item
 
 @router.patch("/{item_id}")
