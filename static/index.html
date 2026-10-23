@@ -438,6 +438,22 @@
                   <span class="text-[10px] text-zinc-400 bg-zinc-900 px-1.5 py-0.2 rounded border border-zinc-800">
                     {{ item.category_name }}
                   </span>
+                  <!-- Bundle Entity Count Badge -->
+                  <span v-if="item.sub_entities_count" class="inline-flex items-center gap-1 text-[9px] font-mono text-cyan-400 bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/60">
+                    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                    </svg>
+                    {{ item.sub_entities_count }} 專案
+                  </span>
+                  <!-- Cited In Badge -->
+                  <span v-if="item.citations_count" class="inline-flex items-center gap-1 text-[9px] font-mono text-purple-400 bg-purple-950/60 px-1.5 py-0.2 rounded border border-purple-800/60">
+                    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                    {{ item.citations_count }} 處引用
+                  </span>
                   <!-- Host Domain -->
                   <span class="text-[11px] text-zinc-500 truncate font-mono">
                     {{ cleanHost(item.url) }}
@@ -554,12 +570,18 @@
             >
               <div>
                 <div class="flex items-center justify-between text-[11px] mb-2 font-mono">
-                  <div class="flex items-center gap-1.5">
+                  <div class="flex items-center gap-1.5 flex-wrap">
                     <span :class="getSourceBadgeClass(item.source_type)" class="px-1.5 py-0.2 rounded text-[9px] uppercase font-bold">
                       {{ item.source_type }}
                     </span>
                     <span class="text-zinc-400 bg-zinc-950 px-1.5 py-0.2 rounded border border-zinc-800">
                       {{ item.category_name }}
+                    </span>
+                    <span v-if="item.sub_entities_count" class="inline-flex items-center gap-1 text-[9px] font-mono text-cyan-400 bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/60">
+                      {{ item.sub_entities_count }} 專案
+                    </span>
+                    <span v-if="item.citations_count" class="inline-flex items-center gap-1 text-[9px] font-mono text-purple-400 bg-purple-950/60 px-1.5 py-0.2 rounded border border-purple-800/60">
+                      {{ item.citations_count }} 引用
                     </span>
                   </div>
                   <div class="flex items-center gap-1 text-zinc-500">
@@ -811,6 +833,52 @@
           <!-- TAB 1: L1/L2 DEEP TECH ANALYSIS -->
           <div v-if="detailTab === 'analysis'" class="max-w-3xl space-y-6">
             
+            <!-- Cited In (Backlink / Mention Sources) -->
+            <div v-if="activeItem.citations && activeItem.citations.length" class="bg-purple-950/20 border border-purple-800/40 rounded-xl p-4">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="p-1 rounded bg-purple-900/40 text-purple-300">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                  </span>
+                  <span class="text-xs font-mono font-bold text-purple-300 uppercase tracking-wider">
+                    收錄與引用來源 (Cited in {{ activeItem.citations.length }} Sources)
+                  </span>
+                </div>
+                <span class="text-[10px] font-mono text-purple-400/80">母子關聯回溯</span>
+              </div>
+              <div class="space-y-2">
+                <div 
+                  v-for="cit in activeItem.citations" 
+                  :key="cit.citation_id"
+                  @click="selectItemById(cit.parent_id)"
+                  class="group p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800/80 hover:border-purple-500/50 cursor-pointer transition-all flex items-start justify-between gap-3"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-purple-900/40 text-purple-300 border border-purple-800/50">
+                        {{ cit.parent_source_type }}
+                      </span>
+                      <span class="text-xs font-semibold text-zinc-200 group-hover:text-purple-300 transition-colors truncate">
+                        {{ cit.parent_title }}
+                      </span>
+                    </div>
+                    <p v-if="cit.mention_context" class="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                      「{{ cit.mention_context }}」
+                    </p>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-1 text-[11px] text-zinc-500 font-mono">
+                    <span>檢視母文</span>
+                    <svg class="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- L1 Plain Core Highlight Box -->
             <div class="bg-zinc-925 border border-zinc-800/90 rounded-xl p-4 relative overflow-hidden">
               <div class="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500"></div>
@@ -833,6 +901,83 @@
                 >
                   #{{ tag }}
                 </span>
+              </div>
+            </div>
+
+            <!-- Sub Entities Bundle Box (Unpacked Projects) -->
+            <div v-if="activeItem.sub_entities && activeItem.sub_entities.length" class="bg-cyan-950/15 border border-cyan-800/40 rounded-xl p-4">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="p-1 rounded bg-cyan-900/40 text-cyan-300">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                    </svg>
+                  </span>
+                  <span class="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider">
+                    內含獨立專案拆解 ({{ activeItem.sub_entities.length }} 專案立項)
+                  </span>
+                </div>
+                <span class="text-[10px] font-mono text-cyan-400/80">實體級去重 & 派生入庫</span>
+              </div>
+              <div class="grid grid-cols-1 gap-2.5">
+                <div 
+                  v-for="(sub, idx) in activeItem.sub_entities" 
+                  :key="sub.citation_id"
+                  class="p-3 rounded-lg bg-zinc-900/90 border border-zinc-800/80 hover:border-cyan-500/50 transition-all flex flex-col justify-between"
+                >
+                  <div class="flex items-start justify-between gap-2 mb-1.5">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="text-[10px] font-mono text-zinc-500 font-bold">#{{ idx + 1 }}</span>
+                      <span class="text-xs font-bold text-zinc-100 truncate">
+                        {{ sub.target_name || sub.title_l1 || '未命名專案' }}
+                      </span>
+                      <span v-if="sub.category_name" class="text-[9px] font-mono text-zinc-400 bg-zinc-800 px-1 py-0.2 rounded">
+                        {{ sub.category_name }}
+                      </span>
+                    </div>
+                    <!-- Actions -->
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <button 
+                        v-if="sub.target_item_id"
+                        @click="selectItemById(sub.target_item_id)"
+                        class="inline-flex items-center gap-1 text-[10px] font-mono text-cyan-300 hover:text-cyan-200 bg-cyan-950/60 hover:bg-cyan-900/60 px-2 py-0.5 rounded border border-cyan-800/60 transition-colors"
+                        title="在 OmniKeep 展開完整速覽與深度剖析"
+                      >
+                        <span>專案情報</span>
+                        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                      </button>
+                      <a 
+                        v-if="sub.target_canonical_url"
+                        :href="sub.target_canonical_url" 
+                        target="_blank" 
+                        rel="noopener"
+                        class="inline-flex items-center gap-1 text-[10px] font-mono text-zinc-400 hover:text-zinc-200 bg-zinc-800 hover:bg-zinc-700 px-2 py-0.5 rounded border border-zinc-700 transition-colors"
+                        title="開啟 GitHub 倉庫或官方網站"
+                      >
+                        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+                        </svg>
+                        <span>外連</span>
+                      </a>
+                    </div>
+                  </div>
+                  <p v-if="sub.mention_context" class="text-xs text-zinc-300 leading-relaxed mb-1.5">
+                    {{ sub.mention_context }}
+                  </p>
+                  <!-- Quick Tags if already indexed -->
+                  <div v-if="sub.tech_tags && sub.tech_tags.length" class="flex flex-wrap gap-1 mt-1">
+                    <span 
+                      v-for="st in sub.tech_tags.slice(0, 3)" 
+                      :key="st"
+                      class="text-[9px] font-mono text-zinc-400 bg-zinc-950 px-1.5 py-0.2 rounded border border-zinc-800"
+                    >
+                      #{{ st }}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1414,9 +1559,34 @@
           loadItems();
         };
 
-        // Select Item (Open Reader Pane)
-        const selectItem = (item) => {
+        // Select Item (Open Reader Pane and fetch full citation/sub-entities graph)
+        const selectItem = async (item) => {
           activeItem.value = item;
+          try {
+            const res = await fetch(`/api/items/${item.id}`);
+            if (res.ok) {
+              const full = await res.json();
+              if (activeItem.value && activeItem.value.id === item.id) {
+                activeItem.value = full;
+              }
+            }
+          } catch (e) {
+            console.error("Failed to load item citations:", e);
+          }
+        };
+
+        const selectItemById = async (itemId) => {
+          try {
+            const res = await fetch(`/api/items/${itemId}`);
+            if (res.ok) {
+              const item = await res.json();
+              activeItem.value = item;
+              detailTab.value = 'analysis';
+              // Also ensure item is highlighted
+            }
+          } catch (e) {
+            console.error("Failed to jump to item:", e);
+          }
         };
 
         // Quick Ingest Handler (Accepts URLs OR Free-form Text / Snippets)
@@ -1824,6 +1994,7 @@
           setTriageView,
           selectCategory,
           selectItem,
+          selectItemById,
           handleQuickIngest,
           submitNoteIngest,
           toggleStar,

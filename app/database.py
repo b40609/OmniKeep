@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import uuid
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -155,6 +156,24 @@ def init_db():
         )
     """)
 
+    # 11. Item Citations table (Entity Fan-out & Linking)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS item_citations (
+            id TEXT PRIMARY KEY,
+            target_item_id TEXT,
+            source_parent_id TEXT NOT NULL,
+            target_canonical_url TEXT NOT NULL,
+            target_name TEXT NOT NULL,
+            mention_context TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(source_parent_id) REFERENCES items(id) ON DELETE CASCADE,
+            FOREIGN KEY(target_item_id) REFERENCES items(id) ON DELETE SET NULL
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_citations_target ON item_citations(target_item_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_citations_parent ON item_citations(source_parent_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_citations_canonical ON item_citations(target_canonical_url)")
+
     conn.commit()
     conn.close()
 
@@ -205,7 +224,14 @@ def save_item(item_data: Dict[str, Any]) -> str:
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    item_id = item_data.get("id") or uuid.uuid4().hex[:12]
+    # Check if url already exists to preserve and return the true existing item id
+    cursor.execute("SELECT id FROM items WHERE url = ? LIMIT 1", (item_data["url"],))
+    existing_row = cursor.fetchone()
+    if existing_row:
+        item_id = existing_row["id"]
+    else:
+        item_id = item_data.get("id") or uuid.uuid4().hex[:12]
+
     now = datetime.utcnow().isoformat()
     
     tags = item_data.get("tech_tags", [])
@@ -271,7 +297,10 @@ def get_items(
             fts_query = f'"{clean_q}"*'
             
         sql = """
-            SELECT i.* FROM items i
+            SELECT i.*,
+                   (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
+                   (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
+            FROM items i
             JOIN items_fts f ON i.id = f.id
             WHERE items_fts MATCH ?
         """
@@ -296,35 +325,47 @@ def get_items(
 
         if not db_rows:
             # Fallback to LIKE matching
-            fallback_sql = "SELECT * FROM items WHERE (title_l1 LIKE ? OR summary_l1 LIKE ? OR tech_tags LIKE ? OR deep_analysis LIKE ?)"
+            fallback_sql = """
+                SELECT i.*,
+                       (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
+                       (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
+                FROM items i
+                WHERE (i.title_l1 LIKE ? OR i.summary_l1 LIKE ? OR i.tech_tags LIKE ? OR i.deep_analysis LIKE ?)
+            """
             like_param = f"%{clean_q}%"
             f_params = [like_param, like_param, like_param, like_param]
             if category and category != "全部":
-                fallback_sql += " AND category_name = ?"
+                fallback_sql += " AND i.category_name = ?"
                 f_params.append(category)
             if is_starred is not None:
-                fallback_sql += " AND is_starred = ?"
+                fallback_sql += " AND i.is_starred = ?"
                 f_params.append(1 if is_starred else 0)
             if is_read is not None:
-                fallback_sql += " AND is_read = ?"
+                fallback_sql += " AND i.is_read = ?"
                 f_params.append(1 if is_read else 0)
-            fallback_sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            fallback_sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
             f_params.extend([limit, offset])
             cursor.execute(fallback_sql, f_params)
             db_rows = cursor.fetchall()
     else:
-        sql = "SELECT * FROM items WHERE 1=1"
+        sql = """
+            SELECT i.*,
+                   (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
+                   (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
+            FROM items i
+            WHERE 1=1
+        """
         params = []
         if category and category != "全部":
-            sql += " AND category_name = ?"
+            sql += " AND i.category_name = ?"
             params.append(category)
         if is_starred is not None:
-            sql += " AND is_starred = ?"
+            sql += " AND i.is_starred = ?"
             params.append(1 if is_starred else 0)
         if is_read is not None:
-            sql += " AND is_read = ?"
+            sql += " AND i.is_read = ?"
             params.append(1 if is_read else 0)
-        sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         cursor.execute(sql, params)
         db_rows = cursor.fetchall()
@@ -344,7 +385,13 @@ def get_items(
 def get_item_by_id(item_id: str) -> Optional[Dict[str, Any]]:
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM items WHERE id = ?", (item_id,))
+    cursor.execute("""
+        SELECT i.*,
+               (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
+               (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
+        FROM items i
+        WHERE i.id = ?
+    """, (item_id,))
     row = cursor.fetchone()
     conn.close()
     if not row:
@@ -647,4 +694,167 @@ def get_latest_radar_digests(limit: int = 10) -> List[Dict[str, Any]]:
         except Exception:
             r["item_ids"] = []
     return rows
+
+# ── Entity Fan-out & Citations DAO ──────────────────────────
+
+def normalize_canonical_url(url: str) -> str:
+    """Normalize project/repo URLs (strip trailing slashes, .git, fragments, params, lower-case host/repo)"""
+    if not url:
+        return ""
+    clean = url.strip()
+    # Strip URL fragments and query params
+    if "#" in clean:
+        clean = clean.split("#", 1)[0]
+    if "?" in clean:
+        clean = clean.split("?", 1)[0]
+    clean = clean.rstrip("/")
+    if clean.endswith(".git"):
+        clean = clean[:-4]
+    
+    # Specific GitHub regex slug normalization: https://github.com/owner/repo
+    m = re.match(r'^https?://(?:www\.)?github\.com/([^/]+)/([^/]+)', clean, re.IGNORECASE)
+    if m:
+        owner = m.group(1).lower()
+        repo = m.group(2).lower()
+        return f"https://github.com/{owner}/{repo}"
+    return clean
+
+def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
+    """Look up an existing item by canonical URL or matching git repo slug"""
+    if not url:
+        return None
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 1. Exact match on raw url
+    cursor.execute("SELECT * FROM items WHERE url = ? LIMIT 1", (url,))
+    row = cursor.fetchone()
+    if row:
+        conn.close()
+        d = dict(row)
+        try:
+            d["tech_tags"] = json.loads(d["tech_tags"])
+        except Exception:
+            d["tech_tags"] = []
+        return d
+    
+    # 2. Canonical match
+    canon = normalize_canonical_url(url)
+    if canon:
+        m = re.match(r'^https?://(?:www\.)?github\.com/([^/]+)/([^/]+)', canon, re.IGNORECASE)
+        if m:
+            slug = f"{m.group(1)}/{m.group(2)}"
+            cursor.execute("SELECT * FROM items WHERE url LIKE ? OR url LIKE ? LIMIT 1", 
+                           (f"%github.com/{slug}%", f"%github.com/{m.group(1).capitalize()}/{m.group(2)}%"))
+            row = cursor.fetchone()
+            if row:
+                conn.close()
+                d = dict(row)
+                try:
+                    d["tech_tags"] = json.loads(d["tech_tags"])
+                except Exception:
+                    d["tech_tags"] = []
+                return d
+
+        # Check if previously cited with this canonical URL
+        cursor.execute("SELECT target_item_id FROM item_citations WHERE target_canonical_url = ? AND target_item_id IS NOT NULL LIMIT 1", (canon,))
+        c_row = cursor.fetchone()
+        if c_row and c_row["target_item_id"]:
+            cursor.execute("SELECT * FROM items WHERE id = ? LIMIT 1", (c_row["target_item_id"],))
+            row = cursor.fetchone()
+            if row:
+                conn.close()
+                d = dict(row)
+                try:
+                    d["tech_tags"] = json.loads(d["tech_tags"])
+                except Exception:
+                    d["tech_tags"] = []
+                return d
+    
+    conn.close()
+    return None
+
+def save_citation(data: Dict[str, Any]) -> str:
+    """Save or update citation relationship between a parent digest and a child entity"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cit_id = data.get("id") or f"cit_{uuid.uuid4().hex[:10]}"
+    now_iso = datetime.utcnow().isoformat()
+    
+    parent_id = data["source_parent_id"]
+    canon_url = normalize_canonical_url(data.get("target_canonical_url", ""))
+    target_item_id = data.get("target_item_id")
+    target_name = data.get("target_name") or ""
+    context = data.get("mention_context") or ""
+
+    # Check if this exact relationship already recorded
+    cursor.execute("""
+        SELECT id FROM item_citations 
+        WHERE source_parent_id = ? AND (target_canonical_url = ? OR (target_item_id = ? AND target_item_id IS NOT NULL))
+        LIMIT 1
+    """, (parent_id, canon_url, target_item_id))
+    existing = cursor.fetchone()
+
+    if existing:
+        cit_id = existing["id"]
+        cursor.execute("""
+            UPDATE item_citations 
+            SET target_item_id = COALESCE(?, target_item_id),
+                target_name = COALESCE(NULLIF(?, ''), target_name),
+                mention_context = COALESCE(NULLIF(?, ''), mention_context)
+            WHERE id = ?
+        """, (target_item_id, target_name, context, cit_id))
+    else:
+        cursor.execute("""
+            INSERT INTO item_citations (
+                id, target_item_id, source_parent_id, target_canonical_url, target_name, mention_context, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (cit_id, target_item_id, parent_id, canon_url, target_name, context, now_iso))
+
+    conn.commit()
+    conn.close()
+    return cit_id
+
+def get_citations_for_target(target_item_id: str) -> List[Dict[str, Any]]:
+    """Return all parent digests/videos that cited this target item"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT c.id AS citation_id, c.mention_context, c.created_at AS cited_at,
+               i.id AS parent_id, i.title_l1 AS parent_title, i.url AS parent_url, 
+               i.source_type AS parent_source_type, i.cover_image AS parent_cover,
+               i.author AS parent_author
+        FROM item_citations c
+        JOIN items i ON c.source_parent_id = i.id
+        WHERE c.target_item_id = ?
+        ORDER BY c.created_at DESC
+    """, (target_item_id,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def get_sub_entities_for_parent(source_parent_id: str) -> List[Dict[str, Any]]:
+    """Return all sub-projects cited/unpacked by this parent digest"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT c.id AS citation_id, c.target_item_id, c.target_canonical_url, c.target_name, c.mention_context,
+               i.title_l1, i.summary_l1, i.tech_tags, i.category_name, i.cover_image, i.url AS item_url
+        FROM item_citations c
+        LEFT JOIN items i ON c.target_item_id = i.id
+        WHERE c.source_parent_id = ?
+        ORDER BY c.created_at ASC
+    """, (source_parent_id,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    for r in rows:
+        if r.get("tech_tags"):
+            try:
+                r["tech_tags"] = json.loads(r["tech_tags"])
+            except Exception:
+                r["tech_tags"] = []
+        else:
+            r["tech_tags"] = []
+    return rows
+
 
