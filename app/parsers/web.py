@@ -15,6 +15,59 @@ BROWSER_HEADERS = {
     "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
+FB_HEADERS = {
+    "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+}
+
+def is_facebook_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return "facebook.com" in parsed.netloc or "fb.watch" in parsed.netloc or "fb.com" in parsed.netloc
+
+async def parse_facebook_page(url: str) -> Dict[str, Any]:
+    """Extract clean title, caption, author, and cover image from Facebook posts/reels using crawler UA"""
+    async with httpx.AsyncClient(headers=FB_HEADERS, timeout=20.0, follow_redirects=True) as client:
+        resp = await client.get(url)
+        html_text = resp.text
+
+    soup = BeautifulSoup(html_text, "html.parser")
+
+    # Extract OpenGraph tags
+    og_title_tag = soup.find("meta", property="og:title")
+    raw_title = og_title_tag["content"].strip() if og_title_tag and og_title_tag.get("content") else ""
+
+    og_desc_tag = soup.find("meta", property="og:description") or soup.find("meta", attrs={"name": "description"})
+    raw_desc = og_desc_tag["content"].strip() if og_desc_tag and og_desc_tag.get("content") else ""
+
+    cover_image = extract_meta_image(soup, url)
+
+    # Clean title and author
+    author = ""
+    cleaned_title = raw_title
+    if "|" in raw_title:
+        parts = [p.strip() for p in raw_title.split("|") if p.strip()]
+        if len(parts) >= 2:
+            author = parts[-1]
+    
+    # Strip count metrics like "142 個心情 · 48 次分享 | "
+    cleaned_title = re.sub(r'^\d+\s*個心情.*?\|\s*', '', cleaned_title)
+    if "|" in cleaned_title:
+        cleaned_title = cleaned_title.rsplit("|", 1)[0].strip()
+    if len(cleaned_title) > 60:
+        cleaned_title = cleaned_title[:60].strip() + "..."
+
+    final_title = cleaned_title or (raw_desc.splitlines()[0][:40] if raw_desc else "Facebook 貼文")
+
+    return {
+        "url": url,
+        "title": final_title,
+        "content_raw": raw_desc or "（Facebook 貼文未提供公開文字說明）",
+        "cover_image": cover_image,
+        "author": author or "Facebook",
+        "published_date": "",
+    }
+
 def extract_meta_image(soup: BeautifulSoup, base_url: str) -> str:
     # 1. og:image
     og = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "og:image"})
@@ -34,6 +87,9 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
     """
     Fetch web page and extract clean reader-view text and metadata.
     """
+    if is_facebook_url(url):
+        return await parse_facebook_page(url)
+
     async with httpx.AsyncClient(headers=BROWSER_HEADERS, timeout=20.0, follow_redirects=True) as client:
         resp = await client.get(url)
         html = resp.text
