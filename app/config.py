@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Storage (Always absolute path anchored to Hub root)
     DATABASE_PATH: str = str(BASE_DIR / "omnikeep.db")
 
+    # Browser Session & Cookie Bridge Configuration
+    BROWSER_COOKIE_SOURCE: str = "chrome"
+    BROWSER_COOKIE_FILE: str = "cookies.txt"
+
     # Telegram Bot Configuration
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_ALLOWED_USER_IDS_RAW: str = Field(default="", validation_alias="TELEGRAM_ALLOWED_USER_IDS")
@@ -36,6 +40,16 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_PATH")
     @classmethod
     def resolve_db_path(cls, v: str) -> str:
+        p = Path(v)
+        if not p.is_absolute():
+            return str((BASE_DIR / p).resolve())
+        return str(p.resolve())
+
+    @field_validator("BROWSER_COOKIE_FILE")
+    @classmethod
+    def resolve_cookie_file(cls, v: str) -> str:
+        if not v:
+            return ""
         p = Path(v)
         if not p.is_absolute():
             return str((BASE_DIR / p).resolve())
@@ -69,5 +83,9 @@ class Settings(BaseSettings):
         if not self.LINE_ALLOWED_USER_IDS_RAW:
             return []
         return [x.strip() for x in self.LINE_ALLOWED_USER_IDS_RAW.split(",") if x.strip()]
+
+    @property
+    def has_cookie_file(self) -> bool:
+        return bool(self.BROWSER_COOKIE_FILE and Path(self.BROWSER_COOKIE_FILE).is_file())
 
 settings = Settings()
