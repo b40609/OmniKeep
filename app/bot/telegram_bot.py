@@ -169,23 +169,31 @@ class TelegramBot:
         chat_id = message["chat"]["id"]
         from_user = message.get("from", {})
         user_id = from_user.get("id", 0)
-        text = message.get("text", "").strip()
+        text = (message.get("text") or message.get("caption") or "").strip()
 
-        # Authorization check
+        # Authorization check & First-time Auto-pairing
         if not self.is_authorized(user_id):
             allowed = settings.telegram_allowed_ids
             if not allowed:
-                msg = (
-                    f"⚠️ <b>OmniKeep Bot 尚未綁定擁有者</b>\n\n"
-                    f"你的 Telegram User ID 是：<code>{user_id}</code>\n\n"
-                    f"請開啟專案的 <code>.env</code> 檔案，填入：\n"
-                    f"<code>TELEGRAM_ALLOWED_USER_IDS={user_id}</code>\n"
-                    f"儲存後即可開始隨手採集情報！"
+                # Auto-pair first user as owner and persist to .env
+                logger.info(f"Auto-pairing initial Telegram user as owner: {user_id}")
+                settings.TELEGRAM_ALLOWED_USER_IDS_RAW = str(user_id)
+                try:
+                    import dotenv
+                    dotenv.set_key(".env", "TELEGRAM_ALLOWED_USER_IDS", str(user_id))
+                except Exception as e:
+                    logger.warning(f"Failed to persist TELEGRAM_ALLOWED_USER_IDS to .env: {e}")
+
+                await self.send_message(
+                    chat_id,
+                    f"🎉 <b>OmniKeep 擁有者驗證成功！</b>\n\n"
+                    f"已將你的帳號 (<code>{user_id}</code>) 綁定為安全白名單。\n"
+                    f"第二大腦現已全功能就緒！"
                 )
             else:
                 msg = f"⛔ <b>未授權的存取</b>。你的 User ID (<code>{user_id}</code>) 不在允許名單中。"
-            await self.send_message(chat_id, msg)
-            return
+                await self.send_message(chat_id, msg)
+                return
 
         # Commands
         if text.startswith("/start") or text.startswith("/help"):
