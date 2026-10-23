@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import base64
 import asyncio
 import subprocess
@@ -8,6 +9,7 @@ from typing import Dict, Any, List
 import yt_dlp
 from app.providers import get_primary_provider
 from app.parsers.web import parse_facebook_page
+from app.parsers.cookie_manager import get_ytdlp_cookie_opts
 
 def is_video_reel_url(url: str) -> bool:
     clean = url.lower()
@@ -33,19 +35,30 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
     os.makedirs(frames_dir, exist_ok=True)
 
     try:
-        # 1. Download short reel stream via yt-dlp
+        # 1. Download short reel stream via yt-dlp with browser cookie bridge
+        cookie_opts = get_ytdlp_cookie_opts()
         ydl_opts = {
             'format': 'b[ext=mp4]/best',
             'outtmpl': video_path,
             'quiet': True,
             'overwrites': True,
             'socket_timeout': 15,
+            **cookie_opts
         }
 
         loop = asyncio.get_event_loop()
         def _download():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(url, download=True)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    return ydl.extract_info(url, download=True)
+            except Exception as e:
+                # If browser cookie extraction failed (e.g. database lock or decryption), gracefully retry without cookies
+                if "cookiesfrombrowser" in ydl_opts or "cookiefile" in ydl_opts:
+                    print(f"[Reel Analyzer] Cookie extraction notice ({e}), retrying download without browser cookies...")
+                    fallback_opts = {k: v for k, v in ydl_opts.items() if k not in ("cookiesfrombrowser", "cookiefile")}
+                    with yt_dlp.YoutubeDL(fallback_opts) as ydl_fb:
+                        return ydl_fb.extract_info(url, download=True)
+                raise
 
         info = await loop.run_in_executor(None, _download)
         raw_title = info.get("title") or ""

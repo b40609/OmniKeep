@@ -1,9 +1,11 @@
 import re
+import asyncio
 from typing import Dict, Any, Optional
+from urllib.parse import urlparse, urljoin
 import httpx
 import trafilatura
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse, urljoin
+from app.parsers.cookie_manager import get_cookie_jar, inject_playwright_cookies
 
 BROWSER_HEADERS = {
     "User-Agent": (
@@ -25,13 +27,63 @@ def is_facebook_url(url: str) -> bool:
     parsed = urlparse(url)
     return "facebook.com" in parsed.netloc or "fb.watch" in parsed.netloc or "fb.com" in parsed.netloc
 
-async def parse_facebook_page(url: str) -> Dict[str, Any]:
-    """Extract clean title, caption, author, and cover image from Facebook posts/reels using crawler UA"""
-    async with httpx.AsyncClient(headers=FB_HEADERS, timeout=20.0, follow_redirects=True) as client:
-        resp = await client.get(url)
-        html_text = resp.text
+async def fetch_page_with_playwright(url: str) -> Optional[str]:
+    """
+    Fallback headless rendering via system Chrome with injected cookies.
+    Used for JavaScript-heavy single-page applications or access-restricted pages.
+    """
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(channel="chrome", headless=True)
+            ctx = await browser.new_context(
+                user_agent=BROWSER_HEADERS["User-Agent"],
+                locale="zh-TW"
+            )
+            await inject_playwright_cookies(ctx)
+            page = await ctx.new_page()
+            await page.goto(url, timeout=20000, wait_until="domcontentloaded")
+            await asyncio.sleep(1.5)  # brief grace period for DOM hydration
+            content = await page.content()
+            await browser.close()
+            return content
+    except Exception as e:
+        print(f"[Web Parser] Playwright dynamic render fallback notice: {e}")
+        return None
 
-    soup = BeautifulSoup(html_text, "html.parser")
+async def parse_facebook_page(url: str) -> Dict[str, Any]:
+    """
+    Extract Facebook post/reel information with automatic Chrome session injection:
+    1. Tries user-authenticated session (with Chrome cookies) to fetch full text and comments.
+    2. Falls back to facebookexternalhit crawler User-Agent for OpenGraph metadata if unauthenticated.
+    """
+    html_text = ""
+    used_session = False
+    jar = get_cookie_jar()
+
+    # 1. Try authenticated request using bridged session cookies
+    if jar:
+        try:
+            async with httpx.AsyncClient(headers=BROWSER_HEADERS, cookies=jar, timeout=20.0, follow_redirects=True) as client:
+                resp = await client.get(url)
+                # Confirm we didn't get bounced to login / checkpoint
+                if resp.status_code == 200 and "login" not in str(resp.url).lower() and "checkpoint" not in str(resp.url).lower():
+                    html_text = resp.text
+                    used_session = True
+        except Exception as e:
+            print(f"[Facebook Parser] Session request notice: {e}")
+
+    # 2. Fallback to Facebook crawler UA for public OpenGraph metadata
+    if not html_text:
+        try:
+            async with httpx.AsyncClient(headers=FB_HEADERS, timeout=20.0, follow_redirects=True) as client:
+                resp = await client.get(url)
+                html_text = resp.text
+        except Exception as e:
+            print(f"[Facebook Parser] Crawler fallback request error: {e}")
+            html_text = ""
+
+    soup = BeautifulSoup(html_text, "html.parser") if html_text else BeautifulSoup("", "html.parser")
 
     # Extract OpenGraph tags
     og_title_tag = soup.find("meta", property="og:title")
@@ -51,6 +103,7 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
             author = parts[-1]
     
     # Strip count metrics like "142 個心情 · 48 次分享 | "
+    cleaned_title = re.sub(r'^\d+\s*reactions.*?[\|·]\s*', '', cleaned_title)
     cleaned_title = re.sub(r'^\d+\s*個心情.*?\|\s*', '', cleaned_title)
     if "|" in cleaned_title:
         cleaned_title = cleaned_title.rsplit("|", 1)[0].strip()
@@ -59,10 +112,24 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
 
     final_title = cleaned_title or (raw_desc.splitlines()[0][:40] if raw_desc else "Facebook 貼文")
 
+    content_body = raw_desc or "（Facebook 貼文未提供公開文字說明）"
+
+    # 3. If authenticated session was used, extract any discussion / comment blocks from DOM
+    if used_session and soup:
+        extracted_comments = []
+        for c_node in soup.select("div[role='article'] div[dir='auto'], ul li div[dir='auto']"):
+            txt = c_node.get_text(strip=True)
+            if txt and len(txt) > 4 and txt not in extracted_comments and txt != raw_desc:
+                extracted_comments.append(txt)
+
+        if extracted_comments:
+            comment_block = "\n\n### 貼文留言與討論串摘要\n" + "\n".join(f"- {c}" for c in extracted_comments[:12])
+            content_body += comment_block
+
     return {
         "url": url,
         "title": final_title,
-        "content_raw": raw_desc or "（Facebook 貼文未提供公開文字說明）",
+        "content_raw": content_body,
         "cover_image": cover_image,
         "author": author or "Facebook",
         "published_date": "",
@@ -86,40 +153,67 @@ def extract_meta_image(soup: BeautifulSoup, base_url: str) -> str:
 async def parse_web_page(url: str) -> Dict[str, Any]:
     """
     Fetch web page and extract clean reader-view text and metadata.
+    Automatically injects browser cookies and falls back to Playwright if needed.
     """
     if is_facebook_url(url):
         return await parse_facebook_page(url)
 
-    async with httpx.AsyncClient(headers=BROWSER_HEADERS, timeout=20.0, follow_redirects=True) as client:
-        resp = await client.get(url)
-        html = resp.text
+    html = ""
+    jar = get_cookie_jar()
+    try:
+        async with httpx.AsyncClient(headers=BROWSER_HEADERS, cookies=jar, timeout=20.0, follow_redirects=True) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                html = resp.text
+    except Exception as e:
+        print(f"[Web Parser] HTTP fetch failed ({e}), attempting Playwright fallback...")
 
     # Extract structured article using trafilatura
-    extracted_text = trafilatura.extract(
-        html,
-        include_links=True,
-        include_images=False,
-        output_format="txt"
-    )
+    extracted_text = ""
+    if html:
+        extracted_text = trafilatura.extract(
+            html,
+            include_links=True,
+            include_images=False,
+            output_format="txt"
+        ) or ""
 
-    soup = BeautifulSoup(html, "html.parser")
-    title = ""
-    if soup.title and soup.title.string:
-        title = soup.title.string.strip()
-    
-    # Meta title fallback
-    if not title:
-        og_title = soup.find("meta", property="og:title")
-        if og_title and og_title.get("content"):
-            title = og_title["content"].strip()
-
-    cover_image = extract_meta_image(soup, url)
+    soup = BeautifulSoup(html, "html.parser") if html else None
 
     # Fallback to BeautifulSoup if trafilatura missed
     if not extracted_text or len(extracted_text.strip()) < 50:
-        for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
-            tag.decompose()
-        extracted_text = soup.get_text(separator="\n\n", strip=True)
+        if soup:
+            for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
+                tag.decompose()
+            extracted_text = soup.get_text(separator="\n\n", strip=True)
+
+    # Dynamic fallback to Playwright if page is empty or JavaScript protected
+    if not extracted_text or len(extracted_text.strip()) < 50:
+        pw_html = await fetch_page_with_playwright(url)
+        if pw_html:
+            html = pw_html
+            soup = BeautifulSoup(pw_html, "html.parser")
+            extracted_text = trafilatura.extract(
+                pw_html,
+                include_links=True,
+                include_images=False,
+                output_format="txt"
+            ) or ""
+            if not extracted_text or len(extracted_text.strip()) < 50:
+                for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
+                    tag.decompose()
+                extracted_text = soup.get_text(separator="\n\n", strip=True)
+
+    title = ""
+    if soup:
+        if soup.title and soup.title.string:
+            title = soup.title.string.strip()
+        if not title:
+            og_title = soup.find("meta", property="og:title")
+            if og_title and og_title.get("content"):
+                title = og_title["content"].strip()
+
+    cover_image = extract_meta_image(soup, url) if soup else ""
 
     # Limit to first 25,000 characters to prevent token explosion
     clean_content = extracted_text[:25000].strip()
@@ -127,7 +221,7 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
     return {
         "url": url,
         "title": title or "未知標題",
-        "content_raw": clean_content,
+        "content_raw": clean_content or "（未能擷取到網頁內文）",
         "cover_image": cover_image,
         "author": "",
         "published_date": "",
