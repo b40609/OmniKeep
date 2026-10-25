@@ -4,13 +4,16 @@ import uuid
 import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from app.config import settings
 
 def get_db_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(settings.DATABASE_PATH, check_same_thread=False)
+    conn = sqlite3.connect(settings.DATABASE_PATH, timeout=10.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA cache_size = -64000")  # 64MB memory page cache
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -30,7 +33,7 @@ def init_db():
     """)
     
     # 2. Default categories seed
-    default_categories = ["AI", "加密貨幣", "台股", "Github", "時事", "旅遊", "美食"]
+    default_categories = ["AI", "加密貨幣", "台股", "Github", "時事", "旅遊", "美食", "監看", "提案"]
     for idx, cat_name in enumerate(default_categories):
         cursor.execute("""
             INSERT OR IGNORE INTO categories (name, sort_order)
@@ -174,6 +177,115 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_citations_parent ON item_citations(source_parent_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_citations_canonical ON item_citations(target_canonical_url)")
 
+    # 12. Ingest Tasks table (Persistent Task Queue / Hoarder Pattern)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ingest_tasks (
+            id TEXT PRIMARY KEY,
+            url TEXT NOT NULL,
+            source TEXT DEFAULT 'telegram',
+            chat_id TEXT,
+            message_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'queued',
+            error_message TEXT,
+            item_id TEXT,
+            retry_count INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON ingest_tasks(status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON ingest_tasks(created_at ASC)")
+
+    # 13. User Settings table (Per-user preference persistence)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_settings (
+            user_id TEXT PRIMARY KEY,
+            interaction_mode TEXT DEFAULT 'heartbeat',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 14. Watch Targets table (Local Proposal Engine: what OmniKeep may watch & how much)
+    # Two independent permission axes, stored as JSON toggle maps:
+    #   read_scope         — what the LOCAL scanner may read from disk
+    #   outbound_consent   — what may be SENT to the cloud LLM (Agnes) for analysis
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS watch_targets (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            target_type TEXT NOT NULL DEFAULT 'folder',
+            path TEXT NOT NULL,
+            preset TEXT DEFAULT 'balanced',
+            read_scope TEXT NOT NULL DEFAULT '{}',
+            outbound_consent TEXT NOT NULL DEFAULT '{}',
+            is_active INTEGER DEFAULT 1,
+            last_scan_at TEXT,
+            fingerprint_item_id TEXT,
+            fingerprint_version TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 15. Proposals table (glass-box suggestion cards; card text lives in items/提案)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS proposals (
+            id TEXT PRIMARY KEY,
+            item_id TEXT NOT NULL,
+            target_id TEXT,
+            proposal_type TEXT NOT NULL DEFAULT 'risk',
+            impact REAL DEFAULT 5.0,
+            confidence REAL DEFAULT 5.0,
+            effort REAL DEFAULT 5.0,
+            user_impact REAL,
+            user_confidence REAL,
+            user_effort REAL,
+            correction_reason TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            decided_at TEXT,
+            dedup_key TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_proposals_dedup ON proposals(dedup_key)")
+
+    # 16. Backup Runs table (multi-sink backup audit trail)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS backup_runs (
+            id TEXT PRIMARY KEY,
+            sink TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'ok',
+            file_path TEXT,
+            size_bytes INTEGER,
+            error TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 17. Behavior Events table (P1: swipe/click/view fuel for the future
+    # local preference model — content stays in items, behavior lives here)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS behavior_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            item_id TEXT,
+            proposal_id TEXT,
+            source TEXT DEFAULT 'api',
+            meta TEXT DEFAULT '{}',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_behavior_item ON behavior_events(item_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_behavior_type ON behavior_events(event_type)")
+
+    # 18. items.origin migration (radar | manual | agent | watch | proposal)
+    cursor.execute("PRAGMA table_info(items)")
+    item_cols = {row[1] for row in cursor.fetchall()}
+    if "origin" not in item_cols:
+        cursor.execute("ALTER TABLE items ADD COLUMN origin TEXT DEFAULT 'manual'")
+
     conn.commit()
     conn.close()
 
@@ -232,7 +344,7 @@ def save_item(item_data: Dict[str, Any]) -> str:
     else:
         item_id = item_data.get("id") or uuid.uuid4().hex[:12]
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     tags = item_data.get("tech_tags", [])
     if isinstance(tags, list):
@@ -244,8 +356,8 @@ def save_item(item_data: Dict[str, Any]) -> str:
         INSERT INTO items (
             id, url, source_type, category_name, title_l1, summary_l1,
             tech_tags, deep_analysis, content_raw, author, published_date,
-            cover_image, is_starred, is_read, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            cover_image, is_starred, is_read, origin, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(url) DO UPDATE SET
             category_name = excluded.category_name,
             title_l1 = excluded.title_l1,
@@ -269,6 +381,7 @@ def save_item(item_data: Dict[str, Any]) -> str:
         item_data.get("cover_image", ""),
         item_data.get("is_starred", 0),
         item_data.get("is_read", 0),
+        item_data.get("origin", "manual"),
         now,
         now
     ))
@@ -281,6 +394,7 @@ def get_items(
     query: Optional[str] = None,
     is_starred: Optional[bool] = None,
     is_read: Optional[bool] = None,
+    origin: Optional[str] = None,
     limit: int = 50,
     offset: int = 0
 ) -> List[Dict[str, Any]]:
@@ -314,6 +428,9 @@ def get_items(
         if is_read is not None:
             sql += " AND i.is_read = ?"
             params.append(1 if is_read else 0)
+        if origin:
+            sql += " AND i.origin = ?"
+            params.append(origin)
         sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
@@ -343,6 +460,9 @@ def get_items(
             if is_read is not None:
                 fallback_sql += " AND i.is_read = ?"
                 f_params.append(1 if is_read else 0)
+            if origin:
+                fallback_sql += " AND i.origin = ?"
+                f_params.append(origin)
             fallback_sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
             f_params.extend([limit, offset])
             cursor.execute(fallback_sql, f_params)
@@ -365,6 +485,9 @@ def get_items(
         if is_read is not None:
             sql += " AND i.is_read = ?"
             params.append(1 if is_read else 0)
+        if origin:
+            sql += " AND i.origin = ?"
+            params.append(origin)
         sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         cursor.execute(sql, params)
@@ -406,7 +529,7 @@ def get_item_by_id(item_id: str) -> Optional[Dict[str, Any]]:
 def update_item_field(item_id: str, updates: Dict[str, Any]) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
-    updates["updated_at"] = datetime.utcnow().isoformat()
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     fields = ", ".join(f"{k} = ?" for k in updates.keys())
     values = list(updates.values()) + [item_id]
     cursor.execute(f"UPDATE items SET {fields} WHERE id = ?", values)
@@ -574,7 +697,7 @@ def tune_topic_signal(tag: str, action: str) -> Dict[str, Any]:
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM user_topic_weights WHERE topic_tag = ?", (clean_tag,))
     row = cursor.fetchone()
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
 
     if not row:
         cur_weight = 1.0
@@ -633,7 +756,7 @@ def save_radar_event(data: Dict[str, Any]) -> str:
     cursor = conn.cursor()
     event_id = data.get("id") or f"evt_{uuid.uuid4().hex[:10]}"
     related_json = json.dumps(data.get("related_item_ids") or [])
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
     cursor.execute("""
         INSERT INTO radar_events (
             id, title, summary, primary_item_id, related_item_ids, unique_source_count, score, created_at, updated_at
@@ -665,7 +788,7 @@ def save_radar_digest(data: Dict[str, Any]) -> str:
     cursor = conn.cursor()
     digest_id = data.get("id") or f"dig_{uuid.uuid4().hex[:10]}"
     items_json = json.dumps(data.get("item_ids") or [])
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
     cursor.execute("""
         INSERT INTO radar_digests (
             id, title, digest_type, markdown_content, item_ids, created_at
@@ -779,7 +902,7 @@ def save_citation(data: Dict[str, Any]) -> str:
     conn = get_db_connection()
     cursor = conn.cursor()
     cit_id = data.get("id") or f"cit_{uuid.uuid4().hex[:10]}"
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
     
     parent_id = data["source_parent_id"]
     canon_url = normalize_canonical_url(data.get("target_canonical_url", ""))
@@ -857,4 +980,426 @@ def get_sub_entities_for_parent(source_parent_id: str) -> List[Dict[str, Any]]:
             r["tech_tags"] = []
     return rows
 
+# ── Ingest Tasks DAO (Hoarder Pattern / Persistent Queue) ──────
 
+def create_ingest_task(
+    url: str,
+    source: str = "telegram",
+    chat_id: Optional[Any] = None,
+    message_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """Insert a new ingestion task into SQLite queue (fast, <10ms)"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    task_id = uuid.uuid4().hex[:12]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO ingest_tasks (id, url, source, chat_id, message_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
+    """, (task_id, url.strip(), source, chat_id, message_id, now_iso, now_iso))
+    conn.commit()
+    conn.close()
+    return {
+        "id": task_id,
+        "url": url.strip(),
+        "source": source,
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "status": "queued",
+        "created_at": now_iso,
+        "updated_at": now_iso
+    }
+
+def claim_next_task() -> Optional[Dict[str, Any]]:
+    """Atomically fetch and lock the oldest queued task into 'processing' status"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        cursor.execute("BEGIN IMMEDIATE")
+        cursor.execute("""
+            UPDATE ingest_tasks
+            SET status = 'processing', updated_at = ?
+            WHERE id = (
+                SELECT id FROM ingest_tasks
+                WHERE status = 'queued'
+                ORDER BY created_at ASC
+                LIMIT 1
+            )
+            RETURNING *
+        """, (now_iso,))
+        row = cursor.fetchone()
+        conn.commit()
+        if row:
+            return dict(row)
+        return None
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+def update_task_status(
+    task_id: str,
+    status: str,
+    item_id: Optional[str] = None,
+    error_message: Optional[str] = None
+) -> bool:
+    """Update task lifecycle state (completed, failed, processing)"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        UPDATE ingest_tasks
+        SET status = ?,
+            item_id = COALESCE(?, item_id),
+            error_message = ?,
+            updated_at = ?
+        WHERE id = ?
+    """, (status, item_id, error_message, now_iso, task_id))
+    changed = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return changed
+
+def get_ingest_task(task_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieve task by id"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM ingest_tasks WHERE id = ?", (task_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def reset_stale_tasks() -> int:
+    """Crash Recovery: Reset any interrupted 'processing' tasks back to 'queued' on startup"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        UPDATE ingest_tasks
+        SET status = 'queued',
+            retry_count = retry_count + 1,
+            updated_at = ?
+        WHERE status = 'processing'
+    """, (now_iso,))
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return count
+
+# ── User Settings DAO (Heartbeat / Quiet A/B Mode) ──────────────
+
+def get_user_setting(user_id: Any, default_mode: str = "heartbeat") -> str:
+    """Retrieve interaction mode ('heartbeat' or 'quiet') for a given user/chat"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT interaction_mode FROM user_settings WHERE user_id = ?", (str(user_id),))
+    row = cursor.fetchone()
+    conn.close()
+    if row and row["interaction_mode"]:
+        return row["interaction_mode"]
+    return default_mode
+
+def set_user_setting(user_id: Any, interaction_mode: str) -> bool:
+    """Save or update interaction mode preference"""
+    mode = interaction_mode.lower().strip()
+    if mode not in ("heartbeat", "quiet"):
+        mode = "heartbeat"
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO user_settings (user_id, interaction_mode, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            interaction_mode = excluded.interaction_mode,
+            updated_at = excluded.updated_at
+    """, (str(user_id), mode, now_iso, now_iso))
+    conn.commit()
+    conn.close()
+    return True
+
+
+
+
+# ── Watch Targets DAO (Local Proposal Engine) ────────────────────
+
+WATCH_READ_KEYS = ["filenames", "readme", "deps", "code", "git"]
+WATCH_OUTBOUND_KEYS = ["summary", "docs", "deps", "code", "git"]
+
+WATCH_PRESETS = {
+    "open": {
+        "read": {k: True for k in WATCH_READ_KEYS},
+        "outbound": {k: True for k in WATCH_OUTBOUND_KEYS},
+    },
+    "balanced": {
+        "read": {"filenames": True, "readme": True, "deps": True, "code": False, "git": False},
+        "outbound": {"summary": True, "docs": True, "deps": True, "code": False, "git": False},
+    },
+    "strict": {
+        "read": {"filenames": True, "readme": True, "deps": False, "code": False, "git": False},
+        "outbound": {"summary": True, "docs": False, "deps": False, "code": False, "git": False},
+    },
+}
+
+def _normalize_toggle_map(raw: Any, keys: List[str]) -> Dict[str, bool]:
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else {}
+        except (ValueError, TypeError):
+            raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    return {k: bool(raw.get(k, False)) for k in keys}
+
+def _target_row_to_dict(row: Any) -> Dict[str, Any]:
+    d = dict(row)
+    d["read_scope"] = _normalize_toggle_map(d.get("read_scope"), WATCH_READ_KEYS)
+    d["outbound_consent"] = _normalize_toggle_map(d.get("outbound_consent"), WATCH_OUTBOUND_KEYS)
+    d["is_active"] = bool(d.get("is_active"))
+    return d
+
+def add_watch_target(name: str, path: str, target_type: str = "folder",
+                     preset: str = "balanced", read_scope: Optional[Dict] = None,
+                     outbound_consent: Optional[Dict] = None) -> Dict[str, Any]:
+    tid = uuid.uuid4().hex[:12]
+    if preset in WATCH_PRESETS and read_scope is None and outbound_consent is None:
+        p = WATCH_PRESETS[preset]
+        read_scope, outbound_consent = p["read"], p["outbound"]
+    read_scope = _normalize_toggle_map(read_scope or {}, WATCH_READ_KEYS)
+    outbound_consent = _normalize_toggle_map(outbound_consent or {}, WATCH_OUTBOUND_KEYS)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO watch_targets (id, name, target_type, path, preset, read_scope,
+                                   outbound_consent, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+    """, (tid, name.strip(), target_type, str(path), preset,
+          json.dumps(read_scope), json.dumps(outbound_consent), now_iso, now_iso))
+    conn.commit()
+    conn.close()
+    return {"id": tid, "name": name.strip(), "path": str(path), "target_type": target_type,
+            "preset": preset, "read_scope": read_scope, "outbound_consent": outbound_consent,
+            "is_active": True}
+
+def get_watch_targets(active_only: bool = False) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    q = "SELECT * FROM watch_targets"
+    if active_only:
+        q += " WHERE is_active = 1"
+    q += " ORDER BY created_at ASC"
+    cursor.execute(q)
+    rows = [_target_row_to_dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def get_watch_target(target_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM watch_targets WHERE id = ?", (target_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return _target_row_to_dict(row) if row else None
+
+def update_watch_target(target_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not updates:
+        return get_watch_target(target_id)
+    if "read_scope" in updates:
+        updates["read_scope"] = json.dumps(_normalize_toggle_map(updates["read_scope"], WATCH_READ_KEYS))
+    if "outbound_consent" in updates:
+        updates["outbound_consent"] = json.dumps(_normalize_toggle_map(updates["outbound_consent"], WATCH_OUTBOUND_KEYS))
+    if "is_active" in updates:
+        updates["is_active"] = 1 if updates["is_active"] else 0
+    sets, vals = [], []
+    for k, v in updates.items():
+        if k in ("name", "path", "target_type", "preset", "read_scope", "outbound_consent",
+                 "is_active", "last_scan_at", "fingerprint_item_id", "fingerprint_version"):
+            sets.append(f"{k} = ?")
+            vals.append(v)
+    if not sets:
+        return get_watch_target(target_id)
+    vals += [datetime.now(timezone.utc).isoformat(), target_id]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"UPDATE watch_targets SET {', '.join(sets)}, updated_at = ? WHERE id = ?", vals)
+    conn.commit()
+    conn.close()
+    return get_watch_target(target_id)
+
+def delete_watch_target(target_id: str) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM watch_targets WHERE id = ?", (target_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+# ── Proposals DAO (glass-box suggestion cards) ───────────────────
+
+def save_proposal(proposal: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Insert a proposal; returns None when dedup_key already seen (30-day window)."""
+    pid = uuid.uuid4().hex[:12]
+    dedup_key = proposal.get("dedup_key")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if dedup_key:
+        cursor.execute("""
+            SELECT id FROM proposals
+            WHERE dedup_key = ? AND created_at > datetime('now', '-30 days')
+            LIMIT 1
+        """, (dedup_key,))
+        if cursor.fetchone():
+            conn.close()
+            return None
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO proposals (id, item_id, target_id, proposal_type, impact, confidence,
+                               effort, status, dedup_key, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    """, (pid, proposal["item_id"], proposal.get("target_id"), proposal.get("proposal_type", "risk"),
+          float(proposal.get("impact", 5)), float(proposal.get("confidence", 5)),
+          float(proposal.get("effort", 5)), dedup_key, now_iso))
+    conn.commit()
+    conn.close()
+    return get_proposal(pid)
+
+def get_proposal(proposal_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM proposals WHERE id = ?", (proposal_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_proposals(status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if status:
+        cursor.execute(
+            "SELECT * FROM proposals WHERE status = ? ORDER BY created_at DESC LIMIT ?",
+            (status, limit))
+    else:
+        cursor.execute("SELECT * FROM proposals ORDER BY created_at DESC LIMIT ?", (limit,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def decide_proposal(proposal_id: str, status: str,
+                    corrections: Optional[Dict[str, float]] = None,
+                    reason: str = "") -> Optional[Dict[str, Any]]:
+    if status not in ("approved", "dismissed"):
+        return None
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    sets = ["status = ?", "decided_at = ?"]
+    vals: list = [status, datetime.now(timezone.utc).isoformat()]
+    if corrections:
+        for k in ("impact", "confidence", "effort"):
+            if k in corrections and corrections[k] is not None:
+                sets.append(f"user_{k} = ?")
+                vals.append(float(corrections[k]))
+    if reason:
+        sets.append("correction_reason = ?")
+        vals.append(reason)
+    vals.append(proposal_id)
+    cursor.execute(f"UPDATE proposals SET {', '.join(sets)} WHERE id = ?", vals)
+    conn.commit()
+    ok = cursor.rowcount > 0
+    conn.close()
+    return get_proposal(proposal_id) if ok else None
+
+# ── Backup Runs DAO ──────────────────────────────────────────────
+
+def log_backup_run(sink: str, status: str, file_path: str = "",
+                   size_bytes: int = 0, error: str = "") -> Dict[str, Any]:
+    rid = uuid.uuid4().hex[:12]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO backup_runs (id, sink, status, file_path, size_bytes, error, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (rid, sink, status, file_path, int(size_bytes), error,
+          datetime.now(timezone.utc).isoformat()))
+    conn.commit()
+    conn.close()
+    return {"id": rid, "sink": sink, "status": status, "file_path": file_path,
+            "size_bytes": size_bytes, "error": error}
+
+def get_backup_runs(limit: int = 10) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM backup_runs ORDER BY created_at DESC LIMIT ?", (limit,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+# ── Behavior Events DAO (P1 swipe/click/view fuel) ───────────────
+# Design rule: swipe_up/down/star are TRAINING LABELS; snooze ("稍後")
+# re-queues only and must NEVER be used as a training label.
+
+SWIPE_LABEL_EVENTS = ("swipe_up", "swipe_down", "swipe_star")
+
+def log_behavior_event(event_type: str, item_id: Optional[str] = None,
+                       proposal_id: Optional[str] = None, source: str = "api",
+                       meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO behavior_events (event_type, item_id, proposal_id, source, meta, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (event_type, item_id, proposal_id, source,
+          json.dumps(meta or {}, ensure_ascii=False),
+          datetime.now(timezone.utc).isoformat()))
+    conn.commit()
+    rowid = cursor.lastrowid
+    conn.close()
+    return {"id": rowid, "event_type": event_type}
+
+def get_behavior_stats(days: int = 7) -> Dict[str, Any]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT event_type, COUNT(*) AS count FROM behavior_events
+        WHERE created_at > datetime('now', ?)
+        GROUP BY event_type ORDER BY count DESC
+    """, (f"-{days} days",))
+    by_type = {r["event_type"]: r["count"] for r in cursor.fetchall()}
+    cursor.execute("SELECT COUNT(*) AS c FROM behavior_events")
+    total = cursor.fetchone()["c"]
+    conn.close()
+    return {"total_events": total, "window_days": days, "by_type": by_type}
+
+def get_swipe_deck(limit: int = 10) -> List[Dict[str, Any]]:
+    """Un-acted radar items, newest first.
+
+    Exclusions: any swipe label ever (decided cards don't return), and
+    snoozed cards within the last day (稍後 = re-queue, not a label).
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT i.* FROM items i
+        WHERE i.origin = 'radar' AND i.is_read = 0
+          AND NOT EXISTS (
+              SELECT 1 FROM behavior_events e
+              WHERE e.item_id = i.id AND e.event_type IN ('swipe_up','swipe_down','swipe_star'))
+          AND NOT EXISTS (
+              SELECT 1 FROM behavior_events e
+              WHERE e.item_id = i.id AND e.event_type = 'snooze'
+                AND e.created_at > datetime('now', '-1 day'))
+        ORDER BY i.created_at DESC LIMIT ?
+    """, (limit,))
+    rows = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        try:
+            d["tech_tags"] = json.loads(d["tech_tags"])
+        except Exception:
+            d["tech_tags"] = []
+        rows.append(d)
+    conn.close()
+    return rows
