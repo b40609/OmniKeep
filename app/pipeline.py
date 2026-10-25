@@ -89,7 +89,8 @@ async def _spawn_child_entity_background(source_parent_id: str, cit_id: str, tar
     except Exception as e:
         print(f"[Entity Fan-out] Background spawn failed for {target_url}: {e}")
 
-async def run_pipeline(content_input: str, manual_category: Optional[str] = None, is_sub_task: bool = False) -> Dict[str, Any]:
+async def run_pipeline(content_input: str, manual_category: Optional[str] = None,
+                       is_sub_task: bool = False, origin: str = "manual") -> Dict[str, Any]:
     # 1. Fetch available categories
     cat_rows = get_all_categories()
     category_names = [c["name"] for c in cat_rows]
@@ -241,6 +242,7 @@ URL：{url}
         "content_raw": content_raw,
         "author": author,
         "cover_image": cover_image,
+        "origin": origin,
     }
 
     item_id = save_item(item_record)
