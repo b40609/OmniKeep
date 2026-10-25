@@ -2,6 +2,8 @@
 OmniKeep Telegram Private Ingestion Bot
 Allows forwarding links, articles, and text notes directly into your Second Brain.
 Uses httpx for lightweight, zero-dependency async Telegram Bot API polling.
+Decoupled architecture: Ingestion loop acknowledges in <50ms and persists to SQLite;
+Background worker executes dual-stream analysis and asynchronously renders cards.
 """
 
 import asyncio
@@ -17,11 +19,118 @@ from app.database import (
     get_items,
     get_item_by_id,
     update_item_field,
-    get_status_counts
+    get_status_counts,
+    create_ingest_task,
+    get_user_setting,
+    set_user_setting,
+    get_swipe_deck,
+    log_behavior_event,
+    get_proposals,
+    get_proposal,
+    decide_proposal
 )
-from app.pipeline import run_pipeline
 
 logger = logging.getLogger("omnikeep.telegram_bot")
+
+_bot_instance: Optional["TelegramBot"] = None
+
+def get_telegram_bot() -> Optional["TelegramBot"]:
+    """Global singleton access to TelegramBot for asynchronous notifications"""
+    global _bot_instance
+    if not settings.TELEGRAM_BOT_TOKEN:
+        return None
+    if _bot_instance is None:
+        _bot_instance = TelegramBot()
+    return _bot_instance
+
+async def notify_task_heartbeat(chat_id: int, message_id: int, text: str):
+    """Worker notification: updates progress heartbeat in place"""
+    bot = get_telegram_bot()
+    if not bot:
+        return
+    try:
+        await bot.edit_message_text(chat_id, message_id, text)
+    except Exception as e:
+        logger.warning(f"[Telegram Heartbeat] Failed to update ({chat_id}:{message_id}): {e}")
+
+async def notify_task_completed(chat_id: int, message_id: int, item: Dict[str, Any]):
+    """Worker notification: renders finished intelligence card in place"""
+    bot = get_telegram_bot()
+    if not bot:
+        return
+    try:
+        card = bot.build_item_card_html(item)
+        kb = bot.build_item_keyboard(item)
+        await bot.edit_message_text(chat_id, message_id, card, reply_markup=kb)
+    except Exception as e:
+        logger.warning(f"[Telegram Complete] Failed to render card ({chat_id}:{message_id}): {e}")
+
+async def notify_task_failed(chat_id: int, message_id: int, error_text: str):
+    """Worker notification: updates error state in place"""
+    bot = get_telegram_bot()
+    if not bot:
+        return
+    try:
+        err_msg = f"❌ <b>情報處理失敗</b>\n\n原因: <code>{html.escape(error_text)}</code>"
+        await bot.edit_message_text(chat_id, message_id, err_msg)
+    except Exception as e:
+        logger.warning(f"[Telegram Failed] Failed to update error ({chat_id}:{message_id}): {e}")
+
+def build_mode_keyboard(current_mode: str) -> Dict[str, Any]:
+    heartbeat_check = " ✅" if current_mode == "heartbeat" else ""
+    quiet_check = " ✅" if current_mode == "quiet" else ""
+    return {
+        "inline_keyboard": [
+            [
+                {"text": f"💓 心跳模式{heartbeat_check}", "callback_data": "set_mode:heartbeat"},
+                {"text": f"🤫 安靜模式{quiet_check}", "callback_data": "set_mode:quiet"}
+            ]
+        ]
+    }
+
+def build_deck_keyboard(item_id: str) -> Dict[str, Any]:
+    """P1 swipe deck: 👍/👎/⭐ are training labels, 💤 re-queues only (never a label)."""
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "👍 想看", "callback_data": f"swipe_up:{item_id}"},
+                {"text": "⭐ 收藏", "callback_data": f"swipe_star:{item_id}"},
+                {"text": "💤 稍後", "callback_data": f"snooze:{item_id}"},
+                {"text": "👎 略過", "callback_data": f"swipe_down:{item_id}"},
+            ]
+        ]
+    }
+
+def build_proposal_keyboard(proposal_id: str) -> Dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "✅ 核准", "callback_data": f"prop:{proposal_id}:approve"},
+                {"text": "💤 稍後", "callback_data": f"prop:{proposal_id}:snooze"},
+                {"text": "❌ 忽略", "callback_data": f"prop:{proposal_id}:dismiss"},
+            ]
+        ]
+    }
+
+def build_deck_card_html(item: Dict[str, Any], remaining: int) -> str:
+    tags = " ".join(f"#{t}" for t in (item.get("tech_tags") or [])[:4])
+    title = html.escape(item.get("title_l1", ""))
+    summary = html.escape((item.get("summary_l1") or "")[:200])
+    return (
+        f"🃏 <b>雷達滑卡</b> <i>（剩 {remaining} 張）</i>\n\n"
+        f"<b>{title}</b>\n"
+        f"{summary}\n\n"
+        f"<i>{html.escape(tags)}</i>\n\n"
+        f"<i>👍/👎/⭐ 會教會 OmniKeep 你的品味；💤 稍後明天再出現，不算意見。</i>"
+    )
+
+def build_proposal_card_html(prop: Dict[str, Any]) -> str:
+    title = html.escape(prop.get("title_l1") or "（無標題）")
+    summary = html.escape((prop.get("summary_l1") or "")[:150])
+    return (
+        f"🔭 <b>提案卡</b>\n\n<b>{title}</b>\n{summary}\n\n"
+        f"🎯 影響 {prop.get('impact', '?')} · 🔍 信心 {prop.get('confidence', '?')} · 🏗️ 成本 {prop.get('effort', '?')}"
+    )
 
 class TelegramBot:
     def __init__(self, token: Optional[str] = None):
@@ -45,7 +154,6 @@ class TelegramBot:
     def is_authorized(self, user_id: int) -> bool:
         allowed = settings.telegram_allowed_ids
         if not allowed:
-            # If empty, nobody is authorized for security
             return False
         return user_id in allowed
 
@@ -175,7 +283,6 @@ class TelegramBot:
         if not self.is_authorized(user_id):
             allowed = settings.telegram_allowed_ids
             if not allowed:
-                # Auto-pair first user as owner and persist to .env
                 logger.info(f"Auto-pairing initial Telegram user as owner: {user_id}")
                 settings.TELEGRAM_ALLOWED_USER_IDS_RAW = str(user_id)
                 try:
@@ -201,13 +308,42 @@ class TelegramBot:
                 f"🧠 <b>OmniKeep 第二大腦情報採集 Bot</b>\n\n"
                 f"已成功驗證！你的 User ID: <code>{user_id}</code>\n\n"
                 f"<b>使用方式：</b>\n"
-                f"• <b>隨手轉發/貼上</b>：直接發送任何網址、YouTube 連結或技術長文段落，AI 會在幾秒內提煉 L1/L2 情報並入庫。\n"
-                f"• <b>指令支援</b>：\n"
+                f"• <b>隨手轉發/貼上</b>：直接發送任何網址、YouTube 或短影音連結，後端佇列即時收件並非同步解析。\n"
+                f"• <b>指令支援：</b>\n"
+                f"  /deck - 🃏 雷達滑卡（👍/👎/⭐ 教它你的品味，💤 稍後）\n"
+                f"  /proposals - 🔭 待決提案卡（核准／忽略）\n"
+                f"  /mode [heartbeat|quiet] - 切換即時心跳或安靜模式\n"
                 f"  /stats - 查看大腦庫存與待讀數量\n"
                 f"  /inbox - 檢視最近 5 則未讀情報\n"
                 f"  /search [關鍵字] - 快速檢索庫存"
             )
             await self.send_message(chat_id, help_text)
+            return
+
+        if text.startswith("/mode"):
+            parts = text.split()
+            if len(parts) > 1:
+                target_mode = parts[1].lower().strip()
+                if target_mode in ("heartbeat", "quiet"):
+                    set_user_setting(chat_id, target_mode)
+                    desc = "心跳模式（即時原地編輯狀態心跳）" if target_mode == "heartbeat" else "安靜模式（僅提示排隊，完成時一次性刷出情報卡片）"
+                    await self.send_message(
+                        chat_id,
+                        f"⚙️ <b>互動模式已更新</b>\n\n目前設定為：<b>{target_mode.upper()}</b>\n說明：{desc}",
+                        reply_markup=build_mode_keyboard(target_mode)
+                    )
+                    return
+            current_mode = get_user_setting(chat_id)
+            desc = "心跳模式（即時原地編輯狀態心跳）" if current_mode == "heartbeat" else "安靜模式（僅提示排隊，完成時一次性刷出情報卡片）"
+            msg = (
+                f"⚙️ <b>OmniKeep 互動模式設定</b>\n\n"
+                f"目前模式：<b>{current_mode.upper()}</b>\n"
+                f"說明：{desc}\n\n"
+                f"• <b>/mode heartbeat</b>：原地編輯心跳（📥 排隊 → ⚡ 下載音影 → 🔍 雙軌解構 → 完成卡片）\n"
+                f"• <b>/mode quiet</b>：安靜模式（僅回覆排隊，完成時一次性原地刷出情報卡片）\n\n"
+                f"請點擊下方按鈕切換偏好："
+            )
+            await self.send_message(chat_id, msg, reply_markup=build_mode_keyboard(current_mode))
             return
 
         if text.startswith("/stats"):
@@ -249,36 +385,54 @@ class TelegramBot:
                 await self.send_message(chat_id, card, reply_markup=kb)
             return
 
-        # Normal Content Ingestion (URL or Raw Text / Forward)
+        if text.startswith("/deck"):
+            from app.watch.taste import rank_deck
+            deck = rank_deck(get_swipe_deck(limit=50))
+            if not deck:
+                await self.send_message(chat_id, "🎉 雷達滑卡全部清空！等雷達進貨後再來 /deck。")
+                return
+            card = build_deck_card_html(deck[0], len(deck))
+            await self.send_message(chat_id, card, reply_markup=build_deck_keyboard(deck[0]["id"]))
+            return
+
+        if text.startswith("/proposals"):
+            props = get_proposals(status="pending", limit=3)
+            if not props:
+                await self.send_message(chat_id, "🔭 目前沒有待決提案。用 /deck 滑雷達卡，或到工作台「監看中心」看看。")
+                return
+            for p in props:
+                item = get_item_by_id(p["item_id"]) or {}
+                p["title_l1"] = item.get("title_l1", "")
+                p["summary_l1"] = item.get("summary_l1", "")
+                await self.send_message(chat_id, build_proposal_card_html(p),
+                                        reply_markup=build_proposal_keyboard(p["id"]))
+            return
+
+        # Normal Content Ingestion (Hoarder Fast Queueing: <50ms acknowledge)
         if not text:
             await self.send_message(chat_id, "請發送網址或文字段落。")
             return
 
-        # 1. Send initial progress message
+        mode = get_user_setting(chat_id)
+        if mode == "quiet":
+            initial_status = "📥 <b>已收件排隊中 (Quiet 模式)...</b>"
+        else:
+            initial_status = "📥 <b>已加入處理佇列，準備啟動雙軌解析...</b>"
+
         wait_msg = await self.send_message(
             chat_id,
-            "⚡ <b>已收到內容，正在由 AI 深入解析情報架構 (L1/L2)...</b>",
+            initial_status,
             reply_to_message_id=message.get("message_id")
         )
         wait_msg_id = wait_msg.get("result", {}).get("message_id")
 
-        # 2. Run Ingest Pipeline
-        try:
-            item = await run_pipeline(text)
-            card = self.build_item_card_html(item)
-            kb = self.build_item_keyboard(item)
-
-            if wait_msg_id:
-                await self.edit_message_text(chat_id, wait_msg_id, card, reply_markup=kb)
-            else:
-                await self.send_message(chat_id, card, reply_markup=kb)
-
-        except Exception as e:
-            err_msg = f"❌ <b>情報存入失敗</b>\n\n原因: <code>{html.escape(str(e))}</code>"
-            if wait_msg_id:
-                await self.edit_message_text(chat_id, wait_msg_id, err_msg)
-            else:
-                await self.send_message(chat_id, err_msg)
+        # Persist to SQLite Task Queue (Immediate non-blocking return)
+        create_ingest_task(
+            url=text,
+            source="telegram",
+            chat_id=chat_id,
+            message_id=wait_msg_id
+        )
 
     async def handle_callback(self, query: Dict[str, Any]):
         query_id = query["id"]
@@ -298,6 +452,97 @@ class TelegramBot:
             return
 
         action, item_id = data.split(":", 1)
+
+        # Mode toggle callback
+        if action == "set_mode":
+            target_mode = item_id.lower().strip()
+            if target_mode in ("heartbeat", "quiet"):
+                set_user_setting(chat_id, target_mode)
+                await self.answer_callback_query(query_id, f"已切換為 {target_mode.upper()} 模式")
+                desc = "心跳模式（即時原地編輯狀態心跳）" if target_mode == "heartbeat" else "安靜模式（僅提示排隊，完成時一次性刷出情報卡片）"
+                msg = (
+                    f"⚙️ <b>OmniKeep 互動模式設定</b>\n\n"
+                    f"目前模式：<b>{target_mode.upper()}</b>\n"
+                    f"說明：{desc}\n\n"
+                    f"• <b>/mode heartbeat</b>：原地編輯心跳（📥 排隊 → ⚡ 下載音影 → 🔍 雙軌解構 → 完成卡片）\n"
+                    f"• <b>/mode quiet</b>：安靜模式（僅回覆排隊，完成時一次性原地刷出情報卡片）\n\n"
+                    f"請點擊下方按鈕切換偏好："
+                )
+                await self.send_api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": msg,
+                    "parse_mode": "HTML",
+                    "reply_markup": build_mode_keyboard(target_mode)
+                })
+            return
+
+        # ── P1 swipe deck: 👍/👎/⭐ = training labels, 💤 snooze = re-queue only ──
+        if action in ("swipe_up", "swipe_down", "swipe_star", "snooze"):
+            item = get_item_by_id(item_id)
+            if not item:
+                await self.answer_callback_query(query_id, "找不到此項目", show_alert=True)
+                return
+            log_behavior_event(action, item_id=item_id, source="telegram")
+            # P2: true labels feed the radar topic-weight engine (💤 never does)
+            from app.watch.taste import apply_swipe_learning
+            apply_swipe_learning(action, item_id)
+            if action in ("swipe_up", "swipe_down"):
+                update_item_field(item_id, {"is_read": 1})
+            elif action == "swipe_star":
+                update_item_field(item_id, {"is_read": 1, "is_starred": 1})
+            # snooze: no state change — the deck query hides snoozed cards for a day
+
+            from app.watch.taste import rank_deck
+            deck = rank_deck(get_swipe_deck(limit=50))
+            if deck:
+                await self.send_api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": build_deck_card_html(deck[0], len(deck)),
+                    "parse_mode": "HTML",
+                    "reply_markup": build_deck_keyboard(deck[0]["id"]),
+                })
+            else:
+                await self.send_api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": "🎉 雷達滑卡全部清空！明天再來 /deck。",
+                    "parse_mode": "HTML",
+                    "reply_markup": {"inline_keyboard": []},
+                })
+            toasts = {"swipe_up": "已記錄 👍", "swipe_star": "已收藏 ⭐",
+                      "swipe_down": "已略過 👎", "snooze": "明天再見 💤"}
+            await self.answer_callback_query(query_id, toasts[action])
+            return
+
+        # ── Proposal decide buttons: prop:<id>:approve|dismiss|snooze ──
+        if action == "prop":
+            prop_id, _, verb = item_id.partition(":")
+            if verb not in ("approve", "dismiss", "snooze"):
+                await self.answer_callback_query(query_id)
+                return
+            log_behavior_event(f"proposal_{verb}", proposal_id=prop_id, source="telegram")
+            status_note = "💤 稍後再議"
+            if verb in ("approve", "dismiss"):
+                decided = decide_proposal(prop_id, "approved" if verb == "approve" else "dismissed")
+                status_note = "✅ 已核准" if verb == "approve" else "❌ 已忽略"
+                if not decided:
+                    await self.answer_callback_query(query_id, "提案不存在", show_alert=True)
+                    return
+            prop = get_proposal(prop_id)
+            if prop:
+                prop["title_l1"] = (get_item_by_id(prop["item_id"]) or {}).get("title_l1", "")
+                await self.send_api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": build_proposal_card_html(prop) + f"\n\n<b>{status_note}</b>",
+                    "parse_mode": "HTML",
+                    "reply_markup": {"inline_keyboard": []},
+                })
+            await self.answer_callback_query(query_id, status_note)
+            return
+
         item = get_item_by_id(item_id)
         if not item:
             await self.answer_callback_query(query_id, "找不到此項目", show_alert=True)
@@ -333,9 +578,7 @@ class TelegramBot:
             if not deep:
                 deep = "此項目無深入剖析內容。"
 
-            # Clean markdown for Telegram HTML
             escaped_deep = html.escape(deep)
-            # Truncate if exceeding Telegram 4000 char limit
             if len(escaped_deep) > 3800:
                 escaped_deep = escaped_deep[:3800] + "\n\n<i>...(過長已截斷)...</i>"
 
@@ -399,9 +642,22 @@ def run_bot():
         print("=" * 60)
         return
 
-    bot = TelegramBot()
+    from app.queue.worker import task_worker
+
+    async def _main():
+        bot = TelegramBot()
+        global _bot_instance
+        _bot_instance = bot
+        # Start background queue worker
+        task_worker.start()
+        try:
+            await bot.run_polling()
+        finally:
+            await task_worker.stop()
+            await bot.close()
+
     try:
-        asyncio.run(bot.run_polling())
+        asyncio.run(_main())
     except KeyboardInterrupt:
         print("\nTelegram Bot 已安全停止。")
 
