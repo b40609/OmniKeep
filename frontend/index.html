@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>OmniKeep — 多模態情報雷達與第二大腦</title>
+    <link rel="manifest" href="/static/manifest.json" />
+    <meta name="theme-color" content="#f2f2f7" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="OmniKeep" />
+    <meta name="format-detection" content="telephone=no" />
+    <script>
+      // Apply persisted theme before first paint to avoid FOUC (iOS: follow system by default).
+      try {
+        var t = localStorage.getItem('omnikeep-theme') || 'system';
+        var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,385 @@
+/**
+ * Typed API client — mirrors the FastAPI contract exactly.
+ * Backend contract: app/routers/{items,categories,ingest,radar}.py
+ */
+
+export type SourceType = 'youtube' | 'github' | 'rss' | 'note' | 'snippet' | string
+
+export interface Citation {
+  citation_id: number
+  parent_id: number
+  parent_title: string
+  parent_source_type: SourceType
+  mention_context?: string | null
+}
+
+export interface SubEntity {
+  citation_id: number
+  target_item_id?: number | null
+  target_name?: string | null
+  title_l1?: string | null
+  target_canonical_url?: string | null
+  category_name?: string | null
+  mention_context?: string | null
+  tech_tags?: string[] | null
+}
+
+export interface Item {
+  id: number
+  title_l1: string
+  summary_l1: string
+  url: string
+  source_type: SourceType
+  category_name: string
+  tech_tags: string[] | null
+  is_read: number | boolean
+  is_starred: number | boolean
+  created_at: string
+  published_date?: string | null
+  author?: string | null
+  origin?: string | null
+  sub_entities_count?: number
+  citations_count?: number
+  deep_analysis?: string | null
+  content_raw?: string | null
+  citations?: Citation[]
+  sub_entities?: SubEntity[]
+}
+
+export interface Category {
+  id: number
+  name: string
+  item_count?: number
+}
+
+export interface Stats {
+  inbox: number
+  starred: number
+  archived: number
+  total: number
+}
+
+export interface RadarSource {
+  id: number
+  name: string
+  source_type: 'youtube' | 'github' | 'rss' | string
+  url: string
+  tier?: number
+  hot_hours?: number[]
+}
+
+export interface RadarTopic {
+  topic_tag: string
+  weight: number
+  is_blocked: number | boolean
+}
+
+export interface RadarDigest {
+  id: number
+  title: string
+  created_at: string
+  markdown_content: string
+}
+
+export interface TriageView {
+  read?: 'true' | 'false'
+  starred?: 'true'
+}
+
+const INGEST_KEY = (import.meta.env.VITE_INGEST_KEY as string | undefined) ?? 'omnifs888'
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...init?.headers },
+  })
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`
+    try {
+      const body = await res.json()
+      detail = body.detail || body.error || detail
+    } catch {
+      /* non-json error body */
+    }
+    throw new Error(detail)
+  }
+  return res.json() as Promise<T>
+}
+
+/* ---------------- Items ---------------- */
+
+export interface ItemFilters {
+  category?: string
+  q?: string
+  read?: 'true' | 'false'
+  starred?: 'true'
+}
+
+export function getItems(filters: ItemFilters = {}): Promise<Item[]> {
+  const params = new URLSearchParams()
+  if (filters.category) params.append('category', filters.category)
+  if (filters.q) params.append('q', filters.q)
+  if (filters.read) params.append('read', filters.read)
+  if (filters.starred) params.append('starred', filters.starred)
+  const qs = params.toString()
+  return request<Item[]>(`/api/items${qs ? `?${qs}` : ''}`)
+}
+
+export function getItem(id: number): Promise<Item> {
+  return request<Item>(`/api/items/${id}`)
+}
+
+export function patchItem(id: number, patch: Partial<Pick<Item, 'is_read' | 'is_starred' | 'category_name'>>): Promise<Item> {
+  return request<Item>(`/api/items/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+}
+
+export function deleteItem(id: number): Promise<void> {
+  return request<void>(`/api/items/${id}`, { method: 'DELETE' })
+}
+
+export function getStats(): Promise<Stats> {
+  return request<Stats>('/api/items/stats')
+}
+
+/* ---------------- Categories ---------------- */
+
+export function getCategories(): Promise<Category[]> {
+  return request<Category[]>('/api/categories')
+}
+
+export function createCategory(name: string): Promise<Category> {
+  return request<Category>('/api/categories', { method: 'POST', body: JSON.stringify({ name }) })
+}
+
+export function deleteCategory(name: string): Promise<void> {
+  return request<void>(`/api/categories/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+/* ---------------- Ingest ---------------- */
+
+export interface IngestResult {
+  success: boolean
+  item?: Item
+  detail?: string
+}
+
+export function ingest(content: string, opts: { category?: string | null; async?: boolean } = {}): Promise<IngestResult> {
+  return request<IngestResult>('/api/ingest', {
+    method: 'POST',
+    headers: { 'X-API-Key': INGEST_KEY },
+    body: JSON.stringify({
+      content,
+      category: opts.category ?? null,
+      async_mode: opts.async ?? false,
+    }),
+  })
+}
+
+/* ---------------- Radar ---------------- */
+
+export function getRadarSources(): Promise<{ sources: RadarSource[] }> {
+  return request<{ sources: RadarSource[] }>('/api/radar/sources')
+}
+
+export function addRadarSource(source: { name: string; source_type: string; url: string }): Promise<unknown> {
+  return request('/api/radar/sources', { method: 'POST', body: JSON.stringify(source) })
+}
+
+export function deleteRadarSource(id: number): Promise<unknown> {
+  return request(`/api/radar/sources/${id}`, { method: 'DELETE' })
+}
+
+export function getRadarTopics(): Promise<{ topics: RadarTopic[] }> {
+  return request<{ topics: RadarTopic[] }>('/api/radar/topics')
+}
+
+export function getRadarDigests(): Promise<{ digests: RadarDigest[] }> {
+  return request<{ digests: RadarDigest[] }>('/api/radar/digests')
+}
+
+export function radarScan(): Promise<{ result?: { new_items_count?: number } }> {
+  return request('/api/radar/scan?async_mode=false&force=true', { method: 'POST' })
+}
+
+export type SignalAction = 'boost' | 'dampen' | 'mute' | 'reset'
+
+export function radarFeedback(payload: { topic_tag: string; action: SignalAction } | { item_id: number; action: SignalAction }): Promise<{ result: { weight: number } }> {
+  return request('/api/radar/feedback', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+/* ---------------- Session Bridge ---------------- */
+
+export type SessionPlatformId = 'instagram' | 'facebook' | 'google' | 'x'
+
+export interface SessionPlatformStatus {
+  id: SessionPlatformId
+  connected: boolean
+  cookies: number
+}
+
+export interface SessionBridgeSnapshot {
+  mode: 'cdp' | 'cookiefile' | 'none' | 'unknown'
+  cdp_port?: number
+  cdp_reachable?: boolean
+  auto_launch?: boolean
+  profile_dir?: string
+  cookie_file?: string
+  cookie_file_exists?: boolean
+  total_cookies: number
+  platforms: SessionPlatformStatus[]
+}
+
+export function getSessionStatus(): Promise<{ bridge: SessionBridgeSnapshot }> {
+  return request<{ bridge: SessionBridgeSnapshot }>('/api/session/status')
+}
+
+export function openPlatformLogin(platform: SessionPlatformId): Promise<{ success: boolean; url: string }> {
+  return request('/api/session/login', { method: 'POST', body: JSON.stringify({ platform }) })
+}
+
+export function refreshSession(): Promise<{ bridge: SessionBridgeSnapshot }> {
+  return request('/api/session/refresh', { method: 'POST' })
+}
+
+/* ---------------- Watch & Proposals (Local Proposal Engine) ---------------- */
+
+export interface WatchToggleMap {
+  filenames: boolean
+  readme: boolean
+  deps: boolean
+  code: boolean
+  git: boolean
+}
+
+export interface OutboundToggleMap {
+  summary: boolean
+  docs: boolean
+  deps: boolean
+  code: boolean
+  git: boolean
+}
+
+export type WatchPreset = 'open' | 'balanced' | 'strict' | 'custom'
+
+export interface WatchTarget {
+  id: string
+  name: string
+  target_type: string
+  path: string
+  preset: WatchPreset
+  read_scope: WatchToggleMap
+  outbound_consent: OutboundToggleMap
+  is_active: boolean
+  last_scan_at?: string | null
+  fingerprint_item_id?: string | null
+  fingerprint_version?: string | null
+  created_at?: string
+}
+
+export interface Proposal {
+  id: string
+  item_id: string
+  target_id?: string | null
+  proposal_type: string
+  impact: number
+  confidence: number
+  effort: number
+  user_impact?: number | null
+  user_confidence?: number | null
+  user_effort?: number | null
+  status: 'pending' | 'approved' | 'dismissed'
+  title_l1?: string
+  summary_l1?: string
+  created_at?: string
+}
+
+export interface BackupRun {
+  id: string
+  sink: string
+  status: string
+  file_path?: string
+  size_bytes?: number
+  error?: string
+  created_at: string
+}
+
+export interface BackupStatus {
+  sink: string
+  backup_dir: string
+  keep: number
+  backup_hour: number
+  runs: BackupRun[]
+}
+
+export function getWatchTargets(): Promise<WatchTarget[]> {
+  return request('/api/watch/targets')
+}
+
+export function createWatchTarget(payload: {
+  name: string
+  path: string
+  target_type?: string
+  preset?: WatchPreset
+  read_scope?: Partial<WatchToggleMap>
+  outbound_consent?: Partial<OutboundToggleMap>
+}): Promise<WatchTarget> {
+  return request('/api/watch/targets', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function updateWatchTarget(id: string, payload: Partial<{
+  name: string
+  path: string
+  preset: WatchPreset
+  read_scope: Partial<WatchToggleMap>
+  outbound_consent: Partial<OutboundToggleMap>
+  is_active: boolean
+}>): Promise<WatchTarget> {
+  return request(`/api/watch/targets/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export function deleteWatchTarget(id: string): Promise<{ success: boolean }> {
+  return request(`/api/watch/targets/${id}`, { method: 'DELETE' })
+}
+
+export function scanWatchTarget(id: string): Promise<{ success: boolean }> {
+  return request(`/api/watch/targets/${id}/scan`, { method: 'POST' })
+}
+
+export function getProposals(status?: string): Promise<Proposal[]> {
+  return request(`/api/watch/proposals${status ? `?status=${status}` : ''}`)
+}
+
+export function decideProposal(id: string, payload: {
+  status: 'approved' | 'dismissed'
+  user_impact?: number
+  user_confidence?: number
+  user_effort?: number
+  reason?: string
+}): Promise<Proposal> {
+  return request(`/api/watch/proposals/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function getBackupStatus(): Promise<BackupStatus> {
+  return request('/api/watch/backup/status')
+}
+
+export function runBackupNow(): Promise<{ success: boolean }> {
+  return request('/api/watch/backup/run', { method: 'POST' })
+}
+
+/* ---------------- Behavior events & swipe deck (P1) ---------------- */
+
+export interface BehaviorEventPayload {
+  event_type: string
+  item_id?: string
+  proposal_id?: string
+  meta?: Record<string, unknown>
+}
+
+export function logBehaviorEvent(payload: BehaviorEventPayload): Promise<{ success: boolean }> {
+  return request('/api/behavior/event', { method: 'POST', body: JSON.stringify({ ...payload, source: 'pwa' }) })
+}
+
+export function getBehaviorStats(days = 7): Promise<{ total_events: number; window_days: number; by_type: Record<string, number> }> {
+  return request(`/api/behavior/stats?days=${days}`)
+}

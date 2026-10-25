@@ -17,7 +17,8 @@ from app.database import (
     get_items,
     get_item_by_id,
     update_item_field,
-    get_status_counts
+    get_status_counts,
+    create_ingest_task
 )
 from app.pipeline import run_pipeline
 
@@ -76,6 +77,26 @@ async def push_line_messages(to_user_id: str, messages: List[Dict[str, Any]]) ->
         "to": to_user_id,
         "messages": messages
     })
+
+async def notify_line_completed(user_id: str, item: Dict[str, Any]):
+    """Pushes a completed Flex Message bubble directly to LINE chat"""
+    if not settings.LINE_CHANNEL_ACCESS_TOKEN or not user_id:
+        return
+    try:
+        flex_msg = create_item_flex_bubble(item)
+        await push_line_messages(user_id, [flex_msg])
+    except Exception as e:
+        logger.warning(f"[LINE Complete] Failed to push message to {user_id}: {e}")
+
+async def notify_line_failed(user_id: str, error_text: str):
+    """Pushes a failure notice directly to LINE chat"""
+    if not settings.LINE_CHANNEL_ACCESS_TOKEN or not user_id:
+        return
+    try:
+        err_msg = f"❌ 情報提煉失敗：{error_text}"
+        await push_line_messages(user_id, [{"type": "text", "text": err_msg}])
+    except Exception as e:
+        logger.warning(f"[LINE Failed] Failed to push error to {user_id}: {e}")
 
 def create_item_flex_bubble(item: Dict[str, Any]) -> Dict[str, Any]:
     """Generates an industrial-grade dark theme Flex Message bubble for LINE."""
@@ -325,14 +346,8 @@ async def process_line_event(event: Dict[str, Any]):
                 await reply_line_messages(reply_token, bubbles)
             return
 
-        # Ingestion Pipeline
-        await start_line_loading(user_id, seconds=15)
-        try:
-            item = await run_pipeline(text)
-            flex_msg = create_item_flex_bubble(item)
-            if reply_token:
-                await reply_line_messages(reply_token, [flex_msg])
-        except Exception as e:
-            err_msg = f"❌ 情報提煉失敗：{str(e)}"
-            if reply_token:
-                await reply_line_messages(reply_token, [{"type": "text", "text": err_msg}])
+        # Hoarder Mode Ingestion: Immediate receipt via replyToken (<50ms) + async background execution via push
+        await start_line_loading(user_id, seconds=30)
+        if reply_token:
+            await reply_line_messages(reply_token, [{"type": "text", "text": "📥 已收件排隊中，AI 正在進行雙軌情報提煉..."}])
+        create_ingest_task(url=text, source="line", chat_id=user_id, message_id=None)

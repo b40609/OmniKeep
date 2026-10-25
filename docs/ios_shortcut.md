@@ -77,4 +77,4 @@ OmniKeep 具備完整 PWA（Progressive Web App）標準支援，安裝後即為
 1. 在任何 App 看到想存的網址或文字段落，直接「分享 ➔ 傳送至 LINE」。
 2. 選擇「OmniKeep Bot」。
 3. 後端 Win11 自動驗證簽章並進行萃取，分析完成後自動回傳暗黑風格 **Flex Message 結構化卡片**（包含白話重點、分類與標籤）。
-4. 詳細設定步驟請參考 [docs/line_bot.md](file:///c:/Users/user/Desktop/Hub/docs/line_bot.md)。
+4. 詳細設定步驟請參考 [docs/line_bot.md](file:///c:/Users/user/Desktop/OmniKeep/docs/line_bot.md)。

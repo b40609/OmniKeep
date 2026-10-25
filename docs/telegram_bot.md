@@ -12,7 +12,7 @@ OmniKeep Telegram Bot 讓你無論在手機端（iPhone、Android）或電腦端
    - 機器人名稱（例如：`Ryan Second Brain`）
    - 機器人帳號使用者名稱（必須以 `bot` 結尾，例如：`ryan_omnifs_bot`）
 3. BotFather 會產生一組專屬 Token（格式如：`7123456789:AAFn_xxxxxxxxxxxxxxxx`）。
-4. 開啟 `c:\Users\user\Desktop\Hub\.env`，填入：
+4. 開啟 `c:\Users\user\Desktop\OmniKeep\.env`，填入：
    ```env
    TELEGRAM_BOT_TOKEN=7123456789:AAFn_xxxxxxxxxxxxxxxx
    ```
@@ -20,10 +20,11 @@ OmniKeep Telegram Bot 讓你無論在手機端（iPhone、Android）或電腦端
 ---
 
 ### 第二步：啟動 Bot 並取得你的 User ID
-1. 在終端執行：
+1. **推薦：隨主服務自動啟動。** 只要 `.env` 設好 `TELEGRAM_BOT_TOKEN`，`python run.py` 會在 FastAPI 啟動時自動內嵌啟動 Bot 輪詢（同時帶起任務 Worker 與雷達排程），不需要另外開進程：
    ```powershell
-   python run_bot.py
+   python run.py
    ```
+   > 分離部署（可選）：若你想把 Bot 跑在另一台機器／進程，才使用 `python run_bot.py`。注意**兩者同時跑會造成 getUpdates 409 衝突**，擇一即可。
 2. 打開 Telegram，搜尋你剛建立的 Bot，點擊 **Start** 或發送隨意文字。
 3. Bot 會主動回覆：
    > ⚠️ **OmniKeep Bot 尚未綁定擁有者**  
@@ -32,7 +33,7 @@ OmniKeep Telegram Bot 讓你無論在手機端（iPhone、Android）或電腦端
    ```env
    TELEGRAM_ALLOWED_USER_IDS=987654321
    ```
-5. 重新啟動 `python run_bot.py`，即完成私有安全綁定（外人完全無法盜用你的 Bot 與 AI 額度）。
+5. 重新啟動 `python run.py`，即完成私有安全綁定（外人完全無法盜用你的 Bot 與 AI 額度）。
 
 ---
 
@@ -57,6 +58,7 @@ OmniKeep Telegram Bot 讓你無論在手機端（iPhone、Android）或電腦端
 
 | 指令 | 說明 |
 | :--- | :--- |
+| `/mode [heartbeat\|quiet]` | 切換互動模式（心跳原地推進 vs 安靜模式直接刷出卡片）。 |
 | `/stats` | 查看當前大腦庫存狀態（Inbox 待讀數、星標數、封存數、總計數）。 |
 | `/inbox` | 快速列出最近 5 則未讀情報卡片，可直接在手機上點擊封存或星標。 |
 | `/search [關鍵字]` | 隨身檢索大腦庫存，例如 `/search OpenHands`。 |
