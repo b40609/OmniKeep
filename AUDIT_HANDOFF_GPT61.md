@@ -5,9 +5,9 @@
 
 ---
 
-## ⚠️ 第一重要事實：所有工作都沒有 commit
+## ✅ 已解決：工作已全部提交（2026-10-25）
 
-`git log` 最新提交停在 `c52cb28`（P0 之前）。**P0/P1/P2 全部 22 個修改檔 + 約 15 個新檔案都只存在於工作區**（`git status` 可見）。任何 `git clean/checkout` 都會永久銷毀這些工作。**審查前請先建議用戶 commit 或至少打包備份。**
+三個 commit（`383165a` 前端重建與基礎設施 → `4caddeb` P0 提案引擎 → `bd6e821` P1+P2 學習迴路）。審查時請以這三個 commit 的 diff 為主要檢視範圍（`git show --stat` 逐一過），`backups/`、`.zcode/`、`tests/.tmp/`、`node_modules/` 已加入 .gitignore 排除。
 
 ## 斷線／中斷事故清單（審查優先區）
 
