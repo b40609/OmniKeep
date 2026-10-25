@@ -1,0 +1,435 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   DESIGN TOKENS — iOS Human Interface Guidelines
+   Light-first system palette, big radii, hairline separators,
+   frosted-glass surfaces, soft shadows.
+   ============================================================ */
+:root {
+  /* iOS Light */
+  --background: #f2f2f7;            /* systemGroupedBackground */
+  --background-subtle: #ffffff;     /* secondarySystemGroupedBackground */
+  --foreground: #000000;            /* label */
+  --card: #ffffff;
+  --card-foreground: #000000;
+  --popover: #ffffff;
+  --popover-foreground: #000000;
+  --muted: rgba(118, 118, 128, 0.12);   /* systemFill quaternary */
+  --muted-foreground: #3c3c43;          /* secondaryLabel (99% opacity base) */
+  --subtle-foreground: rgba(60, 60, 67, 0.6);
+  --accent: rgba(118, 118, 128, 0.12);
+  --accent-foreground: #000000;
+  --border: rgba(60, 60, 67, 0.29);     /* separator */
+  --border-strong: rgba(60, 60, 67, 0.36);
+  --hairline: rgba(60, 60, 67, 0.18);
+  --input: #ffffff;
+  --ring: #007aff;
+
+  --primary: #007aff;                   /* systemBlue */
+  --primary-hover: #0071eb;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(0, 122, 255, 0.12);
+  --primary-soft-foreground: #007aff;
+
+  --success: #34c759;                   /* systemGreen */
+  --success-soft: rgba(52, 199, 89, 0.14);
+  --warning: #ff9500;                   /* systemOrange */
+  --warning-soft: rgba(255, 149, 0, 0.14);
+  --danger: #ff3b30;                    /* systemRed */
+  --danger-soft: rgba(255, 59, 48, 0.12);
+  --info: #5ac8fa;                      /* systemTeal */
+  --info-soft: rgba(90, 200, 250, 0.16);
+  --purple: #af52de;                    /* systemPurple */
+  --purple-soft: rgba(175, 82, 222, 0.12);
+
+  --scrollbar-thumb: rgba(0, 0, 0, 0.18);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.32);
+  --nav-blur: rgba(255, 255, 255, 0.6);
+  --card-shadow: 0 2px 8px rgba(31, 38, 90, 0.06), 0 8px 32px rgba(31, 38, 90, 0.08);
+  --float-shadow: 0 8px 32px rgba(31, 38, 90, 0.16);
+
+  /* Liquid glass surfaces */
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(255, 255, 255, 0.68);
+  --glass-border: rgba(255, 255, 255, 0.75);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-tint: rgba(255, 255, 255, 0.42);
+}
+
+.dark {
+  /* iOS Dark */
+  --background: #000000;
+  --background-subtle: #1c1c1e;     /* secondarySystemGroupedBackground dark */
+  --foreground: #ffffff;
+  --card: #1c1c1e;
+  --card-foreground: #ffffff;
+  --popover: #2c2c2e;
+  --popover-foreground: #ffffff;
+  --muted: rgba(118, 118, 128, 0.24);
+  --muted-foreground: rgba(235, 235, 245, 0.6);
+  --subtle-foreground: rgba(235, 235, 245, 0.4);
+  --accent: rgba(118, 118, 128, 0.24);
+  --accent-foreground: #ffffff;
+  --border: rgba(84, 84, 88, 0.6);
+  --border-strong: rgba(110, 110, 115, 0.7);
+  --hairline: rgba(84, 84, 88, 0.45);
+  --input: #1c1c1e;
+  --ring: #0a84ff;
+
+  --primary: #0a84ff;
+  --primary-hover: #409cff;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(10, 132, 255, 0.18);
+  --primary-soft-foreground: #64aefc;
+
+  --success: #30d158;
+  --success-soft: rgba(48, 209, 88, 0.18);
+  --warning: #ff9f0a;
+  --warning-soft: rgba(255, 159, 10, 0.18);
+  --danger: #ff453a;
+  --danger-soft: rgba(255, 69, 58, 0.16);
+  --info: #64d2ff;
+  --info-soft: rgba(100, 210, 255, 0.18);
+  --purple: #bf5af2;
+  --purple-soft: rgba(191, 90, 242, 0.18);
+
+  --scrollbar-thumb: rgba(235, 235, 245, 0.2);
+  --scrollbar-thumb-hover: rgba(235, 235, 245, 0.35);
+  --nav-blur: rgba(18, 18, 22, 0.55);
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --float-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+
+  /* Liquid glass surfaces */
+  --glass-bg: rgba(30, 30, 36, 0.5);
+  --glass-bg-strong: rgba(36, 36, 44, 0.66);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-highlight: rgba(255, 255, 255, 0.12);
+  --glass-tint: rgba(120, 120, 135, 0.14);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-background-subtle: var(--background-subtle);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-hairline: var(--hairline);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-foreground: var(--primary-soft-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-purple: var(--purple);
+  --color-purple-soft: var(--purple-soft);
+
+  --font-sans: 'Inter Variable', 'Inter', -apple-system, 'SF Pro Text',
+    'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.75rem;
+
+  --shadow-card: var(--card-shadow);
+  --shadow-float: var(--float-shadow);
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+@layer base {
+  * {
+    border-color: var(--hairline);
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+  ::selection {
+    background: var(--primary);
+    color: #fff;
+  }
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+  button,
+  a,
+  select,
+  input {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+}
+
+/* ============================================================
+   SAFE AREA (iOS PWA)
+   ============================================================ */
+.safe-top {
+  padding-top: max(0px, env(safe-area-inset-top));
+}
+.safe-bottom {
+  padding-bottom: max(0px, env(safe-area-inset-bottom));
+}
+
+/* Frosted glass helper (iOS nav bars / tab bars) */
+.ios-blur {
+  background-color: var(--nav-blur);
+  backdrop-filter: saturate(180%) blur(28px);
+  -webkit-backdrop-filter: saturate(180%) blur(28px);
+}
+
+/* ============================================================
+   LIQUID GLASS
+   玻璃面板：半透明底 + 重模糊 + 白色高光邊框
+   ============================================================ */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--card-shadow), inset 0 1px 0 var(--glass-highlight);
+}
+.glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--float-shadow), inset 0 1px 0 var(--glass-highlight);
+}
+/* 輕量玻璃：靠單一父層 blur 供質感，元素本身只加透明白（效能友善） */
+.glass-tint {
+  background: var(--glass-tint);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+/* ============================================================
+   AURORA — 玻璃背後的彩色光暈（讓半透明有內容可透）
+   ============================================================ */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.aurora i {
+  position: absolute;
+  display: block;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.55;
+  will-change: transform;
+}
+.aurora i:nth-child(1) {
+  width: 44vw; height: 44vw; top: -12vw; left: -8vw;
+  background: radial-gradient(circle, #7ab8ff 0%, rgba(122, 184, 255, 0) 70%);
+  animation: drift1 26s ease-in-out infinite alternate;
+}
+.aurora i:nth-child(2) {
+  width: 38vw; height: 38vw; top: 18vh; right: -10vw;
+  background: radial-gradient(circle, #d3b5ff 0%, rgba(211, 181, 255, 0) 70%);
+  animation: drift2 32s ease-in-out infinite alternate;
+}
+.aurora i:nth-child(3) {
+  width: 34vw; height: 34vw; bottom: -10vw; left: 24vw;
+  background: radial-gradient(circle, #a4f3e1 0%, rgba(164, 243, 225, 0) 70%);
+  animation: drift3 24s ease-in-out infinite alternate;
+}
+.aurora i:nth-child(4) {
+  width: 26vw; height: 26vw; bottom: 22vh; right: 18vw;
+  background: radial-gradient(circle, #ffc7e0 0%, rgba(255, 199, 224, 0) 70%);
+  animation: drift1 36s ease-in-out infinite alternate-reverse;
+}
+.dark .aurora i {
+  opacity: 0.3;
+  filter: blur(110px);
+}
+@keyframes drift1 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(6vw, 8vh) scale(1.15); }
+}
+@keyframes drift2 {
+  from { transform: translate(0, 0) scale(1.1); }
+  to { transform: translate(-7vw, -6vh) scale(0.95); }
+}
+@keyframes drift3 {
+  from { transform: translate(0, 0) scale(0.95); }
+  to { transform: translate(5vw, -7vh) scale(1.12); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora i { animation: none; }
+}
+
+/* ============================================================
+   READER PROSE — iOS Reading typography
+   ============================================================ */
+.prose-reader {
+  color: var(--foreground);
+  opacity: 0.94;
+  line-height: 1.85;
+  word-break: break-word;
+  letter-spacing: 0.001em;
+}
+.prose-reader h1,
+.prose-reader h2,
+.prose-reader h3,
+.prose-reader h4 {
+  color: var(--foreground);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 1.8em;
+  margin-bottom: 0.6em;
+  scroll-margin-top: 5rem;
+}
+.prose-reader h1 {
+  font-size: 1.55em;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid var(--hairline);
+}
+.prose-reader h2 {
+  font-size: 1.3em;
+}
+.prose-reader h3 {
+  font-size: 1.12em;
+}
+.prose-reader p {
+  margin-bottom: 1.1em;
+}
+.prose-reader ul,
+.prose-reader ol {
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+.prose-reader ul li {
+  list-style-type: disc;
+  margin-bottom: 0.45em;
+}
+.prose-reader ol li {
+  list-style-type: decimal;
+}
+.prose-reader li::marker {
+  color: var(--subtle-foreground);
+}
+.prose-reader a {
+  color: var(--primary);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+}
+.prose-reader a:hover {
+  border-bottom-color: var(--primary);
+}
+.prose-reader code {
+  background: var(--muted);
+  padding: 0.15em 0.45em;
+  border-radius: 0.375rem;
+  font-size: 0.875em;
+  font-family: var(--font-mono);
+  color: var(--primary);
+}
+.prose-reader pre {
+  background: var(--background-subtle);
+  border: none;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  margin-bottom: 1.25em;
+  font-size: 0.875em;
+  box-shadow: var(--card-shadow);
+}
+.prose-reader pre code {
+  background: transparent;
+  padding: 0;
+  color: var(--foreground);
+  opacity: 0.92;
+}
+.prose-reader blockquote {
+  border-left: 3px solid var(--primary);
+  padding: 0.2em 0 0.2em 1.1em;
+  color: var(--muted-foreground);
+  margin: 1.2em 0;
+}
+.prose-reader table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1em;
+  font-size: 0.9em;
+}
+.prose-reader th,
+.prose-reader td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 0.55em 0.8em;
+  text-align: left;
+}
+.prose-reader th {
+  font-weight: 600;
+  color: var(--subtle-foreground);
+  font-size: 0.85em;
+}
+.prose-reader hr {
+  border: none;
+  border-top: 1px solid var(--hairline);
+  margin: 2em 0;
+}
+.prose-reader img {
+  max-width: 100%;
+  border-radius: var(--radius-lg);
+}

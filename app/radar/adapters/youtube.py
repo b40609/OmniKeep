@@ -25,20 +25,26 @@ class YouTubeAdapter(BaseSourceAdapter):
             return f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}"
         
         # If given custom handle (e.g. https://www.youtube.com/@lexfridman)
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-            m = re.search(r'<meta itemprop="channelId" content="(UC[\w-]+)"', resp.text)
-            if m:
-                return f"https://www.youtube.com/feeds/videos.xml?channel_id={m.group(1)}"
-            m2 = re.search(r"channel/(UC[\w-]+)", resp.text)
-            if m2:
-                return f"https://www.youtube.com/feeds/videos.xml?channel_id={m2.group(1)}"
+        try:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                if resp.status_code == 200:
+                    m = re.search(r'<meta itemprop="channelId" content="(UC[\w-]+)"', resp.text)
+                    if m:
+                        return f"https://www.youtube.com/feeds/videos.xml?channel_id={m.group(1)}"
+                    m2 = re.search(r"channel/(UC[\w-]+)", resp.text)
+                    if m2:
+                        return f"https://www.youtube.com/feeds/videos.xml?channel_id={m2.group(1)}"
+        except Exception as e:
+            print(f"[Radar:YouTube] Custom handle resolution notice ({url}): {e}")
+            
         return url
 
     async def fetch_latest(self, source: Dict[str, Any]) -> List[RawFeedItem]:
         source_id = source["id"]
         source_url = source["url"]
         last_published_at = source.get("last_published_at")
+        now_iso = datetime.now(timezone.utc).isoformat()
 
         rss_url = await self._resolve_channel_rss_url(source_url)
         
@@ -47,18 +53,31 @@ class YouTubeAdapter(BaseSourceAdapter):
             headers["If-None-Match"] = source["etag"]
 
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            resp = await client.get(rss_url, headers=headers)
+            try:
+                resp = await client.get(rss_url, headers=headers)
+            except Exception as e:
+                print(f"[Radar:YouTube] Network error for {rss_url}: {e}")
+                update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
+                return []
+
             if resp.status_code == 304:
                 # Up to date
-                update_radar_source_fetch_meta(source_id, last_fetched_at=datetime.utcnow().isoformat())
+                update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 
             if resp.status_code != 200:
                 print(f"[Radar:YouTube] HTTP {resp.status_code} for {source_url}")
+                update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 
             etag = resp.headers.get("etag")
-            root = ET.fromstring(resp.text)
+            try:
+                root = ET.fromstring(resp.text)
+            except Exception as e:
+                print(f"[Radar:YouTube] XML parsing error for {source_url}: {e}")
+                update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
+                return []
+
             ns = {
                 "atom": "http://www.w3.org/2005/Atom",
                 "yt": "http://www.youtube.com/xml/schemas/2015",
@@ -115,7 +134,7 @@ class YouTubeAdapter(BaseSourceAdapter):
 
             update_radar_source_fetch_meta(
                 source_id=source_id,
-                last_fetched_at=datetime.utcnow().isoformat(),
+                last_fetched_at=now_iso,
                 last_published_at=newest_pub,
                 etag=etag,
                 hot_hours=hot_hours

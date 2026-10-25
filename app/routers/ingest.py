@@ -3,6 +3,7 @@ from pydantic import BaseModel, HttpUrl
 from typing import Optional, Dict, Any
 from app.config import settings
 from app.pipeline import run_pipeline
+from app.database import create_ingest_task
 
 router = APIRouter(prefix="/api/ingest", tags=["Ingestion"])
 
@@ -33,13 +34,14 @@ async def ingest_url(
 
     clean_input = raw_input.strip()
 
-    # If async_mode requested (e.g. quick return for iOS shortcut)
+    # If async_mode requested (e.g. quick return for iOS shortcut / fast ingestion)
     if req.async_mode:
-        background_tasks.add_task(run_pipeline, clean_input, req.category)
+        task = create_ingest_task(url=clean_input, source="api")
         return {
             "success": True,
             "status": "queued",
-            "message": "Content enqueued for two-stage analysis"
+            "task_id": task["id"],
+            "message": "Content enqueued in persistent queue for two-stage analysis"
         }
 
     # Otherwise process and return full item

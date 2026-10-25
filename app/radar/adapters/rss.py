@@ -12,6 +12,7 @@ class RSSAdapter(BaseSourceAdapter):
         source_id = source["id"]
         source_url = source["url"]
         last_published_at = source.get("last_published_at")
+        now_iso = datetime.now(timezone.utc).isoformat()
 
         headers = {
             "User-Agent": "Mozilla/5.0 (compatible; OmniKeepRadar/1.0)",
@@ -27,15 +28,16 @@ class RSSAdapter(BaseSourceAdapter):
                 resp = await client.get(source_url, headers=headers)
             except Exception as e:
                 print(f"[Radar:RSS] Network error for {source_url}: {e}")
+                update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 
             if resp.status_code == 304:
-                update_radar_source_fetch_meta(source_id, last_fetched_at=datetime.utcnow().isoformat())
+                update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 
             if resp.status_code != 200:
                 print(f"[Radar:RSS] HTTP {resp.status_code} for {source_url}")
-                update_radar_source_fetch_meta(source_id, last_fetched_at=datetime.utcnow().isoformat())
+                update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 
             etag = resp.headers.get("etag")
@@ -49,7 +51,7 @@ class RSSAdapter(BaseSourceAdapter):
                 title = entry.get("title", "Untitled")
                 link = entry.get("link", "")
                 summary = entry.get("summary") or entry.get("description") or ""
-                author = entry.get("author") or source["name"]
+                author = entry.get("author") or source.get("name", "RSS Feed")
                 
                 # Parse published datetime
                 pub_dt = None
@@ -85,7 +87,7 @@ class RSSAdapter(BaseSourceAdapter):
 
             update_radar_source_fetch_meta(
                 source_id=source_id,
-                last_fetched_at=datetime.utcnow().isoformat(),
+                last_fetched_at=now_iso,
                 last_published_at=newest_pub,
                 etag=etag,
                 last_modified_header=last_mod,

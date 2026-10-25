@@ -88,6 +88,41 @@ python run.py
 
 ---
 
+## 🎨 前端開發 (Web Workbench)
+
+Web 看板已升級為 **Vite + Vue 3 SFC + Tailwind v4 + Reka UI (shadcn-vue 風格)** 的正規前端工程，位於 `frontend/`，構建產物輸出至 `static/dist/` 由 FastAPI 直接服務。
+
+### 開發流程
+```powershell
+# 一次性安裝（Node 20+）
+cd frontend && npm install
+
+# 開發模式（HMR，API 自動代理到 localhost:8000）
+npm run dev
+
+# 生產構建（含型別檢查；輸出 ../static/dist/）
+npm run build
+```
+> 若 `esbuild` 安裝腳本被 npm 安全策略攔截，執行 `npm approve-scripts esbuild` 後 `npm rebuild esbuild`。
+
+### 架構總覽
+| 層 | 位置 | 說明 |
+|---|---|---|
+| Design Tokens | `src/assets/main.css` | 語義化 CSS variables，深色為本＋淺色雙主題 |
+| API 客戶端 | `src/lib/api.ts` | 型別化契約層，對齊 FastAPI 路由 |
+| 樂觀更新 | `src/composables/useMutations.ts` | 星標/封存/刪除即時反應 + toast 復原（undo） |
+| 鍵盤操控 | `src/composables/useKeyboard.ts` | J/K/E/S/Enter/Esc///N/R/?/+/- 全快捷鍵 |
+| 虛擬滾動 | `src/components/items/ItemList.vue` | virtua VList（ssrCount 保底渲染） |
+| 手機手勢 | `SwipeableRow.vue` / ReaderPane Sheet | 橫滑星標/封存、下滑關閉閱讀器 |
+| PWA | vite-plugin-pwa | SW 於 `/static/dist/sw.js`，FastAPI 附 `Service-Worker-Allowed: /` |
+
+### 主題與環境變數
+- 主題持久化於 `localStorage`（`omnikeep-theme`: dark / light / system）。
+- 存入 API Key 可用 `VITE_INGEST_KEY` 覆寫（預設 `omnifs888`，與後端 `API_KEY` 對應）。
+
+### 回滾
+升級前的單檔版 UI 保留於 `static/index-legacy.html`，將 `app/main.py` 的 `serve_dashboard` 指回該檔即可還原。
+
 ## 📱 iPhone 17 Pro 捷徑配置
 
 請參閱詳細教學文件：[docs/ios_shortcut.md](docs/ios_shortcut.md)。

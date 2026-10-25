@@ -17,7 +17,7 @@
 4. 進入剛建好的 Channel 頁面，取得兩組關鍵憑證：
    - **Basic settings 頁籤**：複製 **`Channel secret`**。
    - **Messaging API 頁籤**：滑到最下方，點擊 Issue 取得 **`Channel access token (long-lived)`**。
-5. 開啟 `c:\Users\user\Desktop\Hub\.env`，填入：
+5. 開啟 `c:\Users\user\Desktop\OmniKeep\.env`，填入：
    ```env
    LINE_CHANNEL_SECRET=你的ChannelSecret
    LINE_CHANNEL_ACCESS_TOKEN=你的ChannelAccessToken

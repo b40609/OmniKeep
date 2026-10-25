@@ -14,3 +14,9 @@ dist/
 build/
 *.egg-info/
 scratch/
+
+# session/backup artifacts (never commit)
+backups/
+.zcode/
+tests/.tmp/
+node_modules/
