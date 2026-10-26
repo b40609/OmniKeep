@@ -14,7 +14,7 @@ second, parallel scoring system this module reuses that one:
 from typing import Any, Dict, List
 
 from app.database import get_item_by_id, tune_topic_signal
-from app.radar.recommender import score_item
+from app.radar.recommender import score_item_detailed
 
 # Only true labels teach the weights. snooze is deliberately absent.
 SWIPE_ACTION_MAP = {
@@ -39,9 +39,10 @@ def rank_deck(items: List[Dict[str, Any]], exploration_ratio: float = 0.2) -> Li
     """Order un-acted deck items: taste first, with a labeled exploration slice."""
     enriched = []
     for it in items:
-        score, blocked = score_item(it.get("tech_tags") or [])
+        detail = score_item_detailed(it.get("tech_tags") or [])
         copy = dict(it)
-        copy["deck_score"] = -999.0 if blocked else score
+        copy["deck_score"] = -999.0 if detail["blocked"] else detail["score"]
+        copy["reasons"] = detail["reasons"]
         copy["is_exploration"] = False
         enriched.append(copy)
     enriched.sort(key=lambda x: x["deck_score"], reverse=True)
@@ -58,5 +59,6 @@ def rank_deck(items: List[Dict[str, Any]], exploration_ratio: float = 0.2) -> Li
         if rest:
             card = rest.pop(0)
             card["is_exploration"] = True
+            card["reasons"] = (card.get("reasons") or []) + ["🧭 探索卡（避免同溫層）"]
             result.append(card)
     return result

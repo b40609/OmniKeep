@@ -7,10 +7,15 @@ from app.config import settings
 from app.database import (
     get_all_radar_sources,
     get_db_connection,
-    delete_item
+    delete_item,
+    save_item,
+    get_pending_analysis_items,
+    update_item_field,
+    log_behavior_event,
+    get_all_topic_weights
 )
 from app.radar.adapters import get_adapter
-from app.radar.recommender import score_item, rank_items_with_exploration
+from app.radar.recommender import score_item_detailed, rank_items_with_exploration
 from app.radar.clustering import cluster_item_to_event
 from app.radar.digest import generate_radar_digest
 from app.pipeline import run_pipeline
@@ -42,52 +47,111 @@ def is_source_due(source: Dict[str, Any], force: bool = False) -> bool:
         interval = source.get("check_interval_minutes") or 60
         return minutes_passed >= float(interval)
 
-async def scan_single_source(source: Dict[str, Any], force: bool = False) -> List[Dict[str, Any]]:
-    if not is_source_due(source, force=force):
+def build_weight_index() -> List[tuple]:
+    """Keyword index for the pre-gate: only trained (non-default) or muted topics."""
+    return [
+        (str(r["topic_tag"]).strip().casefold(), float(r["weight"]), bool(r["is_blocked"]))
+        for r in get_all_topic_weights()
+        if bool(r["is_blocked"]) or abs(float(r["weight"]) - 1.0) > 1e-9
+    ]
+
+def pregate_item(title: str, url: str, content: str, weight_index: List[tuple]) -> tuple:
+    """Free local gate before any LLM spend.
+
+    A muted-topic keyword hit blocks the item outright (no DB row, no Agnes
+    call, no post-hoc delete). Otherwise returns a rough interest score from
+    matched weights (same hybrid formula as score_item) — used only to RANK
+    candidates for the analysis budget. No tags exist before analysis, so
+    this is substring matching over title/URL/content, not score_item.
+    """
+    text = f"{title} {url} {content[:500]}".casefold()
+    matched = []
+    for tag, weight, blocked in weight_index:
+        if tag and tag in text:
+            if blocked:
+                return -999.0, True
+            matched.append(weight)
+    if not matched:
+        return 1.0, False
+    return round(0.6 * max(matched) + 0.4 * (sum(matched) / len(matched)), 3), False
+
+def _save_deferred_stub(raw) -> str:
+    """Persist an unanalyzed radar candidate so nothing is lost to the cap."""
+    return save_item({
+        "url": raw.url,
+        "source_type": raw.source_type,
+        "category_name": "Inbox",
+        "title_l1": (raw.title or "（待分析）")[:120],
+        "summary_l1": "",
+        "tech_tags": [],
+        "deep_analysis": "",
+        "content_raw": (raw.content or "")[:4000],
+        "author": raw.author or "",
+        "origin": "radar",
+        "analysis_status": "pending",
+    })
+
+async def _backfill_pending(budget: int) -> List[Dict[str, Any]]:
+    """Analyze oldest pending stubs first (cap overflow from earlier cycles)."""
+    if budget <= 0:
         return []
-
-    source_type = source.get("source_type")
-    adapter = get_adapter(source_type)
-    if not adapter:
-        print(f"[Radar:Scheduler] Unknown source type: {source_type}")
-        return []
-
-    raw_items = await adapter.fetch_latest(source)
-    if not raw_items:
-        return []
-
-    saved_items = []
-    for raw in raw_items:
-        # Deduplication check in items table
-        with closing(get_db_connection()) as conn:
-            existing = conn.execute("SELECT id FROM items WHERE url = ?", (raw.url,)).fetchone()
-        if existing:
-            continue
-
-        # Ingest and run two-stage analysis
+    analyzed = []
+    for stub in get_pending_analysis_items(budget):
         try:
-            print(f"[Radar:Scheduler] Ingesting new item from {source['name']}: {raw.title}")
-            item = await run_pipeline(content_input=raw.url, manual_category=None, origin="radar")
-            
-            # Check recommender score
-            tags = item.get("tech_tags") or []
-            score, is_blocked = score_item(tags, tier=source.get("tier", 2))
-            
-            if is_blocked:
-                print(f"[Radar:Recommender] Item blocked by muted tag: {raw.title}")
-                # Remove from inbox / database to prevent pollution
-                delete_item(item["id"])
-                continue
-
-            # Cluster into events
-            event_id = cluster_item_to_event(item)
-            item["radar_event_id"] = event_id
-            item["radar_score"] = score
-            saved_items.append(item)
+            item = await _analyze_candidate(stub["url"], tier=2)
+            if item:
+                analyzed.append(item)
         except Exception as e:
-            print(f"[Radar:Scheduler] Error analyzing {raw.url}: {e}")
+            print(f"[Radar:Scheduler] Backfill failed for {stub['url']}: {e}")
+    return analyzed
 
-    return saved_items
+def _maybe_autostar(item: Dict[str, Any], detail: Dict[str, Any]) -> None:
+    """Gate tiering: high-scoring items are bookmarked + behavior-logged."""
+    if not settings.RADAR_AUTOSTAR_ENABLED:
+        return
+    if detail["score"] < settings.RADAR_AUTOSTAR_THRESHOLD:
+        return
+    update_item_field(item["id"], {"is_starred": 1})
+    log_behavior_event("auto_star", item_id=item["id"], source="radar",
+                       meta={"score": detail["score"], "reasons": detail["reasons"]})
+    item["auto_starred"] = True
+
+async def _analyze_candidate(url: str, tier: int = 2) -> Optional[Dict[str, Any]]:
+    """Full two-stage analysis + post-shields + clustering + auto-star."""
+    item = await run_pipeline(content_input=url, manual_category=None, origin="radar")
+    tags = item.get("tech_tags") or []
+    detail = score_item_detailed(tags, tier=tier)
+    if detail["blocked"]:
+        print(f"[Radar:Recommender] Item blocked by muted tag: {item.get('title_l1')}")
+        delete_item(item["id"])
+        return None
+    event_id = cluster_item_to_event(item)
+    item["radar_event_id"] = event_id
+    item["radar_score"] = detail["score"]
+    item["reasons"] = detail["reasons"]
+    _maybe_autostar(item, detail)
+    return item
+
+async def _push_autostar_notices(items: List[Dict[str, Any]]) -> None:
+    """Best-effort Telegram notice for auto-collected items; silent on failure."""
+    starred = [it for it in items if it.get("auto_starred")]
+    if not starred:
+        return
+    try:
+        from app.bot.telegram_bot import get_telegram_bot
+        bot = get_telegram_bot()
+        if not bot:
+            return
+        lines = []
+        for it in starred[:5]:
+            reasons = "；".join(str(r) for r in (it.get("reasons") or [])[:2])
+            lines.append(f"⭐ <b>{html.escape(it.get('title_l1', '')[:60])}</b>\n{html.escape(reasons)}")
+        text = "🤖 <b>雷達自動收藏</b>\n\n" + "\n\n".join(lines)
+        for chat_id in settings.telegram_allowed_ids:
+            await bot.send_message(chat_id, text)
+    except Exception as e:
+        print(f"[Radar:AutoStar] Telegram push failed: {e}")
+
 
 async def _safe_relevance_check(item: Dict[str, Any]) -> None:
     try:
@@ -122,18 +186,64 @@ async def _push_digest_to_telegram(digest_info: Dict[str, Any], ranked_items: Li
 async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict[str, Any]:
     """
     Executes a radar scan across all active sources.
-    Uses 80/20 algorithm to rank high-potential items into the review queue.
-    If multiple new items arrive, debounces and generates a synthesized digest.
+
+    Cost discipline (A-minimal): fetch → local pre-gate → dedupe → rank →
+    analyze only the top candidates within the per-cycle LLM budget
+    (CondenseIt order: sort → dedupe → limit → summarize). The rest are
+    stored as pending stubs and backfilled in later cycles.
     """
     sources = get_all_radar_sources(only_active=True)
-    all_new_items = []
+    weight_index = build_weight_index()
 
+    # Pass 1 — fetch, pre-gate and dedupe everything locally (zero LLM cost)
+    candidates = []
     for src in sources:
         try:
-            new_items = await scan_single_source(src, force=force)
-            all_new_items.extend(new_items)
+            adapter = get_adapter(src.get("source_type"))
+            if not adapter:
+                print(f"[Radar:Scheduler] Unknown source type: {src.get('source_type')}")
+                continue
+            if not is_source_due(src, force=force):
+                continue
+            raw_items = await adapter.fetch_latest(src)
         except Exception as e:
             print(f"[Radar:Scheduler] Failed to scan source {src.get('name')}: {e}")
+            continue
+        for raw in raw_items or []:
+            with closing(get_db_connection()) as conn:
+                row = conn.execute(
+                    "SELECT id, analysis_status FROM items WHERE url = ?", (raw.url,)
+                ).fetchone()
+            if row and row["analysis_status"] != "pending":
+                continue  # already ingested; pending stubs wait for backfill
+            pg_score, blocked = pregate_item(raw.title, raw.url, raw.content or "", weight_index)
+            if blocked:
+                print(f"[Radar:Scheduler] Pre-gate dropped (muted topic): {raw.title}")
+                if row:
+                    delete_item(row["id"])
+                continue
+            candidates.append((raw, src, pg_score))
+
+    # Backfill oldest pending stubs first, then spend remaining budget on the
+    # best-ranked new candidates
+    budget = max(0, int(settings.RADAR_MAX_ANALYZE_PER_CYCLE))
+    all_new_items = await _backfill_pending(budget)
+    budget -= len(all_new_items)
+
+    candidates.sort(key=lambda c: c[2], reverse=True)
+    deferred_count = 0
+    for raw, src, _pg in candidates:
+        if budget <= 0:
+            _save_deferred_stub(raw)
+            deferred_count += 1
+            continue
+        try:
+            item = await _analyze_candidate(raw.url, tier=int(src.get("tier", 2)))
+            budget -= 1
+            if item:
+                all_new_items.append(item)
+        except Exception as e:
+            print(f"[Radar:Scheduler] Error analyzing {raw.url}: {e}")
 
     # Rank newly detected items using 80/20 Epsilon-Greedy exploration
     ranked_items = rank_items_with_exploration(all_new_items, exploration_ratio=0.2)
@@ -147,6 +257,8 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
         digest_info = await generate_radar_digest(item_ids, digest_type=dtype)
         await _push_digest_to_telegram(digest_info, ranked_items)
 
+    await _push_autostar_notices(ranked_items)
+
     from app.background import follow_up_pool
     for it in ranked_items:
         follow_up_pool.submit(lambda item=it: _safe_relevance_check(item))
@@ -156,6 +268,7 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
         "new_items_count": len(all_new_items),
         "new_items": [it["id"] for it in all_new_items],
         "ranked_items": [it["id"] for it in ranked_items],
+        "deferred_count": deferred_count,
         "digest": digest_info
     }
 

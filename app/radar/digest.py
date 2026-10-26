@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from app.providers import get_primary_provider
 from app.database import save_radar_digest, get_item_by_id
+from app.pipeline import interest_profile_block
 
 DIGEST_PROMPT_TEMPLATE = """你是一位高階系統架構師與首席技術情報官。
 以下是 OmniKeep 情報雷達近期自適應巡檢獲取的一批高質量技術項目（涵蓋 YouTube、GitHub、技術博客）：
@@ -40,7 +41,7 @@ async def generate_radar_digest(item_ids: List[str], digest_type: str = "evening
         return {"success": False, "message": "Valid items not found"}
 
     items_text = "\n".join(items_text_list)
-    prompt = DIGEST_PROMPT_TEMPLATE.format(items_text=items_text)
+    prompt = DIGEST_PROMPT_TEMPLATE.format(items_text=items_text) + interest_profile_block()
 
     llm = get_primary_provider()
     system_instruction = "你是一位極簡、專注高質量技術架構的情報官。輸出乾淨的 Markdown 格式。"

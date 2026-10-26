@@ -27,7 +27,9 @@ from app.database import (
     log_behavior_event,
     get_proposals,
     get_proposal,
-    decide_proposal
+    decide_proposal,
+    get_interest_profile_record,
+    set_interest_profile
 )
 
 logger = logging.getLogger("omnikeep.telegram_bot")
@@ -116,10 +118,16 @@ def build_deck_card_html(item: Dict[str, Any], remaining: int) -> str:
     tags = " ".join(f"#{t}" for t in (item.get("tech_tags") or [])[:4])
     title = html.escape(item.get("title_l1", ""))
     summary = html.escape((item.get("summary_l1") or "")[:200])
+    reasons = [str(r) for r in (item.get("reasons") or []) if str(r)]
+    reason_block = ""
+    if reasons:
+        shown = "\n".join(f"· {html.escape(r)}" for r in reasons[:3])
+        reason_block = f"\n<b>為什麼給你看：</b>\n{shown}\n"
     return (
         f"🃏 <b>雷達滑卡</b> <i>（剩 {remaining} 張）</i>\n\n"
         f"<b>{title}</b>\n"
-        f"{summary}\n\n"
+        f"{summary}\n"
+        f"{reason_block}\n"
         f"<i>{html.escape(tags)}</i>\n\n"
         f"<i>👍/👎/⭐ 會教會 OmniKeep 你的品味；💤 稍後明天再出現，不算意見。</i>"
     )
@@ -314,6 +322,7 @@ class TelegramBot:
                 f"  /proposals - 🔭 待決提案卡（核准／忽略）\n"
                 f"  /mode [heartbeat|quiet] - 切換即時心跳或安靜模式\n"
                 f"  /stats - 查看大腦庫存與待讀數量\n"
+                f"  /profile [內容] - 檢視或更新自由文字興趣設定檔（織入 LLM Prompt）\n"
                 f"  /inbox - 檢視最近 5 則未讀情報\n"
                 f"  /search [關鍵字] - 快速檢索庫存"
             )
@@ -405,6 +414,28 @@ class TelegramBot:
                 p["summary_l1"] = item.get("summary_l1", "")
                 await self.send_message(chat_id, build_proposal_card_html(p),
                                         reply_markup=build_proposal_keyboard(p["id"]))
+            return
+
+        if text.startswith("/profile"):
+            parts = text.split(maxsplit=1)
+            if len(parts) > 1:
+                new_profile = parts[1].strip()
+                set_interest_profile(new_profile)
+                await self.send_message(
+                    chat_id,
+                    f"✅ <b>興趣設定檔已更新</b>（{len(new_profile)} 字）：\n\n"
+                    f"{html.escape(new_profile)}"
+                )
+            else:
+                rec = get_interest_profile_record()
+                prof = rec["profile"] or "（尚未設定）"
+                updated = rec["updated_at"] or "無"
+                await self.send_message(
+                    chat_id,
+                    f"📝 <b>當前興趣設定檔</b>（更新時間：{html.escape(str(updated))}）：\n\n"
+                    f"{html.escape(prof)}\n\n"
+                    f"<i>提示：輸入 <code>/profile 你的興趣與專案方向...</code> 可直接更新設定檔。</i>"
+                )
             return
 
         # Normal Content Ingestion (Hoarder Fast Queueing: <50ms acknowledge)
