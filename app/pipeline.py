@@ -274,6 +274,23 @@ URL：{url}
     item_id = save_item(item_record)
     item_record["id"] = item_id
 
+    # 2.5 Monolith HTML Snapshot & Vector Embedding (B-full)
+    raw_html = meta.get("raw_html") if isinstance(meta, dict) else ""
+    if raw_html:
+        try:
+            from app.snapshot import save_html_snapshot
+            save_html_snapshot(item_id, raw_html, url)
+        except Exception as e:
+            print(f"[Pipeline] Failed to save HTML snapshot for {item_id}: {e}")
+
+    try:
+        from app.vector import generate_embedding, store_item_embedding
+        embed_text = f"{title_l1} {summary_l1} {' '.join(tech_tags)}"
+        vec = await generate_embedding(embed_text)
+        store_item_embedding(item_id, vec)
+    except Exception as e:
+        print(f"[Pipeline] Failed to store vector embedding for {item_id}: {e}")
+
     # 3. Entity Fan-out & Citation Linking (Deduplication & Unpacking)
     sub_entities = ai_result.get("sub_entities", [])
     if isinstance(sub_entities, list) and sub_entities and not is_sub_task:

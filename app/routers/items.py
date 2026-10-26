@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from app.database import (
@@ -24,6 +25,14 @@ class ItemUpdate(BaseModel):
 async def get_stats():
     return get_status_counts()
 
+@router.get("/search/semantic")
+async def search_semantic(
+    q: str = Query(..., description="Semantic search query"),
+    limit: int = Query(10, ge=1, le=50)
+):
+    from app.vector import search_hybrid
+    return search_hybrid(q, limit=limit)
+
 @router.get("", response_model=List[Dict[str, Any]])
 async def list_items(
     category: Optional[str] = Query(None, description="Category filter"),
@@ -34,6 +43,19 @@ async def list_items(
     offset: int = Query(0, ge=0)
 ):
     return get_items(category=category, query=q, is_starred=starred, is_read=read, limit=limit, offset=offset)
+
+@router.get("/{item_id}/snapshot")
+async def get_snapshot(item_id: str):
+    from app.snapshot import get_html_snapshot
+    content = get_html_snapshot(item_id)
+    if not content:
+        raise HTTPException(status_code=404, detail="No HTML snapshot available for this item")
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@router.get("/{item_id}/snapshot/status")
+async def get_snapshot_status(item_id: str):
+    from app.snapshot import get_snapshot_info
+    return get_snapshot_info(item_id)
 
 @router.get("/{item_id}")
 async def get_item(item_id: str):

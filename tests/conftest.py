@@ -37,6 +37,7 @@ def isolated_runtime(monkeypatch, request):
     root = Path(tempfile.mkdtemp(prefix="case-", dir=_SESSION)).resolve()
     monkeypatch.setattr(settings, "DATABASE_PATH", str(root / "test.db"))
     monkeypatch.setattr(settings, "BACKUP_DIR", str(root / "backups"))
+    monkeypatch.setattr(settings, "SNAPSHOT_DIR", str(root / "snapshots"))
     monkeypatch.setattr(settings, "BACKUP_SINK", "off")
     monkeypatch.setattr(settings, "BROWSER_COOKIE_FILE", str(root / "cookies.txt"))
     monkeypatch.setattr(settings, "BROWSER_CDP_PROFILE_DIR", str(root / "chrome"))
