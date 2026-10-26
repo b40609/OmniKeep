@@ -33,19 +33,44 @@ def cluster_item_to_event(item: Dict[str, Any]) -> str:
     recent_events = [dict(r) for r in cursor.fetchall()]
     conn.close()
 
+    item_vec = None
+    try:
+        from app.vector import get_item_embedding, cosine_similarity, _deterministic_local_embedding
+        item_vec = get_item_embedding(item_id)
+        if not item_vec:
+            item_vec = _deterministic_local_embedding(f"{title} {summary}")
+    except Exception:
+        item_vec = None
+
     best_match_event = None
     highest_overlap = 0.0
 
     for evt in recent_events:
         evt_title = evt["title"]
         evt_keywords = _extract_keywords(evt_title)
-        
+
+        # 1. Vector cosine similarity check (B-full)
+        sim = 0.0
+        if item_vec is not None:
+            try:
+                evt_primary_id = evt.get("primary_item_id")
+                evt_vec = get_item_embedding(evt_primary_id) if evt_primary_id else None
+                if not evt_vec:
+                    evt_vec = _deterministic_local_embedding(f"{evt['title']} {evt.get('summary', '')}")
+                sim = cosine_similarity(item_vec, evt_vec)
+            except Exception:
+                sim = 0.0
+
+        # 2. Keyword Jaccard fallback
         intersection = item_keywords & evt_keywords
         union = item_keywords | evt_keywords
         jaccard = len(intersection) / len(union) if union else 0.0
 
-        if jaccard > 0.35 and jaccard > highest_overlap:
-            highest_overlap = jaccard
+        # Strong semantic similarity (>= 0.75) or strong keyword overlap (> 0.35)
+        is_match = (sim >= 0.75) or (jaccard > 0.35)
+        combined_score = max(sim, jaccard)
+        if is_match and combined_score > highest_overlap:
+            highest_overlap = combined_score
             best_match_event = evt
 
     if best_match_event:

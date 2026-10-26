@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     RADAR_AUTOSTAR_ENABLED: bool = True
     RADAR_AUTOSTAR_THRESHOLD: float = 2.5
 
+    # B-full: sqlite-vec, monolith snapshot & vector deduplication
+    SNAPSHOT_DIR: str = str(BASE_DIR / "snapshots")
+    EMBEDDING_DIM: int = 256
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+
     # Multi-sink backup (self-hosters pick their own: local folder / rclone cloud / git repo)
     BACKUP_SINK: str = "local"          # local | rclone | git | off
     BACKUP_DIR: str = str(BASE_DIR / "backups")

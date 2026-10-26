@@ -309,6 +309,12 @@ def init_db():
     conn.commit()
     conn.close()
 
+    try:
+        from app.vector import init_vector_db
+        init_vector_db()
+    except Exception:
+        pass
+
 # ── Categories DAO ──────────────────────────────────────────────
 
 def get_all_categories() -> List[Dict[str, Any]]:

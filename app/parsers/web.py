@@ -253,4 +253,5 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
         "cover_image": cover_image,
         "author": "",
         "published_date": "",
+        "raw_html": html or "",
     }

@@ -19,6 +19,11 @@ logger = logging.getLogger("omnikeep.main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    try:
+        from app.vector import init_vector_db
+        init_vector_db()
+    except Exception as e:
+        logger.warning(f"Could not initialize vector database: {e}")
     if not settings.BACKGROUND_SERVICES_ENABLED:
         yield
         return
