@@ -54,6 +54,41 @@ async def update_profile(req: InterestProfileRequest):
     rec = get_interest_profile_record()
     return {"success": True, "profile": rec["profile"], "updated_at": rec["updated_at"]}
 
+# ── Dream Pass (Taste Self-Reflection) Endpoints ─────────────
+
+@router.post("/profile/dreampass/run")
+async def trigger_dreampass(days: int = Query(7, ge=1, le=30)):
+    """Run a Dream Pass taste self-reflection cycle and return the generated proposal."""
+    from app.radar.dreampass import run_dreampass_reflection
+    prop = await run_dreampass_reflection(days=days)
+    return {"success": True, "proposal": prop}
+
+@router.get("/profile/dreampass/latest")
+async def get_latest_dreampass(status: Optional[str] = Query(None)):
+    """Retrieve the latest self-reflection proposal."""
+    from app.database import get_latest_dreampass_proposal
+    prop = get_latest_dreampass_proposal(status=status)
+    return {"success": True, "proposal": prop}
+
+@router.post("/profile/dreampass/{proposal_id}/apply")
+async def apply_dreampass(proposal_id: int):
+    """Approve and apply a Dream Pass reflection proposal into the user interest profile."""
+    from app.database import apply_dreampass_proposal, get_interest_profile_record
+    ok = apply_dreampass_proposal(proposal_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Proposal not found or not in pending state")
+    rec = get_interest_profile_record()
+    return {"success": True, "message": "已成功採用自省建議並更新興趣畫像", "profile": rec["profile"]}
+
+@router.post("/profile/dreampass/{proposal_id}/dismiss")
+async def dismiss_dreampass(proposal_id: int):
+    """Dismiss a Dream Pass reflection proposal."""
+    from app.database import dismiss_dreampass_proposal
+    ok = dismiss_dreampass_proposal(proposal_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Proposal not found or already handled")
+    return {"success": True, "message": "已忽略該自省建議"}
+
 # ── Signal Tuning Feedback Endpoints ────────────────────────
 
 @router.post("/feedback")

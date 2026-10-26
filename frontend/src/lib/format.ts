@@ -83,6 +83,18 @@ export function sourceMeta(source: SourceType | null | undefined): SourceMeta {
         label: 'Reel',
         badgeClass: 'bg-info-soft text-info',
       }
+    case 'google_news':
+      return {
+        variant: 'rss',
+        label: 'Google新聞',
+        badgeClass: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+      }
+    case 'web_change':
+      return {
+        variant: 'web',
+        label: '網頁監控',
+        badgeClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+      }
     default:
       return {
         variant: 'web',
