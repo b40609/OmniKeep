@@ -13,23 +13,24 @@ import shutil
 import sqlite3
 import subprocess
 import zipfile
-from datetime import datetime
+import tempfile
+from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 from app.config import settings
-from app.database import log_backup_run, get_backup_runs
+from app.database import log_backup_run
+from app.file_lock import FileLock
 
 
 def _snapshot_db(tmp_dir: Path) -> Path:
     """Consistent copy of a live WAL database via the sqlite3 backup API."""
     snap = tmp_dir / "omnikeep.db"
-    src = sqlite3.connect(settings.DATABASE_PATH)
-    dst = sqlite3.connect(str(snap))
-    with dst:
-        src.backup(dst)
-    src.close()
-    dst.close()
+    uri = Path(settings.DATABASE_PATH).resolve().as_uri() + "?mode=ro"
+    with closing(sqlite3.connect(uri, uri=True)) as src, closing(sqlite3.connect(str(snap))) as dst:
+        with dst:
+            src.backup(dst)
     return snap
 
 
@@ -64,8 +65,8 @@ def _git_push(zip_path: Path) -> None:
         raise RuntimeError(f"{repo} is not a git clone")
     dst = repo_dir / zip_path.name
     shutil.copy2(zip_path, dst)
-    for args in (["git", "-C", str(repo_dir), "add", "."],
-                 ["git", "-C", str(repo_dir), "commit", "-m", f"omnikeep backup {zip_path.stem}"],
+    for args in (["git", "-C", str(repo_dir), "add", "--", zip_path.name],
+                 ["git", "-C", str(repo_dir), "commit", "--only", "-m", f"omnikeep backup {zip_path.stem}", "--", zip_path.name],
                  ["git", "-C", str(repo_dir), "push"]):
         res = subprocess.run(args, capture_output=True, text=True, timeout=300)
         if res.returncode != 0 and "nothing to commit" not in res.stdout:
@@ -76,50 +77,68 @@ def run_backup() -> Dict[str, Any]:
     sink = settings.BACKUP_SINK.lower()
     if sink == "off":
         return {"status": "skipped", "sink": sink}
+    if sink not in ("local", "rclone", "git"):
+        raise ValueError("Unsupported backup sink")
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     zip_path = Path(settings.BACKUP_DIR) / f"omnikeep-backup-{stamp}.zip"
-    tmp_dir = Path(settings.BACKUP_DIR) / ".tmp"
+    ownership = FileLock(Path(settings.BACKUP_DIR) / ".backup.lock")
+    if not ownership.acquire():
+        return {"status": "busy", "sink": sink}
     try:
-        tmp_dir.mkdir(parents=True, exist_ok=True)
         Path(settings.BACKUP_DIR).mkdir(parents=True, exist_ok=True)
-        snap = _snapshot_db(tmp_dir)
-        size = _make_zip(snap, zip_path)
-        _rotate_local(settings.BACKUP_KEEP)
+        with tempfile.TemporaryDirectory(prefix="snapshot-", dir=settings.BACKUP_DIR) as tmp_dir:
+            snap = _snapshot_db(Path(tmp_dir))
+            size = _make_zip(snap, zip_path)
         if sink == "rclone":
             _rclone_push(zip_path)
         elif sink == "git":
             _git_push(zip_path)
-        if sink in ("rclone", "git"):
-            zip_path.unlink(missing_ok=True)
+        # Retain the local snapshot; rotate only after remote delivery succeeded.
+        _rotate_local(max(1, settings.BACKUP_KEEP))
         rec = log_backup_run(sink, "ok", str(zip_path), size)
         return {"status": "ok", **rec}
     except Exception as e:
-        rec = log_backup_run(sink, "failed", str(zip_path), 0, error=str(e)[:500])
+        rec = log_backup_run(sink, "failed", str(zip_path), 0, error=type(e).__name__)
         return {"status": "failed", **rec}
     finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        ownership.release()
 
 
 def last_successful_date() -> Optional[str]:
-    runs: List[Dict[str, Any]] = get_backup_runs(limit=20)
-    for r in runs:
-        if r.get("status") == "ok":
-            return str(r.get("created_at", ""))[:10]
+    from app.database import get_db_connection
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT created_at FROM backup_runs WHERE status = 'ok' ORDER BY julianday(created_at) DESC LIMIT 1").fetchone()
+    if row:
+        stamp = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        return stamp.astimezone().date().isoformat()
     return None
+
+
+async def run_backup_async():
+    # Cancelling to_thread does not stop SQLite/file I/O; join it before shutdown.
+    task = asyncio.create_task(asyncio.to_thread(run_backup))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await asyncio.gather(task, return_exceptions=True)
+        raise
 
 
 async def backup_loop(interval_seconds: int = 1800) -> None:
     """Daily scheduler: fire on the first tick at/after BACKUP_HOUR local time."""
     from app.main import logger  # avoid import cycle at module load
-    done_for = last_successful_date()
+    done_for = None
     while True:
         try:
+            done_for = last_successful_date() or done_for
             now = datetime.now()
             today = now.strftime("%Y-%m-%d")
             if now.hour >= settings.BACKUP_HOUR and done_for != today and settings.BACKUP_SINK != "off":
                 logger.info("Backup window reached (%s >= %02d) — running %s backup",
                             today, settings.BACKUP_HOUR, settings.BACKUP_SINK)
-                result = await asyncio.to_thread(run_backup)
+                result = await run_backup_async()
                 if result.get("status") == "ok":
                     done_for = today
                 else:

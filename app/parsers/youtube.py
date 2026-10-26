@@ -1,16 +1,16 @@
 import re
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse, parse_qs
-import httpx
+from app.network import public_http_client, validate_url
 
 def is_youtube_url(url: str) -> bool:
-    nl = urlparse(url).netloc.lower()
-    return "youtube.com" in nl or "youtu.be" in nl
+    host = (urlparse(url).hostname or "").lower()
+    return any(host == d or host.endswith("." + d) for d in ("youtube.com", "youtu.be"))
 
 def extract_video_id(url: str) -> Optional[str]:
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
-    if "youtu.be" in parsed.netloc:
+    if (parsed.hostname or "").lower() == "youtu.be":
         return parsed.path.lstrip("/").split("/")[0]
     if "v" in qs:
         return qs["v"][0]
@@ -21,6 +21,9 @@ async def fetch_youtube_metadata(url: str) -> Dict[str, Any]:
     """
     Fetch oEmbed info for YouTube video (fast, official, no API key required).
     """
+    validate_url(url)
+    if not is_youtube_url(url):
+        raise ValueError("Unsupported YouTube host")
     video_id = extract_video_id(url)
     default_thumb = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg" if video_id else ""
     
@@ -33,7 +36,7 @@ async def fetch_youtube_metadata(url: str) -> Dict[str, Any]:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with public_http_client(timeout=8.0) as client:
             resp = await client.get(
                 "https://www.youtube.com/oembed",
                 params={"url": url, "format": "json"}

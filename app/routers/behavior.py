@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
-from app.database import log_behavior_event, get_behavior_stats, get_swipe_deck
+from app.database import log_behavior_event, get_behavior_stats, get_swipe_deck, record_swipe, SWIPE_LABEL_EVENTS
 
 router = APIRouter(prefix="/api/behavior", tags=["Behavior & Deck"])
 
@@ -27,8 +27,19 @@ class BehaviorEvent(BaseModel):
 async def record_event(req: BehaviorEvent):
     if req.event_type not in VALID_EVENTS:
         return {"success": False, "error": f"unknown event_type '{req.event_type}'"}
-    rec = log_behavior_event(req.event_type, req.item_id, req.proposal_id,
-                             req.source, req.meta)
+    if req.event_type in (*SWIPE_LABEL_EVENTS, "snooze"):
+        if not req.item_id:
+            raise HTTPException(422, "item_id is required for swipe events")
+        try:
+            rec = record_swipe(req.event_type, req.item_id, req.source, req.meta)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+    else:
+        try:
+            rec = log_behavior_event(req.event_type, req.item_id, req.proposal_id,
+                                     req.source, req.meta)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
     return {"success": True, **rec}
 
 

@@ -2,6 +2,7 @@ import sqlite3
 import json
 import uuid
 import re
+from contextlib import closing
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
@@ -338,7 +339,12 @@ def delete_category(name: str) -> bool:
 # ── Items DAO ───────────────────────────────────────────────────
 
 def save_item(item_data: Dict[str, Any]) -> str:
-    conn = get_db_connection()
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        return _save_item(conn, item_data)
+
+
+def _save_item(conn, item_data: Dict[str, Any]) -> str:
     cursor = conn.cursor()
     
     # Check if url already exists to preserve and return the true existing item id
@@ -390,8 +396,6 @@ def save_item(item_data: Dict[str, Any]) -> str:
         now,
         now
     ))
-    conn.commit()
-    conn.close()
     return item_id
 
 def get_items(
@@ -534,7 +538,12 @@ def get_item_by_id(item_id: str) -> Optional[Dict[str, Any]]:
 def update_item_field(item_id: str, updates: Dict[str, Any]) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
-    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    allowed = {"is_read", "is_starred", "category_name", "title_l1", "summary_l1",
+               "tech_tags", "deep_analysis", "content_raw", "cover_image", "origin"}
+    if not updates or set(updates) - allowed:
+        conn.close()
+        raise ValueError("Unsupported item field")
+    updates = {**updates, "updated_at": datetime.now(timezone.utc).isoformat()}
     fields = ", ".join(f"{k} = ?" for k in updates.keys())
     values = list(updates.values()) + [item_id]
     cursor.execute(f"UPDATE items SET {fields} WHERE id = ?", values)
@@ -544,13 +553,13 @@ def update_item_field(item_id: str, updates: Dict[str, Any]) -> bool:
     return ok
 
 def delete_item(item_id: str) -> bool:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM items WHERE id = ?", (item_id,))
-    conn.commit()
-    ok = cursor.rowcount > 0
-    conn.close()
-    return ok
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DELETE FROM behavior_events WHERE item_id = ? OR proposal_id IN (SELECT id FROM proposals WHERE item_id = ?)", (item_id, item_id))
+        conn.execute("DELETE FROM proposals WHERE item_id = ?", (item_id,))
+        conn.execute("UPDATE watch_targets SET fingerprint_item_id = NULL, fingerprint_version = NULL WHERE fingerprint_item_id = ?", (item_id,))
+        conn.execute("UPDATE ingest_tasks SET item_id = NULL WHERE item_id = ?", (item_id,))
+        return conn.execute("DELETE FROM items WHERE id = ?", (item_id,)).rowcount > 0
 
 def get_status_counts() -> Dict[str, int]:
     conn = get_db_connection()
@@ -680,16 +689,25 @@ def get_all_topic_weights() -> List[Dict[str, Any]]:
 def get_topic_weight(tag: str) -> float:
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT weight, is_blocked FROM user_topic_weights WHERE topic_tag = ?", (tag.strip(),))
+    cursor.execute("SELECT weight, is_blocked, last_interacted_at FROM user_topic_weights WHERE topic_tag = ?", (tag.strip(),))
     row = cursor.fetchone()
     conn.close()
     if not row:
         return 1.0
     if row["is_blocked"]:
         return -999.0
-    return float(row["weight"])
+    from app.radar.recommender import calculate_time_decay
+    return calculate_time_decay(float(row["weight"]), row["last_interacted_at"])
 
 def tune_topic_signal(tag: str, action: str) -> Dict[str, Any]:
+    if action not in ("boost", "dampen", "mute", "reset"):
+        raise ValueError("Unsupported topic action")
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        return _tune_topic_signal(conn, tag, action)
+
+
+def _tune_topic_signal(conn, tag: str, action: str) -> Dict[str, Any]:
     """
     Tune topic signal without tacky emojis:
     - action 'boost' (Tune Up): weight += 0.5, boost_count += 1
@@ -698,7 +716,6 @@ def tune_topic_signal(tag: str, action: str) -> Dict[str, Any]:
     - action 'reset': weight = 1.0, is_blocked = 0
     """
     clean_tag = tag.strip()
-    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM user_topic_weights WHERE topic_tag = ?", (clean_tag,))
     row = cursor.fetchone()
@@ -710,7 +727,8 @@ def tune_topic_signal(tag: str, action: str) -> Dict[str, Any]:
         d_count = 0
         blocked = 0
     else:
-        cur_weight = float(row["weight"])
+        from app.radar.recommender import calculate_time_decay
+        cur_weight = calculate_time_decay(float(row["weight"]), row["last_interacted_at"])
         b_count = int(row["boost_count"])
         d_count = int(row["dampen_count"])
         blocked = int(row["is_blocked"])
@@ -742,8 +760,6 @@ def tune_topic_signal(tag: str, action: str) -> Dict[str, Any]:
             is_blocked = excluded.is_blocked,
             last_interacted_at = excluded.last_interacted_at
     """, (clean_tag, new_weight, b_count, d_count, blocked, now_iso))
-    conn.commit()
-    conn.close()
 
     return {
         "topic_tag": clean_tag,
@@ -1076,8 +1092,17 @@ def get_ingest_task(task_id: str) -> Optional[Dict[str, Any]]:
     conn.close()
     return dict(row) if row else None
 
-def reset_stale_tasks() -> int:
-    """Crash Recovery: Reset any interrupted 'processing' tasks back to 'queued' on startup"""
+def reset_stale_tasks(exclusive_owner: bool = False) -> int:
+    """Recover interrupted work only while no other process owns this DB queue."""
+    if not exclusive_owner:
+        from app.file_lock import FileLock
+        ownership = FileLock(settings.DATABASE_PATH + ".worker.lock")
+        if not ownership.acquire():
+            return 0
+        try:
+            return reset_stale_tasks(exclusive_owner=True)
+        finally:
+            ownership.release()
     conn = get_db_connection()
     cursor = conn.cursor()
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -1210,67 +1235,69 @@ def get_watch_target(target_id: str) -> Optional[Dict[str, Any]]:
     return _target_row_to_dict(row) if row else None
 
 def update_watch_target(target_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    if not updates:
-        return get_watch_target(target_id)
+    updates = dict(updates)
     if "read_scope" in updates:
         updates["read_scope"] = json.dumps(_normalize_toggle_map(updates["read_scope"], WATCH_READ_KEYS))
     if "outbound_consent" in updates:
         updates["outbound_consent"] = json.dumps(_normalize_toggle_map(updates["outbound_consent"], WATCH_OUTBOUND_KEYS))
     if "is_active" in updates:
         updates["is_active"] = 1 if updates["is_active"] else 0
-    sets, vals = [], []
-    for k, v in updates.items():
-        if k in ("name", "path", "target_type", "preset", "read_scope", "outbound_consent",
-                 "is_active", "last_scan_at", "fingerprint_item_id", "fingerprint_version"):
-            sets.append(f"{k} = ?")
-            vals.append(v)
-    if not sets:
-        return get_watch_target(target_id)
-    vals += [datetime.now(timezone.utc).isoformat(), target_id]
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(f"UPDATE watch_targets SET {', '.join(sets)}, updated_at = ? WHERE id = ?", vals)
-    conn.commit()
-    conn.close()
+    allowed = {"name", "path", "target_type", "preset", "read_scope", "outbound_consent",
+               "is_active", "last_scan_at", "fingerprint_item_id", "fingerprint_version"}
+    fields = {key: value for key, value in updates.items() if key in allowed}
+    if fields:
+        with closing(get_db_connection()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            fingerprint = fields.get("fingerprint_item_id")
+            if fingerprint and not conn.execute("SELECT 1 FROM items WHERE id = ?", (fingerprint,)).fetchone():
+                raise ValueError("Unknown fingerprint item")
+            fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+            sets = ", ".join(f"{key} = ?" for key in fields)
+            conn.execute(f"UPDATE watch_targets SET {sets} WHERE id = ?", [*fields.values(), target_id])
     return get_watch_target(target_id)
 
+
 def delete_watch_target(target_id: str) -> bool:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM watch_targets WHERE id = ?", (target_id,))
-    deleted = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
-    return deleted
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        # Preserve existing proposal cards and decisions, detach the removed target.
+        conn.execute("UPDATE proposals SET target_id = NULL WHERE target_id = ?", (target_id,))
+        return conn.execute("DELETE FROM watch_targets WHERE id = ?", (target_id,)).rowcount > 0
 
 # ── Proposals DAO (glass-box suggestion cards) ───────────────────
 
-def save_proposal(proposal: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Insert a proposal; returns None when dedup_key already seen (30-day window)."""
-    pid = uuid.uuid4().hex[:12]
-    dedup_key = proposal.get("dedup_key")
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    if dedup_key:
-        cursor.execute("""
-            SELECT id FROM proposals
-            WHERE dedup_key = ? AND created_at > datetime('now', '-30 days')
-            LIMIT 1
-        """, (dedup_key,))
-        if cursor.fetchone():
-            conn.close()
+def proposal_seen(dedup_key: str, conn=None) -> bool:
+    if conn is None:
+        with closing(get_db_connection()) as owned:
+            return proposal_seen(dedup_key, owned)
+    return conn.execute("""
+        SELECT 1 FROM proposals WHERE dedup_key = ?
+        AND julianday(created_at) > julianday('now', '-30 days') LIMIT 1
+    """, (dedup_key,)).fetchone() is not None
+
+
+def save_proposal(proposal: Dict[str, Any], item_data=None) -> Optional[Dict[str, Any]]:
+    """Atomically deduplicate and save both the card and proposal, without a migration."""
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if proposal.get("dedup_key") and proposal_seen(proposal["dedup_key"], conn):
             return None
-    now_iso = datetime.now(timezone.utc).isoformat()
-    cursor.execute("""
-        INSERT INTO proposals (id, item_id, target_id, proposal_type, impact, confidence,
-                               effort, status, dedup_key, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-    """, (pid, proposal["item_id"], proposal.get("target_id"), proposal.get("proposal_type", "risk"),
-          float(proposal.get("impact", 5)), float(proposal.get("confidence", 5)),
-          float(proposal.get("effort", 5)), dedup_key, now_iso))
-    conn.commit()
-    conn.close()
-    return get_proposal(pid)
+        target_id = proposal.get("target_id")
+        if target_id and not conn.execute("SELECT 1 FROM watch_targets WHERE id = ?", (target_id,)).fetchone():
+            raise ValueError("Unknown proposal target")
+        item_id = _save_item(conn, item_data) if item_data is not None else proposal["item_id"]
+        if not conn.execute("SELECT 1 FROM items WHERE id = ?", (item_id,)).fetchone():
+            raise ValueError("Unknown proposal item")
+        pid = uuid.uuid4().hex[:12]
+        conn.execute("""
+            INSERT INTO proposals (id, item_id, target_id, proposal_type, impact, confidence,
+                                   effort, status, dedup_key, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        """, (pid, item_id, target_id, proposal.get("proposal_type", "risk"),
+              float(proposal.get("impact", 5)), float(proposal.get("confidence", 5)),
+              float(proposal.get("effort", 5)), proposal.get("dedup_key"), datetime.now(timezone.utc).isoformat()))
+        return dict(conn.execute("SELECT * FROM proposals WHERE id = ?", (pid,)).fetchone())
+
 
 def get_proposal(proposal_id: str) -> Optional[Dict[str, Any]]:
     conn = get_db_connection()
@@ -1348,28 +1375,55 @@ def get_backup_runs(limit: int = 10) -> List[Dict[str, Any]]:
 
 SWIPE_LABEL_EVENTS = ("swipe_up", "swipe_down", "swipe_star")
 
+def record_swipe(event_type: str, item_id: str, source: str = "api", meta=None):
+    """Exactly one training decision per item; label, weights and item state commit together."""
+    if event_type not in (*SWIPE_LABEL_EVENTS, "snooze"):
+        raise ValueError("Unsupported swipe event")
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        item = conn.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+        if not item:
+            raise ValueError("Unknown item")
+        prior = conn.execute("SELECT id, event_type FROM behavior_events WHERE item_id = ? AND event_type IN ('swipe_up','swipe_down','swipe_star') LIMIT 1", (item_id,)).fetchone()
+        if prior:
+            return {**dict(prior), "duplicate": True}
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = conn.execute("INSERT INTO behavior_events (event_type, item_id, source, meta, created_at) VALUES (?, ?, ?, ?, ?)", (event_type, item_id, source, json.dumps(meta or {}, ensure_ascii=False), now))
+        if event_type in SWIPE_LABEL_EVENTS:
+            try:
+                tags = json.loads(item["tech_tags"] or "[]")
+            except (ValueError, TypeError):
+                tags = []
+            for tag in dict.fromkeys(str(tag).strip() for tag in (tags if isinstance(tags, list) else []) if str(tag).strip()):
+                _tune_topic_signal(conn, str(tag), "dampen" if event_type == "swipe_down" else "boost")
+            conn.execute("UPDATE items SET is_read = 1, is_starred = CASE WHEN ? = 'swipe_star' THEN 1 ELSE is_starred END, updated_at = ? WHERE id = ?", (event_type, now, item_id))
+        return {"id": cursor.lastrowid, "event_type": event_type, "duplicate": False}
+
 def log_behavior_event(event_type: str, item_id: Optional[str] = None,
                        proposal_id: Optional[str] = None, source: str = "api",
                        meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO behavior_events (event_type, item_id, proposal_id, source, meta, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (event_type, item_id, proposal_id, source,
-          json.dumps(meta or {}, ensure_ascii=False),
-          datetime.now(timezone.utc).isoformat()))
-    conn.commit()
-    rowid = cursor.lastrowid
-    conn.close()
-    return {"id": rowid, "event_type": event_type}
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if item_id and not conn.execute("SELECT 1 FROM items WHERE id = ?", (item_id,)).fetchone():
+            raise ValueError("Unknown item")
+        if proposal_id:
+            proposal = conn.execute("SELECT item_id FROM proposals WHERE id = ?", (proposal_id,)).fetchone()
+            if not proposal or (item_id and proposal["item_id"] != item_id):
+                raise ValueError("Unknown or mismatched proposal")
+        cursor = conn.execute("""
+            INSERT INTO behavior_events (event_type, item_id, proposal_id, source, meta, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (event_type, item_id, proposal_id, source,
+              json.dumps(meta or {}, ensure_ascii=False), datetime.now(timezone.utc).isoformat()))
+        return {"id": cursor.lastrowid, "event_type": event_type}
+
 
 def get_behavior_stats(days: int = 7) -> Dict[str, Any]:
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT event_type, COUNT(*) AS count FROM behavior_events
-        WHERE created_at > datetime('now', ?)
+        WHERE julianday(created_at) > julianday('now', ?)
         GROUP BY event_type ORDER BY count DESC
     """, (f"-{days} days",))
     by_type = {r["event_type"]: r["count"] for r in cursor.fetchall()}
@@ -1395,9 +1449,9 @@ def get_swipe_deck(limit: int = 10) -> List[Dict[str, Any]]:
           AND NOT EXISTS (
               SELECT 1 FROM behavior_events e
               WHERE e.item_id = i.id AND e.event_type = 'snooze'
-                AND e.created_at > datetime('now', '-1 day'))
-        ORDER BY i.created_at DESC LIMIT ?
-    """, (limit,))
+                AND julianday(e.created_at) > julianday('now', '-1 day'))
+        ORDER BY i.created_at DESC
+    """)
     rows = []
     for r in cursor.fetchall():
         d = dict(r)
@@ -1407,4 +1461,5 @@ def get_swipe_deck(limit: int = 10) -> List[Dict[str, Any]]:
             d["tech_tags"] = []
         rows.append(d)
     conn.close()
-    return rows
+    from app.watch.taste import rank_deck
+    return rank_deck(rows)[:limit]
