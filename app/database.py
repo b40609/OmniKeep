@@ -8,6 +8,11 @@ from datetime import datetime, timezone
 from app.config import settings
 
 def get_db_connection() -> sqlite3.Connection:
+    import os
+    if os.environ.get("OMNIKEEP_TESTING") == "1":
+        root = Path(os.environ["OMNIKEEP_TEST_ROOT"]).resolve()
+        if not Path(settings.DATABASE_PATH).resolve().is_relative_to(root):
+            raise RuntimeError("Tests must use an isolated database")
     conn = sqlite3.connect(settings.DATABASE_PATH, timeout=10.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")

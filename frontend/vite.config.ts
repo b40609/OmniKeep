@@ -16,21 +16,18 @@ export default defineConfig({
       manifest: false,
       injectRegister: null,
       workbox: {
+        globPatterns: ['index.html', '*.svg'],
         navigateFallback: '/static/dist/index.html',
         // Direct .html navigations hit the network; only extension-less
         // routes (e.g. "/") fall back to the SPA shell.
         navigateFallbackDenylist: [/\.html$/],
         cleanupOutdatedCaches: true,
         runtimeCaching: [
+          { urlPattern: /\/static\/dist\/assets\/.*/, handler: 'CacheFirst',
+            options: { cacheName: 'omnikeep-assets-v2', expiration: { maxEntries: 80 } } },
           {
             urlPattern: /\/api\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'omnikeep-api-v1',
-              networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
+            handler: 'NetworkOnly',
           },
         ],
       },
@@ -44,14 +41,14 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
-      '/static': { target: 'http://127.0.0.1:8000', changeOrigin: true },
-      '/mcp': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/api': { target: 'http://127.0.0.1:5000', changeOrigin: true },
+      '/static': { target: 'http://127.0.0.1:5000', changeOrigin: true },
+      '/mcp': { target: 'http://127.0.0.1:5000', changeOrigin: true },
     },
   },
   build: {
     outDir: '../static/dist',
-    emptyOutDir: true,
+    emptyOutDir: false,
     target: 'es2022',
   },
 })

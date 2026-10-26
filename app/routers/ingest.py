@@ -1,7 +1,6 @@
-from fastapi import APIRouter, HTTPException, Header, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, Dict, Any
-from app.config import settings
 from app.pipeline import run_pipeline
 from app.database import create_ingest_task
 
@@ -14,19 +13,10 @@ class IngestRequest(BaseModel):
     category: Optional[str] = None
     async_mode: Optional[bool] = False
 
-def verify_api_key(x_api_key: Optional[str] = Header(None), token: Optional[str] = Query(None)):
-    provided_key = x_api_key or token
-    if not settings.API_KEY:
-        return True
-    if provided_key != settings.API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
-    return True
-
 @router.post("")
 async def ingest_url(
     req: IngestRequest,
     background_tasks: BackgroundTasks,
-    authenticated: bool = Query(True)
 ):
     raw_input = req.content or req.text or req.url
     if not raw_input or not raw_input.strip():

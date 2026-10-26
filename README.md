@@ -66,7 +66,7 @@ cp .env.example .env
 ```env
 # 核心服務設定
 PORT=5000
-API_KEY=omnifs888
+API_KEY=
 
 # 主要 LLM (支援 Agnes AI、OpenAI、DeepSeek 等)
 PRIMARY_LLM_PROVIDER=openai_compatible
@@ -79,12 +79,18 @@ GEMINI_API_KEYS=key1,key2,key3
 GEMINI_MODEL=gemini-2.5-flash
 ```
 
+產生隨機 API Key（只寫入 `.env`，不會顯示憑證）：
+```powershell
+python scripts/rotate_api_key.py
+```
+每次執行都會換 key；已啟動的服務須重新啟動，並私下更新各客戶端的認證 Header。
+
 ### 3. 啟動服務
 ```powershell
 python run.py
 ```
 * **Web 看板**：`http://localhost:5000`
-* **Swagger API 文件**：`http://localhost:5000/docs`
+* **Swagger API 文件**：`http://localhost:5000/docs`，須由客戶端對文件頁與 `/openapi.json` 帶入認證 Header。
 
 ---
 
@@ -97,7 +103,7 @@ Web 看板已升級為 **Vite + Vue 3 SFC + Tailwind v4 + Reka UI (shadcn-vue �
 # 一次性安裝（Node 20+）
 cd frontend && npm install
 
-# 開發模式（HMR，API 自動代理到 localhost:8000）
+# 開發模式（HMR，API 自動代理到 localhost:5000）
 npm run dev
 
 # 生產構建（含型別檢查；輸出 ../static/dist/）
@@ -118,7 +124,8 @@ npm run build
 
 ### 主題與環境變數
 - 主題持久化於 `localStorage`（`omnikeep-theme`: dark / light / system）。
-- 存入 API Key 可用 `VITE_INGEST_KEY` 覆寫（預設 `omnifs888`，與後端 `API_KEY` 對應）。
+- 看板登入時輸入 `.env` 的 `API_KEY`，僅存於頁面記憶體；重新整理後須重新登入。
+- REST 與遠端 MCP 使用 `Authorization: Bearer <API_KEY>` 或 `X-API-Key`，不接受 URL query token。
 
 ### 回滾
 升級前的單檔版 UI 保留於 `static/index-legacy.html`，將 `app/main.py` 的 `serve_dashboard` 指回該檔即可還原。

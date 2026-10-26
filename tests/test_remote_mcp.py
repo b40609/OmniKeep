@@ -25,14 +25,12 @@ async def test_mcp_auth_protection():
         res_bad_auth = await client.get("/mcp/sse?token=wrong_key")
         assert res_bad_auth.status_code == 401
 
-        # 3. Valid bearer token should be accepted (FastMCP returns 200 with text/event-stream)
+        # A finite mounted path proves accepted auth without hanging on SSE.
         headers = {"Authorization": f"Bearer {settings.API_KEY}"}
-        try:
-            res_valid = await client.get("/mcp/sse", headers=headers, timeout=1.0)
-            assert res_valid.status_code == 200
-            assert "text/event-stream" in res_valid.headers.get("content-type", "")
-        except Exception:
-            pass
+        valid = await client.get("/mcp/auth-probe-not-found", headers=headers)
+        assert valid.status_code == 404
+        query_token = await client.get("/mcp/auth-probe-not-found", params={"token": settings.API_KEY})
+        assert query_token.status_code == 401
 
 @pytest.mark.asyncio
 async def test_writeback_insight_and_retrieval():
