@@ -63,6 +63,7 @@ def init_db():
             cover_image TEXT,
             is_starred INTEGER DEFAULT 0,
             is_read INTEGER DEFAULT 0,
+            analysis_status TEXT NOT NULL DEFAULT 'done',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
@@ -291,6 +292,19 @@ def init_db():
     item_cols = {row[1] for row in cursor.fetchall()}
     if "origin" not in item_cols:
         cursor.execute("ALTER TABLE items ADD COLUMN origin TEXT DEFAULT 'manual'")
+    # analysis_status: 'pending' = radar stub saved past the per-cycle LLM
+    # budget, awaiting backfill; 'done' = fully analyzed.
+    if "analysis_status" not in item_cols:
+        cursor.execute("ALTER TABLE items ADD COLUMN analysis_status TEXT NOT NULL DEFAULT 'done'")
+
+    # 19. Interest profile (free text woven into analysis/digest prompts)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_interest_profile (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            profile_text TEXT NOT NULL DEFAULT '',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
 
     conn.commit()
     conn.close()
@@ -367,8 +381,8 @@ def _save_item(conn, item_data: Dict[str, Any]) -> str:
         INSERT INTO items (
             id, url, source_type, category_name, title_l1, summary_l1,
             tech_tags, deep_analysis, content_raw, author, published_date,
-            cover_image, is_starred, is_read, origin, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            cover_image, is_starred, is_read, analysis_status, origin, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(url) DO UPDATE SET
             category_name = excluded.category_name,
             title_l1 = excluded.title_l1,
@@ -376,6 +390,7 @@ def _save_item(conn, item_data: Dict[str, Any]) -> str:
             tech_tags = excluded.tech_tags,
             deep_analysis = excluded.deep_analysis,
             content_raw = excluded.content_raw,
+            analysis_status = excluded.analysis_status,
             updated_at = excluded.updated_at
     """, (
         item_id,
@@ -392,6 +407,7 @@ def _save_item(conn, item_data: Dict[str, Any]) -> str:
         item_data.get("cover_image", ""),
         item_data.get("is_starred", 0),
         item_data.get("is_read", 0),
+        item_data.get("analysis_status", "done"),
         item_data.get("origin", "manual"),
         now,
         now
@@ -1151,6 +1167,60 @@ def set_user_setting(user_id: Any, interaction_mode: str) -> bool:
     return True
 
 
+# ── Interest Profile DAO (A-minimal: profile-in-prompt) ───────────
+
+MAX_PROFILE_CHARS = 2000
+
+def get_interest_profile_record() -> Dict[str, Any]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT profile_text, updated_at FROM user_interest_profile WHERE id = 1")
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return {"profile": "", "updated_at": None}
+    return {"profile": row["profile_text"] or "", "updated_at": row["updated_at"]}
+
+def get_interest_profile() -> str:
+    return get_interest_profile_record()["profile"]
+
+def set_interest_profile(text: str) -> bool:
+    clean = (text or "").strip()[:MAX_PROFILE_CHARS]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO user_interest_profile (id, profile_text, updated_at)
+        VALUES (1, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            profile_text = excluded.profile_text,
+            updated_at = excluded.updated_at
+    """, (clean, now_iso))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_pending_analysis_items(limit: int = 10) -> List[Dict[str, Any]]:
+    """Radar stubs saved past the analysis cap, oldest first (backfill queue)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM items
+        WHERE origin = 'radar' AND analysis_status = 'pending'
+        ORDER BY created_at ASC LIMIT ?
+    """, (limit,))
+    rows = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        try:
+            d["tech_tags"] = json.loads(d["tech_tags"])
+        except Exception:
+            d["tech_tags"] = []
+        rows.append(d)
+    conn.close()
+    return rows
+
+
 
 
 # ── Watch Targets DAO (Local Proposal Engine) ────────────────────
@@ -1396,7 +1466,7 @@ def record_swipe(event_type: str, item_id: str, source: str = "api", meta=None):
                 tags = []
             for tag in dict.fromkeys(str(tag).strip() for tag in (tags if isinstance(tags, list) else []) if str(tag).strip()):
                 _tune_topic_signal(conn, str(tag), "dampen" if event_type == "swipe_down" else "boost")
-            conn.execute("UPDATE items SET is_read = 1, is_starred = CASE WHEN ? = 'swipe_star' THEN 1 ELSE is_starred END, updated_at = ? WHERE id = ?", (event_type, now, item_id))
+            conn.execute("UPDATE items SET is_read = 1, is_starred = CASE WHEN ? = 'swipe_star' THEN 1 WHEN ? = 'swipe_down' THEN 0 ELSE is_starred END, updated_at = ? WHERE id = ?", (event_type, event_type, now, item_id))
         return {"id": cursor.lastrowid, "event_type": event_type, "duplicate": False}
 
 def log_behavior_event(event_type: str, item_id: Optional[str] = None,
@@ -1443,6 +1513,7 @@ def get_swipe_deck(limit: int = 10) -> List[Dict[str, Any]]:
     cursor.execute("""
         SELECT i.* FROM items i
         WHERE i.origin = 'radar' AND i.is_read = 0
+          AND i.analysis_status != 'pending'
           AND NOT EXISTS (
               SELECT 1 FROM behavior_events e
               WHERE e.item_id = i.id AND e.event_type IN ('swipe_up','swipe_down','swipe_star'))

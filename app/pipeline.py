@@ -43,6 +43,25 @@ ANALYSIS_SYSTEM_PROMPT = """你是一位頂尖的資深系統架構師與技術�
 - 若內容只介紹單一專案、單篇新聞或單一概念，is_composite 請設為 false，且 sub_entities 設為空陣列 []。
 - 若內容為盤點文、多專案推薦影片或清單彙總，is_composite 必須設為 true，並於 sub_entities 完整抽離列出每一個提及的獨立專案/工具，不可遺漏。"""
 
+def interest_profile_block() -> str:
+    """User-written free-text interest profile woven into LLM prompts.
+
+    Cruxwire/Brain pattern: a profile in the prompt expresses intent far
+    better than tag weights alone. Kept phrasing generic so digest
+    generation reuses it. Local DB read only — never an extra cloud call.
+    """
+    try:
+        from app.database import get_interest_profile
+        profile = get_interest_profile().strip()
+    except Exception:
+        return ""
+    if not profile:
+        return ""
+    return (
+        "\n\n=== 使用者興趣設定檔（挑選、分類與取捨請參考） ===\n"
+        f"{profile[:2000]}\n=== 設定檔結束 ==="
+    )
+
 def is_pure_url(text: str) -> bool:
     clean = text.strip()
     if "\n" in clean or "\r" in clean or " " in clean:
@@ -118,6 +137,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
 
 候選分類清單：[{cat_list_str}]
 請分析影片內容，直接輸出結構化 JSON。"""
+                    prompt += interest_profile_block()
                     ai_result = await gemini.analyze_youtube(url, prompt)
                 except Exception as e:
                     primary = get_primary_provider()
@@ -136,6 +156,7 @@ URL：{url}
 URL：{url}
 
 候選分類清單：[{cat_list_str}]"""
+                prompt += interest_profile_block()
                 ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
 
             cover_image = meta.get("cover_image", "")
@@ -164,6 +185,7 @@ URL：{url}
 === 內容結束 ===
 
 請依據規範輸出結構化 JSON。若影片畫面中有推薦多個專案/工具，請務必將 is_composite 設為 true，並於 sub_entities 完整抽離所有專案！"""
+            prompt += interest_profile_block()
             ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
 
         else:
@@ -187,6 +209,7 @@ URL：{url}
 === 內容結束 ===
 
 請依據規範輸出結構化 JSON。"""
+            prompt += interest_profile_block()
             ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
 
     else:
@@ -218,6 +241,7 @@ URL：{url}
 === 內容結束 ===
 
 請精準提煉這段內容的技術價值，依據規範輸出結構化 JSON。"""
+        prompt += interest_profile_block()
         ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
 
     # Extract fields with safe defaults

@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     RADAR_INTERVAL_SECONDS: int = 300
     GITHUB_TOKEN: str = ""
 
+    # Radar cost gate (A-minimal): analyze only the best candidates per cycle;
+    # the rest are stored as pending stubs and backfilled in later cycles.
+    RADAR_MAX_ANALYZE_PER_CYCLE: int = 6
+    # Auto-star tiering: analyzed items scoring at/above the threshold are
+    # bookmarked, behavior-logged and announced on Telegram. Conservative
+    # default — needs multiple explicitly boosted topics to reach 2.5.
+    RADAR_AUTOSTAR_ENABLED: bool = True
+    RADAR_AUTOSTAR_THRESHOLD: float = 2.5
+
     # Multi-sink backup (self-hosters pick their own: local folder / rclone cloud / git repo)
     BACKUP_SINK: str = "local"          # local | rclone | git | off
     BACKUP_DIR: str = str(BASE_DIR / "backups")

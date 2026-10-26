@@ -8,7 +8,9 @@ from app.database import (
     delete_radar_source,
     get_all_topic_weights,
     tune_topic_signal,
-    get_latest_radar_digests
+    get_latest_radar_digests,
+    get_interest_profile_record,
+    set_interest_profile
 )
 from app.radar.recommender import tune_item_signal
 from app.radar.scheduler import run_radar_cycle
@@ -33,6 +35,24 @@ class FeedbackRequest(BaseModel):
 class ManualDigestRequest(BaseModel):
     item_ids: List[str]
     digest_type: Optional[str] = "custom"
+
+class InterestProfileRequest(BaseModel):
+    profile: str
+
+# ── User Interest Profile Endpoints (Cruxwire/Brain pattern) ─
+
+@router.get("/profile")
+async def get_profile():
+    """Retrieve user-written free-text interest profile woven into LLM prompts."""
+    rec = get_interest_profile_record()
+    return {"success": True, "profile": rec["profile"], "updated_at": rec["updated_at"]}
+
+@router.put("/profile")
+async def update_profile(req: InterestProfileRequest):
+    """Update user interest profile (max 2000 chars, free-text prompt guidance)."""
+    set_interest_profile(req.profile)
+    rec = get_interest_profile_record()
+    return {"success": True, "profile": rec["profile"], "updated_at": rec["updated_at"]}
 
 # ── Signal Tuning Feedback Endpoints ────────────────────────
 
