@@ -308,6 +308,7 @@ export interface Proposal {
   status: 'pending' | 'approved' | 'dismissed'
   title_l1?: string
   summary_l1?: string
+  deep_analysis?: string
   created_at?: string
 }
 
