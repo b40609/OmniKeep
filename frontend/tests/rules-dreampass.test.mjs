@@ -118,3 +118,37 @@ test('Hard Rules Engine API flow', async () => {
   assert.equal(testRes.matched_rules[0], 'TechCrunch news')
   assert.equal(testRes.changes.category.after, '科技新聞')
 })
+
+test('Bookmark Importer API flow', async () => {
+  api.setApiKey('test-token-777')
+  let requestedUrl = ''
+  let requestedMethod = ''
+  let requestedBody = null
+
+  globalThis.fetch = async (url, init) => {
+    requestedUrl = url
+    requestedMethod = init?.method || 'GET'
+    requestedBody = JSON.parse(init?.body || '{}')
+    return new Response(JSON.stringify({
+      success: true,
+      total_parsed: 5,
+      imported_count: 5,
+      queued_count: 0,
+      skipped_count: 0,
+      errors: [],
+      sample_ids: ['id1', 'id2'],
+    }), { status: 200 })
+  }
+
+  const res = await api.importBookmarks('<!DOCTYPE NETSCAPE-Bookmark-file-1>...', {
+    filename: 'export.html',
+    enqueue_ai: false,
+    default_category: '科技',
+  })
+
+  assert.equal(requestedUrl, '/api/items/import/bookmarks')
+  assert.equal(requestedMethod, 'POST')
+  assert.equal(requestedBody.filename, 'export.html')
+  assert.equal(requestedBody.default_category, '科技')
+  assert.equal(res.imported_count, 5)
+})

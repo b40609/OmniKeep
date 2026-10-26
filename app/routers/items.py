@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -84,3 +84,105 @@ async def remove_item(item_id: str):
     if not ok:
         raise HTTPException(status_code=404, detail="Item not found")
     return {"success": True, "message": "Item deleted"}
+
+
+@router.post("/import/bookmarks")
+async def import_bookmarks_endpoint(request: Request):
+    """Import bookmarks from Netscape HTML, Chrome/Pocket JSON, or CSV."""
+    content_type = request.headers.get("content-type", "")
+    content = ""
+    filename = ""
+    enqueue_ai = False
+    default_category = "Inbox"
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        uploaded_file = form.get("file")
+        if uploaded_file and hasattr(uploaded_file, "read"):
+            content_bytes = await uploaded_file.read()
+            content = content_bytes.decode("utf-8", errors="replace")
+            filename = getattr(uploaded_file, "filename", "") or ""
+        else:
+            content = str(form.get("content") or form.get("raw_content") or "")
+
+        enqueue_ai = str(form.get("enqueue_ai", "")).lower() in ("true", "1", "yes")
+        default_category = str(form.get("default_category") or "Inbox")
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        content = body.get("content") or ""
+        filename = body.get("filename") or ""
+        enqueue_ai = bool(body.get("enqueue_ai", False))
+        default_category = body.get("default_category") or "Inbox"
+
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="請提供書籤檔案內容 (Bookmark content or file is required)")
+
+    from app.parsers.bookmarks import parse_bookmarks
+    from app.network import is_safe_url
+    from app.database import save_item, create_ingest_task
+    from app.rules import apply_rules_to_item
+
+    parsed_items = parse_bookmarks(content, filename=filename)
+    if not parsed_items:
+        return {
+            "success": True,
+            "total_parsed": 0,
+            "imported_count": 0,
+            "queued_count": 0,
+            "skipped_count": 0,
+            "errors": [],
+            "sample_ids": [],
+        }
+
+    imported_count = 0
+    queued_count = 0
+    skipped_count = 0
+    errors: List[str] = []
+    saved_ids: List[str] = []
+
+    for item in parsed_items:
+        url = item.get("url", "").strip()
+        if not url or not is_safe_url(url):
+            skipped_count += 1
+            continue
+
+        if enqueue_ai:
+            try:
+                task = create_ingest_task(url=url, source="import")
+                queued_count += 1
+                saved_ids.append(task["id"])
+            except Exception as e:
+                errors.append(f"{url}: {str(e)}")
+                skipped_count += 1
+        else:
+            try:
+                item_rec = {
+                    "url": url,
+                    "source_type": "web",
+                    "category_name": default_category,
+                    "title_l1": item.get("title") or url,
+                    "summary_l1": f"自書籤匯入（分類/資料夾：{item.get('folder', 'Bookmarks')}）",
+                    "tech_tags": item.get("tags") or [],
+                    "deep_analysis": "",
+                    "origin": "import",
+                }
+                item_rec = apply_rules_to_item(item_rec)
+                item_id = save_item(item_rec)
+                imported_count += 1
+                saved_ids.append(item_id)
+            except Exception as e:
+                errors.append(f"{url}: {str(e)}")
+                skipped_count += 1
+
+    return {
+        "success": True,
+        "total_parsed": len(parsed_items),
+        "imported_count": imported_count,
+        "queued_count": queued_count,
+        "skipped_count": skipped_count,
+        "errors": errors[:10],
+        "sample_ids": saved_ids[:10],
+    }
