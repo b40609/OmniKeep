@@ -396,6 +396,25 @@ class TelegramBot:
             await self.send_message(chat_id, msg, reply_markup=build_mode_keyboard(current_mode))
             return
 
+        if text.startswith("/rules"):
+            from app.database import get_all_rules
+            rules = get_all_rules()
+            if not rules:
+                await self.send_message(chat_id, "⚙️ <b>硬規則引擎</b>\n\n目前尚未建立任何自動化規則。可在工作台設定或透過 API 建立。")
+                return
+            lines = [f"⚙️ <b>硬規則引擎（共 {len(rules)} 條）</b>\n"]
+            for r in rules:
+                status = "🟢" if r.get("is_active") else "⚪"
+                name = html.escape(r.get("name", "未命名"))
+                field = r.get("field")
+                op = r.get("operator")
+                val = html.escape(r.get("value", ""))
+                act = r.get("action_type")
+                act_v = html.escape(r.get("action_value", ""))
+                lines.append(f"{status} <b>{name}</b> (優先級 {r.get('priority', 10)})\n   條件: <code>{field} {op} '{val}'</code>\n   動作: <code>{act} {act_v}</code>")
+            await self.send_message(chat_id, "\n\n".join(lines))
+            return
+
         if text.startswith("/stats"):
             stats = get_status_counts()
             stats_text = (

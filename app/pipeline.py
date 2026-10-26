@@ -115,6 +115,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     category_names = [c["name"] for c in cat_rows]
     cat_list_str = ", ".join(category_names)
     clean_input = content_input.strip()
+    raw_html = ""
 
     # 2. Route by input type (Pure URL / Mobile Share Snippet vs Text Note)
     detected_url = extract_target_url(clean_input)
@@ -196,6 +197,7 @@ URL：{url}
             cover_image = page_data.get("cover_image", "")
             author = page_data.get("author", "")
             default_title = page_data.get("title", "未命名項目")
+            raw_html = page_data.get("raw_html") or (page_data.get("meta") or {}).get("raw_html") or ""
 
             primary = get_primary_provider()
             prompt = f"""請深度分析以下網頁/文章內容：
@@ -271,11 +273,19 @@ URL：{url}
         "origin": origin,
     }
 
+    # 2. Hard Rules Engine (Deterministic automation: Karakeep pattern)
+    try:
+        from app.rules import apply_rules_to_item
+        item_record = apply_rules_to_item(item_record)
+    except Exception as e:
+        print(f"[Pipeline] Rules engine evaluation failed: {e}")
+
     item_id = save_item(item_record)
     item_record["id"] = item_id
 
     # 2.5 Monolith HTML Snapshot & Vector Embedding (B-full)
-    raw_html = meta.get("raw_html") if isinstance(meta, dict) else ""
+    if not raw_html and "meta" in locals() and isinstance(locals().get("meta"), dict):
+        raw_html = locals()["meta"].get("raw_html") or ""
     if raw_html:
         try:
             from app.snapshot import save_html_snapshot

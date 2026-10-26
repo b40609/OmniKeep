@@ -320,6 +320,23 @@ def init_db():
         )
     """)
 
+    # 21. Hard Rules Engine (Karakeep pattern: deterministic automation)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            priority INTEGER NOT NULL DEFAULT 10,
+            field TEXT NOT NULL,
+            operator TEXT NOT NULL,
+            value TEXT NOT NULL,
+            action_type TEXT NOT NULL,
+            action_value TEXT NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -1367,6 +1384,69 @@ def get_recent_taste_signals(days: int = 7) -> Dict[str, Any]:
         "top_topics": top_topics,
         "window_days": days,
     }
+
+
+# ── Hard Rules Engine DAO ───────────────────────────────────────
+
+def create_rule(name: str, field: str, operator: str, value: str,
+                action_type: str, action_value: str = "",
+                priority: int = 10, is_active: int = 1) -> int:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO rules (name, field, operator, value, action_type, action_value, priority, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (name.strip(), field.strip().lower(), operator.strip().lower(), value.strip(),
+          action_type.strip().lower(), (action_value or "").strip(), priority, is_active, now_iso, now_iso))
+    conn.commit()
+    rule_id = cursor.lastrowid
+    conn.close()
+    return rule_id
+
+def get_all_rules(active_only: bool = False) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if active_only:
+        cursor.execute("SELECT * FROM rules WHERE is_active = 1 ORDER BY priority ASC, id ASC")
+    else:
+        cursor.execute("SELECT * FROM rules ORDER BY priority ASC, id ASC")
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def get_rule(rule_id: int) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM rules WHERE id = ?", (rule_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def update_rule(rule_id: int, updates: Dict[str, Any]) -> bool:
+    allowed = {"name", "is_active", "priority", "field", "operator", "value", "action_type", "action_value"}
+    clean_updates = {k: v for k, v in updates.items() if k in allowed}
+    if not clean_updates:
+        return False
+    clean_updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    set_clause = ", ".join(f"{k} = ?" for k in clean_updates)
+    params = list(clean_updates.values()) + [rule_id]
+    cursor.execute(f"UPDATE rules SET {set_clause} WHERE id = ?", params)
+    changed = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return changed
+
+def delete_rule(rule_id: int) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM rules WHERE id = ?", (rule_id,))
+    changed = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return changed
 
 
 
