@@ -134,9 +134,28 @@ def build_deck_card_html(item: Dict[str, Any], remaining: int) -> str:
 
 def build_proposal_card_html(prop: Dict[str, Any]) -> str:
     title = html.escape(prop.get("title_l1") or "（無標題）")
-    summary = html.escape((prop.get("summary_l1") or "")[:150])
+    summary = html.escape((prop.get("summary_l1") or "")[:200])
+    deep = prop.get("deep_analysis") or ""
+    evidence_block = ""
+    if "### 🔍 雙邊證據鏈" in deep or "### 🎯 模組與結論" in deep:
+        lines = []
+        for line in deep.split("\n"):
+            line_s = line.strip()
+            if any(line_s.startswith(prefix) for prefix in (
+                "- **建議改動模組**：",
+                "- **外部情報依據**：",
+                "- **本機現狀依據**：",
+                "- **最小改動步驟**：",
+                "- **驗收方式**："
+            )):
+                clean = line_s.lstrip("- ").replace("**", "").replace("`", "")
+                lines.append(f"· {html.escape(clean)}")
+        if lines:
+            evidence_block = "\n<b>📋 模組與證據鏈：</b>\n" + "\n".join(lines[:4]) + "\n"
+
     return (
-        f"🔭 <b>提案卡</b>\n\n<b>{title}</b>\n{summary}\n\n"
+        f"🔭 <b>模組提案卡</b>\n\n<b>{title}</b>\n{summary}\n"
+        f"{evidence_block}\n"
         f"🎯 影響 {prop.get('impact', '?')} · 🔍 信心 {prop.get('confidence', '?')} · 🏗️ 成本 {prop.get('effort', '?')}"
     )
 
@@ -412,6 +431,7 @@ class TelegramBot:
                 item = get_item_by_id(p["item_id"]) or {}
                 p["title_l1"] = item.get("title_l1", "")
                 p["summary_l1"] = item.get("summary_l1", "")
+                p["deep_analysis"] = item.get("deep_analysis", "")
                 await self.send_message(chat_id, build_proposal_card_html(p),
                                         reply_markup=build_proposal_keyboard(p["id"]))
             return

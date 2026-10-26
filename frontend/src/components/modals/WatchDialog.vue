@@ -34,6 +34,10 @@ const customOut = ref<api.OutboundToggleMap>({ summary: true, docs: true, deps: 
 
 // ── score correction form ──
 const corr = ref({ impact: 5, confidence: 5, effort: 5, reason: '' })
+const expandedEvidence = ref<Record<string, boolean>>({})
+function toggleEvidence(id: string) {
+  expandedEvidence.value[id] = !expandedEvidence.value[id]
+}
 
 const PRESETS: { id: WatchPreset; label: string; desc: string }[] = [
   { id: 'open', label: '🔓 全開放', desc: '全部可讀、可外送（機密仍自動遮蔽）' },
@@ -355,6 +359,14 @@ function fmtSize(n?: number) {
                 🎯 影響 {{ p.impact }} · 🔍 信心 {{ p.confidence }} · 🏗️ 成本 {{ p.effort }}
                 <template v-if="p.user_impact != null"> · 已修正 {{ p.user_impact }}/{{ p.user_confidence }}/{{ p.user_effort }}</template>
               </p>
+              <div v-if="p.deep_analysis" class="mt-2">
+                <button type="button" @click="toggleEvidence(p.id)" class="text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400">
+                  {{ expandedEvidence[p.id] ? '▲ 收起模組雙邊證據鏈' : '▼ 查看模組雙邊證據鏈' }}
+                </button>
+                <div v-if="expandedEvidence[p.id]" class="mt-1.5 whitespace-pre-wrap rounded-lg bg-black/[0.04] p-2.5 font-mono text-[11px] leading-relaxed dark:bg-white/[0.05]">
+                  {{ p.deep_analysis }}
+                </div>
+              </div>
             </div>
           </div>
           <div v-if="p.status === 'pending'" class="mt-2 flex items-center gap-1.5">

@@ -110,6 +110,7 @@ async def list_proposals(status: Optional[str] = None, limit: int = 50):
         r["title_l1"] = item.get("title_l1", "")
         r["summary_l1"] = item.get("summary_l1", "")
         r["tech_tags"] = item.get("tech_tags", "")
+        r["deep_analysis"] = item.get("deep_analysis", "")
     return rows
 
 
