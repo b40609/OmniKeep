@@ -6,10 +6,13 @@ from app.file_lock import FileLock
 from typing import Dict, Any, Optional, Set
 from app.database import (
     claim_next_task,
+    claim_completion_notification,
+    finish_completion_notification,
     update_task_status,
     reset_stale_tasks,
     get_user_setting,
     find_item_by_canonical_or_url,
+    get_item_by_id,
     get_db_connection
 )
 from app.pipeline import run_pipeline
@@ -53,6 +56,7 @@ class TaskWorker:
         self.poll_interval = poll_interval
         self.max_retries = max_retries
         self.semaphore = asyncio.BoundedSemaphore(concurrency)
+        self.notification_semaphore = asyncio.BoundedSemaphore(concurrency)
         self._ownership = None
         self.running: bool = False
         self._loop_task: Optional[asyncio.Task] = None
@@ -79,6 +83,7 @@ class TaskWorker:
 
         self.running = True
         self.semaphore = asyncio.BoundedSemaphore(self.concurrency)
+        self.notification_semaphore = asyncio.BoundedSemaphore(self.concurrency)
         self._loop_task = asyncio.create_task(self._run_loop())
         logger.info(f"[Queue Worker] Started with concurrency={self.concurrency}, poll_interval={self.poll_interval}s")
         return self._loop_task
@@ -114,6 +119,13 @@ class TaskWorker:
         while self.running:
             acquired = False
             try:
+                # Notification delivery runs even while the LLM is cooling down.
+                # Failed sends have their own persistent backoff and never requeue ingestion.
+                try:
+                    await self._schedule_completion_notification()
+                except Exception as exc:
+                    logger.warning("[Queue Worker] Notification scheduling error: %s", exc)
+
                 # Global rate-limit cooldown: hold off claiming while the LLM
                 # quota recovers instead of retrying into a wall.
                 now = time.monotonic()
@@ -158,6 +170,65 @@ class TaskWorker:
         finally:
             self.semaphore.release()
 
+    async def _schedule_completion_notification(self, task_id: Optional[str] = None,
+                                                item: Optional[Dict[str, Any]] = None):
+        if self.notification_semaphore.locked():
+            return
+        await self.notification_semaphore.acquire()
+        try:
+            delivery = claim_completion_notification(task_id=task_id)
+        except BaseException:
+            self.notification_semaphore.release()
+            raise
+        if not delivery:
+            self.notification_semaphore.release()
+            return
+        try:
+            task = asyncio.create_task(self._deliver_completion(delivery, item))
+        except BaseException:
+            self.notification_semaphore.release()
+            raise
+        self.active_tasks.add(task)
+        task.add_done_callback(self.active_tasks.discard)
+
+    async def _deliver_completion(self, delivery: Dict[str, Any], item: Optional[Dict[str, Any]]):
+        task_id = delivery["id"]
+        marker = delivery["error_message"]
+        error = None
+        finalized = False
+        try:
+            resolved_item = item or get_item_by_id(delivery["item_id"])
+            if not resolved_item:
+                raise RuntimeError(f"Completed item unavailable for delivery: {delivery['item_id']}")
+            if delivery["source"] == "telegram":
+                await notify_task_completed(int(delivery["chat_id"]), int(delivery["message_id"]),
+                                            resolved_item, strict=True)
+            elif delivery["source"] == "line":
+                await notify_line_completed(str(delivery["chat_id"]), resolved_item, strict=True)
+            else:
+                raise ValueError(f"Unsupported completion source: {delivery['source']}")
+            finalized = True
+        except asyncio.CancelledError:
+            # Leave in-flight marker for exclusive-owner startup recovery.
+            raise
+        except Exception as exc:
+            error = str(exc)
+            finalized = True
+            logger.warning("[Queue Worker] Completion notification for %s failed: %s", task_id, exc)
+        finally:
+            try:
+                if finalized:
+                    finish_completion_notification(task_id, marker, error=error)
+            finally:
+                self.notification_semaphore.release()
+
+    async def _trigger_completion_notification(self, task_id: str, item: Dict[str, Any]):
+        try:
+            await self._schedule_completion_notification(task_id=task_id, item=item)
+        except Exception as exc:
+            # The durable pending marker is already committed; the loop will retry.
+            logger.warning("[Queue Worker] Could not schedule notification for %s: %s", task_id, exc)
+
     async def _process_task(self, task: Dict[str, Any]):
         task_id = task["id"]
         url = task["url"]
@@ -173,13 +244,7 @@ class TaskWorker:
         if existing_item:
             logger.info(f"[Queue Worker] Idempotency Hit: URL already indexed as item {existing_item.get('id')}")
             update_task_status(task_id, status="completed", item_id=existing_item.get("id"))
-            if source == "telegram" and chat_id and message_id:
-                try:
-                    await notify_task_completed(int(chat_id), int(message_id), existing_item)
-                except Exception as e:
-                    logger.warning(f"[Queue Worker] Telegram completion notify error: {e}")
-            elif source == "line" and chat_id:
-                await notify_line_completed(str(chat_id), existing_item)
+            await self._trigger_completion_notification(task_id, existing_item)
             return
 
         # 2. Telegram Heartbeat notification if user is in heartbeat mode
@@ -203,13 +268,6 @@ class TaskWorker:
             update_task_status(task_id, status="completed", item_id=item.get("id"))
             self._rate_limit_backoff = 60.0  # quota healthy again — reset backoff
             logger.info(f"[Queue Worker] Task {task_id} completed successfully (item_id: {item.get('id')})")
-
-            # 4. Multi-channel delivery
-            if source == "telegram" and chat_id and message_id:
-                await notify_task_completed(int(chat_id), int(message_id), item)
-            elif source == "line" and chat_id:
-                await notify_line_completed(str(chat_id), item)
-
         except Exception as exc:
             logger.error(f"[Queue Worker] Task {task_id} failed on attempt {retry_count + 1}: {exc}")
 
@@ -272,5 +330,9 @@ class TaskWorker:
                     await notify_task_failed(int(chat_id), int(message_id), str(exc))
                 elif source == "line" and chat_id:
                     await notify_line_failed(str(chat_id), str(exc))
+
+        else:
+            # Delivery is independent of ingestion, retries and LLM quota state.
+            await self._trigger_completion_notification(task_id, item)
 
 task_worker = TaskWorker(concurrency=2, poll_interval=0.5)
