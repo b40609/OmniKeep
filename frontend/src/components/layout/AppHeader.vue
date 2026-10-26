@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import {
   BrainCircuit, Search, FileText, Radar, Keyboard, Download,
-  Sun, Moon, List, LayoutGrid, Loader2, X, KeyRound, ScanEye,
+  Sun, Moon, List, LayoutGrid, Loader2, X, KeyRound, ScanEye, Sparkles,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { useUiStore } from '@/stores/ui'
@@ -101,21 +101,49 @@ async function installPWA() {
 
       <!-- Right toolbar: iOS icon row -->
       <div class="flex shrink-0 items-center gap-0.5">
-        <!-- Search (desktop) -->
-        <div class="relative hidden xl:block">
-          <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-subtle-foreground" />
+        <!-- Search (desktop) with semantic/keyword switch -->
+        <div class="relative hidden xl:flex items-center">
+          <component
+            :is="items.searchMode === 'semantic' ? Sparkles : Search"
+            class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 transition-colors duration-200"
+            :class="items.searchMode === 'semantic' ? 'text-violet-500' : 'text-subtle-foreground'"
+          />
           <input
             ref="searchInput"
             v-model="items.searchQuery"
             type="text"
-            placeholder="搜尋"
-            class="h-8 w-40 rounded-full border border-white/60 bg-white/55 pl-8 pr-3 text-xs text-foreground shadow-sm transition-all placeholder:text-subtle-foreground focus:bg-white/80 focus:outline-none focus:ring-2 focus:ring-primary/30 dark:border-white/10 dark:bg-white/[0.08]"
+            :placeholder="items.searchMode === 'semantic' ? '語意搜尋...' : '搜尋關鍵字...'"
+            class="h-8 w-48 rounded-full border bg-white/55 pl-8 pr-16 text-xs text-foreground shadow-sm transition-all placeholder:text-subtle-foreground focus:bg-white/80 focus:outline-none focus:ring-2 dark:bg-white/[0.08]"
+            :class="items.searchMode === 'semantic'
+              ? 'border-violet-500/40 focus:ring-violet-500/30 dark:border-violet-500/30'
+              : 'border-white/60 focus:ring-primary/30 dark:border-white/10'"
             @input="debouncedSearch"
           >
+          <button
+            type="button"
+            class="absolute right-1 flex h-6 items-center gap-0.5 rounded-full px-2 text-2xs font-semibold transition-all active:scale-95 cursor-pointer"
+            :class="items.searchMode === 'semantic'
+              ? 'bg-violet-500 text-white shadow-sm'
+              : 'bg-muted text-muted-foreground hover:text-foreground'"
+            :title="items.searchMode === 'semantic' ? '目前為語意搜尋，點擊切換為關鍵字搜尋' : '目前為關鍵字搜尋，點擊切換為語意搜尋'"
+            @click="items.toggleSearchMode()"
+          >
+            <Sparkles v-if="items.searchMode === 'semantic'" class="size-2.5" />
+            <span>{{ items.searchMode === 'semantic' ? '語意' : '關鍵字' }}</span>
+          </button>
         </div>
 
-        <Button variant="ghost" size="icon" title="搜尋（/）" aria-label="搜尋" class="xl:hidden" @click="focusSearchInput()">
-          <Search class="size-4.5" />
+        <Button
+          variant="ghost"
+          size="icon"
+          :title="items.searchMode === 'semantic' ? '目前為語意搜尋，點擊切換' : '目前為關鍵字搜尋，點擊切換'"
+          aria-label="搜尋模式"
+          class="xl:hidden"
+          :class="items.searchMode === 'semantic' ? 'text-violet-500' : ''"
+          @click="items.toggleSearchMode()"
+        >
+          <Sparkles v-if="items.searchMode === 'semantic'" class="size-4.5" />
+          <Search v-else class="size-4.5" />
         </Button>
 
         <!-- Density switcher (segmented) -->

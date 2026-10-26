@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import {
   ArrowLeft, X, Star, Copy, ExternalLink, Trash2, ChevronUp, ChevronDown, Ban,
-  Sparkles, BookOpen, CheckCircle2, Maximize2, Minimize2,
+  Sparkles, BookOpen, CheckCircle2, Maximize2, Minimize2, Camera,
 } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
 import Skeleton from '@/components/ui/skeleton/Skeleton.vue'
@@ -19,7 +19,7 @@ import { toast } from 'vue-sonner'
 
 const ui = useUiStore()
 const itemsStore = useItemsStore()
-const { toggleStar, toggleRead, updateCategory, removeItem } = useMutations()
+const { toggleStar, toggleRead, updateCategory, removeItem, openSnapshot } = useMutations()
 const { tuneItem } = useSignal()
 
 const fetchingFull = ref(false)
@@ -165,6 +165,14 @@ function copyTakeaway() {
         </button>
         <button class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="複製白話重點" aria-label="複製重點" @click="copyTakeaway">
           <Copy class="size-4" />
+        </button>
+        <button
+          class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-primary-soft hover:text-primary"
+          title="開啟離線快照（防原始網址失效）"
+          aria-label="離線快照"
+          @click="openSnapshot(ui.activeItem)"
+        >
+          <Camera class="size-4" />
         </button>
         <a :href="ui.activeItem.url" target="_blank" rel="noopener" class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="前往原始網址" aria-label="原始網址">
           <ExternalLink class="size-4" />

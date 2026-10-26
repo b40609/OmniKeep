@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Star, Archive, Package, Link2 } from 'lucide-vue-next'
+import { Star, Archive, Package, Link2, Camera } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
 import type { Item } from '@/lib/api'
 import { cleanHost, formatRelativeTime, sourceMeta } from '@/lib/format'
@@ -8,7 +8,7 @@ import { useMutations } from '@/composables/useMutations'
 
 defineProps<{ item: Item }>()
 const ui = useUiStore()
-const { toggleStar, toggleRead } = useMutations()
+const { toggleStar, toggleRead, openSnapshot } = useMutations()
 
 function select(item: Item) {
   ui.activeItem = item
@@ -72,8 +72,17 @@ function select(item: Item) {
 
     <div class="flex items-center justify-between border-t border-hairline pt-2.5 text-2xs text-subtle-foreground">
       <span class="max-w-[160px] truncate">{{ cleanHost(item.url) }}</span>
-      <div class="flex items-center gap-2">
-        <span class="tabular-nums">{{ formatRelativeTime(item.created_at) }}</span>
+      <div class="flex items-center gap-1.5">
+        <span class="tabular-nums mr-0.5">{{ formatRelativeTime(item.created_at) }}</span>
+        <button
+          class="flex items-center gap-1 rounded-full bg-muted px-2 py-1 font-medium text-muted-foreground transition-colors hover:bg-primary-soft hover:text-primary"
+          title="開啟入庫時保存的離線網頁快照（防腐爛）"
+          aria-label="離線快照"
+          @click.stop="openSnapshot(item)"
+        >
+          <Camera class="size-3" />
+          <span>快照</span>
+        </button>
         <button
           class="flex items-center gap-1 rounded-full bg-muted px-2 py-1 font-medium text-muted-foreground transition-colors hover:bg-success-soft hover:text-success"
           @click.stop="toggleRead(item)"
