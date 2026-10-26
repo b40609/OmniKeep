@@ -3,8 +3,9 @@ import { ref } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import {
   BrainCircuit, Search, FileText, Radar, Keyboard, Download,
-  Sun, Moon, List, LayoutGrid, Loader2, X, KeyRound, ScanEye, Sparkles,
+  Sun, Moon, List, LayoutGrid, Loader2, X, KeyRound, ScanEye, Sparkles, FolderInput,
 } from 'lucide-vue-next'
+
 import Button from '@/components/ui/button/Button.vue'
 import { useUiStore } from '@/stores/ui'
 import { useItemsStore } from '@/stores/items'
@@ -172,6 +173,11 @@ async function installPWA() {
         <Button variant="ghost" size="icon" title="監看中心（本地提案引擎）" aria-label="監看中心" @click="ui.showWatchModal = true">
           <ScanEye class="size-4.5" />
         </Button>
+
+        <Button variant="ghost" size="icon" title="書籤與外部匯入（I）" aria-label="書籤與外部匯入" @click="ui.showImportModal = true">
+          <FolderInput class="size-4.5" />
+        </Button>
+
 
         <Button variant="ghost" size="icon" :title="mode === 'dark' ? '切換淺色' : '切換深色'" aria-label="切換主題" @click="toggle()">
           <Sun v-if="mode === 'dark'" class="size-4.5" />

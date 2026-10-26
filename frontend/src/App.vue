@@ -16,7 +16,9 @@ import ShortcutsDialog from '@/components/modals/ShortcutsDialog.vue'
 import RadarDialog from '@/components/modals/RadarDialog.vue'
 import SessionDialog from '@/components/modals/SessionDialog.vue'
 import WatchDialog from '@/components/modals/WatchDialog.vue'
+import ImportDialog from '@/components/modals/ImportDialog.vue'
 import { Toaster } from '@/components/ui/sonner'
+
 
 initTheme()
 
@@ -150,6 +152,8 @@ onUnmounted(() => window.removeEventListener('omnikeep-auth-required', requireLo
     <RadarDialog />
     <SessionDialog />
     <WatchDialog />
+    <ImportDialog />
   </div>
+
   <Toaster />
 </template>
