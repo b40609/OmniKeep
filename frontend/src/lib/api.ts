@@ -267,6 +267,108 @@ export function radarFeedback(payload: { topic_tag: string; action: SignalAction
   return request('/api/radar/feedback', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+export interface InterestProfileData {
+  success: boolean
+  profile: string
+  updated_at?: string | null
+}
+
+export interface DreamPassProposal {
+  id: number
+  status: 'pending' | 'applied' | 'dismissed'
+  observations: string
+  suggested_profile: string
+  diff_summary: string
+  current_profile: string
+  created_at: string
+  applied_at?: string | null
+}
+
+export function getInterestProfile(): Promise<InterestProfileData> {
+  return request<InterestProfileData>('/api/radar/profile')
+}
+
+export function updateInterestProfile(profile: string): Promise<InterestProfileData> {
+  return request<InterestProfileData>('/api/radar/profile', {
+    method: 'PUT',
+    body: JSON.stringify({ profile }),
+  })
+}
+
+export function runDreamPass(days: number = 7): Promise<{ success: boolean; proposal: DreamPassProposal }> {
+  return request<{ success: boolean; proposal: DreamPassProposal }>(`/api/radar/profile/dreampass/run?days=${days}`, {
+    method: 'POST',
+  })
+}
+
+export function getLatestDreamPass(status?: string): Promise<{ success: boolean; proposal: DreamPassProposal | null }> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+  return request<{ success: boolean; proposal: DreamPassProposal | null }>(`/api/radar/profile/dreampass/latest${qs}`)
+}
+
+export function applyDreamPass(proposalId: number): Promise<{ success: boolean; message: string; profile: string }> {
+  return request<{ success: boolean; message: string; profile: string }>(`/api/radar/profile/dreampass/${proposalId}/apply`, {
+    method: 'POST',
+  })
+}
+
+export function dismissDreamPass(proposalId: number): Promise<{ success: boolean; message: string }> {
+  return request<{ success: boolean; message: string }>(`/api/radar/profile/dreampass/${proposalId}/dismiss`, {
+    method: 'POST',
+  })
+}
+
+/* ---------------- Hard Rules Engine ---------------- */
+
+export interface HardRule {
+  id: number
+  name: string
+  field: 'url' | 'domain' | 'title' | 'source_type' | 'content' | string
+  operator: 'contains' | 'equals' | 'startswith' | 'endswith' | 'regex' | string
+  value: string
+  action_type: 'add_tag' | 'set_category' | 'star' | 'archive' | 'mute' | string
+  action_value: string
+  priority: number
+  is_active: number
+  created_at: string
+  updated_at: string
+}
+
+export function getRules(activeOnly: boolean = false): Promise<HardRule[]> {
+  return request<HardRule[]>(`/api/rules${activeOnly ? '?active_only=true' : ''}`)
+}
+
+export function createRule(rule: Partial<HardRule>): Promise<{ success: boolean; rule: HardRule }> {
+  return request<{ success: boolean; rule: HardRule }>('/api/rules', {
+    method: 'POST',
+    body: JSON.stringify(rule),
+  })
+}
+
+export function updateRule(ruleId: number, patch: Partial<HardRule>): Promise<{ success: boolean; rule: HardRule }> {
+  return request<{ success: boolean; rule: HardRule }>(`/api/rules/${ruleId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+}
+
+export function deleteRule(ruleId: number): Promise<{ success: boolean; message: string }> {
+  return request<{ success: boolean; message: string }>(`/api/rules/${ruleId}`, {
+    method: 'DELETE',
+  })
+}
+
+export function testRule(sampleItem: Record<string, unknown>): Promise<{
+  matched_rules: string[]
+  changes: Record<string, { before: unknown; after: unknown }>
+  result_item: Record<string, unknown>
+}> {
+  return request('/api/rules/test', {
+    method: 'POST',
+    body: JSON.stringify(sampleItem),
+  })
+}
+
 /* ---------------- Session Bridge ---------------- */
 
 export type SessionPlatformId = 'instagram' | 'facebook' | 'google' | 'x'
