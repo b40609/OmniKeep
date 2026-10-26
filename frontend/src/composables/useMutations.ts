@@ -178,5 +178,16 @@ export function useMutations() {
     }
   }
 
-  return { toggleStar, toggleRead, updateCategory, removeItem, quickIngest, noteIngest, track }
+  /** Open offline HTML snapshot in a new tab to prevent link rot. */
+  async function openSnapshot(item: Item) {
+    try {
+      toast.info('正在載入離線快照...')
+      await api.openSnapshotInNewTab(item.id)
+      track('open_snapshot', item)
+    } catch (e) {
+      toast.error('無法開啟離線快照', { description: (e as Error).message })
+    }
+  }
+
+  return { toggleStar, toggleRead, updateCategory, removeItem, quickIngest, noteIngest, openSnapshot, track }
 }

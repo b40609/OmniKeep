@@ -160,6 +160,48 @@ export function getStats(): Promise<Stats> {
   return request<Stats>('/api/items/stats')
 }
 
+export function searchSemantic(q: string, limit: number = 20): Promise<Item[]> {
+  const params = new URLSearchParams()
+  params.append('q', q)
+  params.append('limit', String(limit))
+  return request<Item[]>(`/api/items/search/semantic?${params.toString()}`)
+}
+
+export interface SnapshotStatus {
+  available: boolean
+  item_id: string
+  path?: string
+  size_bytes?: number
+  mtime?: number
+}
+
+export function getSnapshotStatus(itemId: number | string): Promise<SnapshotStatus> {
+  return request<SnapshotStatus>(`/api/items/${itemId}/snapshot/status`)
+}
+
+export async function fetchSnapshotHtml(itemId: number | string): Promise<string> {
+  if (!apiKey) throw new Error('請先登入')
+  const res = await fetch(`/api/items/${itemId}/snapshot`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  })
+  if (!res.ok) {
+    if (res.status === 404) throw new Error('此項目尚未建立離線快照')
+    throw new Error(`獲取快照失敗 (HTTP ${res.status})`)
+  }
+  return res.text()
+}
+
+export async function openSnapshotInNewTab(itemId: number | string): Promise<void> {
+  const html = await fetchSnapshotHtml(itemId)
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const blobUrl = URL.createObjectURL(blob)
+  const w = window.open(blobUrl, '_blank')
+  if (!w) {
+    window.location.href = blobUrl
+  }
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60000)
+}
+
 /* ---------------- Categories ---------------- */
 
 export function getCategories(): Promise<Category[]> {

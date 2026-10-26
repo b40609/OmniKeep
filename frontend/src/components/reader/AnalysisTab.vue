@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from 'vue'
-import { Link2, Package, Bot, ChevronRight } from 'lucide-vue-next'
+import { Link2, Package, Bot, ChevronRight, Camera } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
 import Skeleton from '@/components/ui/skeleton/Skeleton.vue'
 import * as api from '@/lib/api'
@@ -8,8 +8,10 @@ import type { Item } from '@/lib/api'
 import { cleanHost, formatRelativeTime, estimateReadTime, sourceMeta } from '@/lib/format'
 import { renderMarkdown, useCodeCopy } from '@/lib/markdown'
 import { useUiStore } from '@/stores/ui'
+import { useMutations } from '@/composables/useMutations'
 
 const ui = useUiStore()
+const { openSnapshot } = useMutations()
 const contentRef = ref<HTMLElement | null>(null)
 let detachCodeCopy: (() => void) | null = null
 
@@ -57,6 +59,15 @@ function openItem(id: number) {
         >
           ~{{ estimateReadTime(ui.activeItem.content_raw) }} min
         </span>
+        <button
+          type="button"
+          class="inline-flex cursor-pointer items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-2xs font-semibold text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:text-emerald-400"
+          title="開啟入庫時保存的離線完整 HTML 快照（防原始網址失效）"
+          @click="openSnapshot(ui.activeItem)"
+        >
+          <Camera class="size-2.5" />
+          <span>離線快照</span>
+        </button>
       </div>
     </header>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Star, Archive, ExternalLink, ChevronUp, ChevronDown, Package, Link2, ChevronRight } from 'lucide-vue-next'
+import { Star, Archive, ExternalLink, ChevronUp, ChevronDown, Package, Link2, ChevronRight, Camera } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
 import type { Item } from '@/lib/api'
 import { cleanHost, formatRelativeTime, sourceMeta } from '@/lib/format'
@@ -9,7 +9,7 @@ import { useSignal } from '@/composables/useSignal'
 
 const props = defineProps<{ item: Item; active: boolean }>()
 const ui = useUiStore()
-const { toggleStar, toggleRead } = useMutations()
+const { toggleStar, toggleRead, openSnapshot } = useMutations()
 const { tuneItem } = useSignal()
 
 function select() {
@@ -107,6 +107,9 @@ function select() {
       </button>
       <button class="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-success-soft hover:text-success" title="封存" aria-label="封存" @click.stop="toggleRead(item)">
         <Archive class="size-3.5" />
+      </button>
+      <button class="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary-soft hover:text-primary" title="開啟離線快照（防腐爛）" aria-label="開啟離線快照" @click.stop="openSnapshot(item)">
+        <Camera class="size-3.5" />
       </button>
       <a :href="item.url" target="_blank" rel="noopener" class="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="原始網頁" aria-label="開啟原始網頁" @click.stop>
         <ExternalLink class="size-3.5" />
