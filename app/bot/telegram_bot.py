@@ -114,6 +114,28 @@ def build_proposal_keyboard(proposal_id: str) -> Dict[str, Any]:
         ]
     }
 
+def build_dreampass_keyboard(proposal_id: int) -> Dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "✅ 採用此調整", "callback_data": f"dreampass:{proposal_id}:apply"},
+                {"text": "❌ 忽略", "callback_data": f"dreampass:{proposal_id}:dismiss"},
+            ]
+        ]
+    }
+
+def build_dreampass_card_html(prop: Dict[str, Any]) -> str:
+    obs = html.escape(str(prop.get("observations", "")))
+    sug = html.escape(str(prop.get("suggested_profile", "")))
+    diff = html.escape(str(prop.get("diff_summary", "")))
+    return (
+        f"✨ <b>Dream Pass 品味畫像自省卡</b>\n\n"
+        f"<b>【近期偏好觀察】</b>\n{obs}\n\n"
+        f"<b>【建議調整方向】</b>\n<code>{diff}</code>\n\n"
+        f"<b>【更新後的興趣描述】</b>\n<i>{sug}</i>\n\n"
+        f"點擊下方按鈕以核准更新畫像："
+    )
+
 def build_deck_card_html(item: Dict[str, Any], remaining: int) -> str:
     tags = " ".join(f"#{t}" for t in (item.get("tech_tags") or [])[:4])
     title = html.escape(item.get("title_l1", ""))
@@ -458,6 +480,17 @@ class TelegramBot:
                 )
             return
 
+        if text.startswith("/dreampass"):
+            from app.database import get_latest_dreampass_proposal
+            from app.radar.dreampass import run_dreampass_reflection
+            prop = get_latest_dreampass_proposal(status="pending")
+            if not prop:
+                await self.send_message(chat_id, "⏳ 正在分析近 7 天互動數據進行品味自省，請稍候...")
+                prop = await run_dreampass_reflection(days=7)
+            card = build_dreampass_card_html(prop)
+            await self.send_message(chat_id, card, reply_markup=build_dreampass_keyboard(prop["id"]))
+            return
+
         # Normal Content Ingestion (Hoarder Fast Queueing: <50ms acknowledge)
         if not text:
             await self.send_message(chat_id, "請發送網址或文字段落。")
@@ -582,6 +615,39 @@ class TelegramBot:
                     "reply_markup": {"inline_keyboard": []},
                 })
             await self.answer_callback_query(query_id, status_note)
+            return
+
+        # ── Dream Pass decide buttons: dreampass:<id>:apply|dismiss ──
+        if action == "dreampass":
+            prop_id_str, _, verb = item_id.partition(":")
+            try:
+                p_id = int(prop_id_str)
+            except ValueError:
+                await self.answer_callback_query(query_id, "無效的自省編號")
+                return
+            if verb == "apply":
+                from app.database import apply_dreampass_proposal
+                ok = apply_dreampass_proposal(p_id)
+                msg = "✅ 已成功採用自省建議，興趣畫像已更新！" if ok else "自省提案已過期或已處理"
+                await self.answer_callback_query(query_id, msg)
+                await self.send_api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": f"✨ <b>Dream Pass 自省完成</b>\n\n{msg}",
+                    "parse_mode": "HTML",
+                    "reply_markup": {"inline_keyboard": []},
+                })
+            elif verb == "dismiss":
+                from app.database import dismiss_dreampass_proposal
+                dismiss_dreampass_proposal(p_id)
+                await self.answer_callback_query(query_id, "已忽略此次建議")
+                await self.send_api("editMessageText", {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": "✨ <b>Dream Pass 自省已忽略</b>\n\n保留原興趣畫像不變。",
+                    "parse_mode": "HTML",
+                    "reply_markup": {"inline_keyboard": []},
+                })
             return
 
         item = get_item_by_id(item_id)

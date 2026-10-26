@@ -306,6 +306,20 @@ def init_db():
         )
     """)
 
+    # 20. Dream Pass Proposals (self-reflection on user behavior)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS profile_dreampass_proposals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            observations TEXT NOT NULL,
+            suggested_profile TEXT NOT NULL,
+            diff_summary TEXT NOT NULL,
+            current_profile TEXT NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL,
+            applied_at DATETIME
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -1225,6 +1239,134 @@ def get_pending_analysis_items(limit: int = 10) -> List[Dict[str, Any]]:
         rows.append(d)
     conn.close()
     return rows
+
+
+# ── Dream Pass (Taste Self-Reflection) DAO ──────────────────────
+
+def create_dreampass_proposal(observations: str, suggested_profile: str, diff_summary: str, current_profile: str = "") -> int:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO profile_dreampass_proposals
+        (status, observations, suggested_profile, diff_summary, current_profile, created_at)
+        VALUES ('pending', ?, ?, ?, ?, ?)
+    """, (observations.strip(), suggested_profile.strip(), diff_summary.strip(), current_profile.strip(), now_iso))
+    conn.commit()
+    prop_id = cursor.lastrowid
+    conn.close()
+    return prop_id
+
+def get_latest_dreampass_proposal(status: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if status:
+        cursor.execute("SELECT * FROM profile_dreampass_proposals WHERE status = ? ORDER BY id DESC LIMIT 1", (status,))
+    else:
+        cursor.execute("SELECT * FROM profile_dreampass_proposals ORDER BY id DESC LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_dreampass_proposal(proposal_id: int) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM profile_dreampass_proposals WHERE id = ?", (proposal_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def apply_dreampass_proposal(proposal_id: int) -> bool:
+    prop = get_dreampass_proposal(proposal_id)
+    if not prop or prop["status"] != "pending":
+        return False
+    # Update interest profile
+    set_interest_profile(prop["suggested_profile"])
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE profile_dreampass_proposals
+        SET status = 'applied', applied_at = ?
+        WHERE id = ?
+    """, (now_iso, proposal_id))
+    conn.commit()
+    conn.close()
+    return True
+
+def dismiss_dreampass_proposal(proposal_id: int) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE profile_dreampass_proposals
+        SET status = 'dismissed'
+        WHERE id = ? AND status = 'pending'
+    """, (proposal_id,))
+    changed = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return changed
+
+def get_recent_taste_signals(days: int = 7) -> Dict[str, Any]:
+    """Aggregates interactions (stars, boosts, dampens, reads) and positive/negative items."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    # 1. Behavior counts
+    cursor.execute("""
+        SELECT event_type, COUNT(*) AS c FROM behavior_events
+        WHERE julianday(created_at) > julianday('now', ?)
+        GROUP BY event_type
+    """, (f"-{days} days",))
+    event_counts = {r["event_type"]: r["c"] for r in cursor.fetchall()}
+
+    # 2. Positively engaged items (starred or boosted)
+    cursor.execute("""
+        SELECT DISTINCT i.id, i.title_l1, i.summary_l1, i.tech_tags, i.category_name, i.source_type
+        FROM items i
+        LEFT JOIN behavior_events b ON b.item_id = i.id
+        WHERE (i.is_starred = 1 OR b.event_type IN ('swipe_star', 'boost', 'open_snapshot'))
+          AND julianday(i.created_at) > julianday('now', ?)
+        ORDER BY i.created_at DESC LIMIT 20
+    """, (f"-{days} days",))
+    positive_items = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        try:
+            d["tech_tags"] = json.loads(d["tech_tags"]) if d["tech_tags"] else []
+        except Exception:
+            d["tech_tags"] = []
+        positive_items.append(d)
+
+    # 3. Negatively engaged items (dampened or muted)
+    cursor.execute("""
+        SELECT DISTINCT i.id, i.title_l1, i.tech_tags, b.event_type
+        FROM behavior_events b
+        JOIN items i ON b.item_id = i.id
+        WHERE b.event_type IN ('dampen', 'mute', 'swipe_down')
+          AND julianday(b.created_at) > julianday('now', ?)
+        ORDER BY b.created_at DESC LIMIT 15
+    """, (f"-{days} days",))
+    negative_items = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        try:
+            d["tech_tags"] = json.loads(d["tech_tags"]) if d["tech_tags"] else []
+        except Exception:
+            d["tech_tags"] = []
+        negative_items.append(d)
+
+    # 4. Top radar topic weights
+    cursor.execute("SELECT topic_tag, weight FROM user_topic_weights WHERE is_blocked = 0 ORDER BY weight DESC LIMIT 10")
+    top_topics = [{"tag": r["topic_tag"], "weight": r["weight"]} for r in cursor.fetchall()]
+
+    conn.close()
+    return {
+        "event_counts": event_counts,
+        "positive_items": positive_items,
+        "negative_items": negative_items,
+        "top_topics": top_topics,
+        "window_days": days,
+    }
 
 
 
