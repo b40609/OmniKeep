@@ -9,7 +9,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 5000
-    API_KEY: str = "omnifs888"
+    API_KEY: str = ""
+    CORS_ORIGINS: List[str] = []
+    BACKGROUND_SERVICES_ENABLED: bool = True
     
     # Primary LLM Configuration (Agnes AI 3.0 OpenAI-Compatible Endpoint)
     PRIMARY_LLM_PROVIDER: str = "openai_compatible"
@@ -82,7 +84,7 @@ class Settings(BaseSettings):
         return str(p.resolve())
 
     model_config = SettingsConfigDict(
-        env_file=str(BASE_DIR / ".env"),
+        env_file=None if os.environ.get("OMNIKEEP_TESTING") == "1" else str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="ignore"
     )

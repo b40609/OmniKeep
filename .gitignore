@@ -9,6 +9,7 @@ venv/
 *.db
 *.db-wal
 *.db-shm
+*.worker.lock
 .DS_Store
 dist/
 build/

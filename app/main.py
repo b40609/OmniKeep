@@ -2,16 +2,17 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from app.static_assets import CurrentBuildFiles
+from fastapi.responses import FileResponse
 from app.config import settings
 from app.database import init_db
 from app.routers import items_router, categories_router, ingest_router, line_router, radar_router, session_router, watch_router, behavior_router
 from app.mcp_server import mcp
 from app.radar.scheduler import radar_scheduler
 from app.queue.worker import task_worker
+from app.security import verify_api_key
 
 logger = logging.getLogger("omnikeep.main")
 
@@ -19,6 +20,9 @@ logger = logging.getLogger("omnikeep.main")
 async def lifespan(app: FastAPI):
     # Initialize SQLite database and tables
     init_db()
+    if not settings.BACKGROUND_SERVICES_ENABLED:
+        yield
+        return
     # Start task worker for persistent background queue processing
     task_worker.start()
     # Start periodic Radar Scheduler in background
@@ -67,30 +71,14 @@ app = FastAPI(
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[origin for origin in settings.CORS_ORIGINS if origin != "*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
 
-# Remote MCP Token Authentication Middleware for /mcp routes
-@app.middleware("http")
-async def mcp_security_middleware(request: Request, call_next):
-    if request.url.path.startswith("/mcp"):
-        auth_header = request.headers.get("Authorization", "")
-        token = ""
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:].strip()
-        if not token:
-            token = request.query_params.get("token") or request.query_params.get("api_key") or ""
-
-        if settings.API_KEY and token != settings.API_KEY:
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Unauthorized: Invalid or missing API key for Remote MCP"}
-            )
-            
-    return await call_next(request)
+# App-wide middleware also protects mounted MCP applications.
+app.middleware("http")(verify_api_key)
 
 # Include Routers
 app.include_router(items_router)
@@ -124,38 +112,16 @@ if static_dir.exists():
                 },
             )
 
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    app.mount("/static", CurrentBuildFiles(directory=str(static_dir)), name="static")
 
 @app.get("/")
 async def serve_dashboard():
-    # Prefer the compiled Vite app; fall back to the pre-rebuild single-file UI.
+    # Serve only the current compiled frontend.
     dist_index = static_dir / "dist" / "index.html"
     if dist_index.exists():
-        return FileResponse(str(dist_index))
-    legacy_index = static_dir / "index-legacy.html"
-    if legacy_index.exists():
-        return FileResponse(str(legacy_index))
+        return FileResponse(str(dist_index), headers={"Cache-Control": "no-cache"})
     return {"message": "OmniKeep API running. Build the frontend: cd frontend && npm run build"}
 
 @app.get("/health")
 async def health_check():
-    # Passive cookie-bridge snapshot for ops visibility (never launches Chrome).
-    from app.routers.session import _bridge_snapshot
-    try:
-        session = _bridge_snapshot()
-    except Exception:
-        session = {"mode": "unknown"}
-
-    return {
-        "status": "healthy",
-        "service": "OmniKeep",
-        "version": "0.1.0",
-        "primary_provider": settings.PRIMARY_LLM_PROVIDER,
-        "gemini_keys_count": len(settings.gemini_keys),
-        "mcp_enabled": True,
-        "session_bridge": {
-            "mode": session.get("mode"),
-            "cdp_reachable": session.get("cdp_reachable", False),
-            "connected_platforms": [p["id"] for p in session.get("platforms", []) if p.get("connected")],
-        },
-    }
+    return {"status": "healthy", "service": "OmniKeep", "version": "0.1.0"}

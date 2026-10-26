@@ -35,7 +35,7 @@ def setup_module(module):
 def _mk_item(origin: str, read: int = 0) -> str:
     seed = uuid.uuid4().hex[:8]
     return save_item({
-        "url": f"https://p1-test.example/{seed}",
+        "url": f"https://behavior-fixture.invalid/{seed}",
         "source_type": "web",
         "category_name": "AI",
         "title_l1": f"P1 測試項目 {seed}",
@@ -109,7 +109,8 @@ async def test_behavior_router_endpoints():
     from app.main import app
 
     item_id = _mk_item("radar")
-    with TestClient(app) as client:
+    from app.config import settings
+    with TestClient(app, headers={"Authorization": f"Bearer {settings.API_KEY}"}) as client:
         r = client.post("/api/behavior/event", json={
             "event_type": "swipe_up", "item_id": item_id, "source": "pwa"})
         assert r.status_code == 200 and r.json()["success"] is True

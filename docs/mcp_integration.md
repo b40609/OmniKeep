@@ -29,9 +29,10 @@ OmniKeep FastAPI (Port 5000) 已原生掛載 FastMCP SSE 端點，配合 Cloudfl
 - **訊息端點 (自動握手)**: `https://<你的-cloudflare-tunnel-網址>/mcp/messages`
 
 ### 2. 安全認證 (Bearer Token 防護)
-公網請求必須攜帶 API Key（對應 `.env` 中的 `API_KEY`，預設為 `omnifs888`）：
-- **Header 方式 (推薦)**: `Authorization: Bearer <API_KEY>`
-- **Query 參數方式**: `https://<你的-cloudflare-tunnel-網址>/mcp/sse?token=<API_KEY>`
+REST 與遠端 MCP 請求均須攜帶 `.env` 中的 `API_KEY`，沒有預設憑證：
+- **Header 方式**：`Authorization: Bearer <API_KEY>` 或 `X-API-Key: <API_KEY>`。
+- 不接受 URL query token；SSE 連線與訊息請求均須帶入 Header。
+- 執行 `python scripts/rotate_api_key.py` 可換 key，之後須重新啟動服務並私下更新客戶端設定。憑證不會顯示於命令輸出。
 
 ### 3. Remote Client 配置範例 (例如 Cursor / Claude Desktop Remote)
 ```json
@@ -40,7 +41,7 @@ OmniKeep FastAPI (Port 5000) 已原生掛載 FastMCP SSE 端點，配合 Cloudfl
     "omnikeep-remote": {
       "url": "https://<你的-cloudflare-tunnel-網址>/mcp/sse",
       "headers": {
-        "Authorization": "Bearer omnifs888"
+        "Authorization": "Bearer <從本機 .env 私下填入 API_KEY>"
       }
     }
   }

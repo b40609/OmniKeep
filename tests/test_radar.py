@@ -1,3 +1,4 @@
+from app.config import settings
 import pytest
 import asyncio
 from datetime import datetime, timezone, timedelta
@@ -218,6 +219,7 @@ def test_score_item_and_muted_shield():
     assert score_muted <= -100.0
 
 def test_rank_items_with_exploration():
+    tune_topic_signal("SpamCrypto", "mute")
     items = [
         {"id": f"item_{i}", "tech_tags": ["FastAPI"], "tier": 1, "title": f"Item {i}"}
         for i in range(10)
@@ -288,7 +290,8 @@ async def test_radar_api_endpoints():
     from app.main import app
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://test",
+                           headers={"Authorization": f"Bearer {settings.API_KEY}"}) as client:
         # 1. Create a GitHub search source
         res_create = await client.post("/api/radar/sources", json={
             "name": "Local Agent Search",
@@ -318,7 +321,8 @@ async def test_radar_api_endpoints():
         assert res_del.status_code == 200
 
 @pytest.mark.asyncio
-async def test_main_lifespan_integration():
+async def test_main_lifespan_integration(monkeypatch):
+    monkeypatch.setattr(settings, "BACKGROUND_SERVICES_ENABLED", True)
     from app.main import app
     from app.radar.scheduler import radar_scheduler
     from contextlib import asynccontextmanager

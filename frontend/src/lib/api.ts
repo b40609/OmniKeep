@@ -86,13 +86,30 @@ export interface TriageView {
   starred?: 'true'
 }
 
-const INGEST_KEY = (import.meta.env.VITE_INGEST_KEY as string | undefined) ?? 'omnifs888'
+
+let apiKey = ''
+let authVersion = 0
+
+export function setApiKey(value: string) {
+  if (apiKey !== value) authVersion++
+  apiKey = value
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (!apiKey) throw new Error('請先登入')
+  const version = authVersion
+  function ensureCurrentSession() {
+    if (version !== authVersion) throw new Error('登入狀態已變更，請重新操作')
+  }
   const res = await fetch(path, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...init?.headers, Authorization: `Bearer ${apiKey}` },
   })
+  ensureCurrentSession()
+  if (res.status === 401) {
+    setApiKey('')
+    window.dispatchEvent(new Event('omnikeep-auth-required'))
+  }
   if (!res.ok) {
     let detail = `HTTP ${res.status}`
     try {
@@ -103,7 +120,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(detail)
   }
-  return res.json() as Promise<T>
+  const body = res.status === 204 ? undefined : await res.json()
+  ensureCurrentSession()
+  return body as T
 }
 
 /* ---------------- Items ---------------- */
@@ -166,7 +185,6 @@ export interface IngestResult {
 export function ingest(content: string, opts: { category?: string | null; async?: boolean } = {}): Promise<IngestResult> {
   return request<IngestResult>('/api/ingest', {
     method: 'POST',
-    headers: { 'X-API-Key': INGEST_KEY },
     body: JSON.stringify({
       content,
       category: opts.category ?? null,

@@ -505,7 +505,9 @@ def main():
     args = parser.parse_args()
 
     if args.transport == "sse":
-        mcp.run(transport="sse")
+        import uvicorn
+        from app.config import settings
+        uvicorn.run("app.main:app", host=settings.HOST, port=settings.PORT)
     else:
         mcp.run(transport="stdio")
 

@@ -8,7 +8,7 @@ import { useSignal } from './useSignal'
 type AppHeaderExposed = { focusQuickInput: () => void; focusSearchInput: () => void }
 
 /** Global keyboard shortcuts — parity with the legacy single-file UI. */
-export function useKeyboard(header: () => AppHeaderExposed | null) {
+export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () => boolean = () => true) {
   const items = useItemsStore()
   const ui = useUiStore()
   const radar = useRadarStore()
@@ -19,6 +19,7 @@ export function useKeyboard(header: () => AppHeaderExposed | null) {
   }
 
   function handleKeyDown(e: KeyboardEvent) {
+    if (!enabled()) return
     const el = document.activeElement
     const tag = el?.tagName?.toLowerCase() ?? ''
     const typing =

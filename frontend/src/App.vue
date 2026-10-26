@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { initTheme } from '@/composables/useTheme'
 import { useKeyboard } from '@/composables/useKeyboard'
 import { useItemsStore } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
-import { getSessionStatus, logBehaviorEvent, type SessionBridgeSnapshot } from '@/lib/api'
+import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, type SessionBridgeSnapshot } from '@/lib/api'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import TriageBar from '@/components/layout/TriageBar.vue'
 import ItemList from '@/components/items/ItemList.vue'
@@ -22,10 +22,41 @@ initTheme()
 
 const items = useItemsStore()
 const ui = useUiStore()
+const signedIn = ref(false)
+const credential = ref('')
+const loginError = ref('')
+const loggingIn = ref(false)
+
+function requireLogin() {
+  signedIn.value = false
+  setApiKey('')
+  ui.activeItem = null
+  items.items = []
+  items.categories = []
+  items.stats = { inbox: 0, starred: 0, archived: 0, total: 0 }
+}
+
+async function login() {
+  loggingIn.value = true
+  loginError.value = ''
+  setApiKey(credential.value.trim())
+  try {
+    await getStats()
+    credential.value = ''
+    signedIn.value = true
+    await items.refreshAll()
+    await maybeShowSessionHint()
+  } catch (error) {
+    requireLogin()
+    loginError.value = error instanceof Error ? error.message : '登入失敗'
+  } finally {
+    loggingIn.value = false
+  }
+}
 
 const headerRef = ref<InstanceType<typeof AppHeader> | null>(null)
 const listRef = ref<InstanceType<typeof ItemList> | null>(null)
-useKeyboard(() => headerRef.value)
+useKeyboard(() => headerRef.value, () => signedIn.value)
 
 // J/K navigation keeps the active row in view.
 watch(
@@ -74,8 +105,9 @@ async function maybeShowSessionHint() {
 }
 
 onMounted(() => {
-  items.refreshAll().then(maybeShowSessionHint)
+  window.addEventListener('omnikeep-auth-required', requireLogin)
 })
+onUnmounted(() => window.removeEventListener('omnikeep-auth-required', requireLogin))
 </script>
 
 <template>
@@ -84,7 +116,16 @@ onMounted(() => {
     <i /><i /><i /><i />
   </div>
 
-  <div class="relative z-10 flex h-screen flex-col overflow-hidden text-foreground">
+  <form v-if="!signedIn" class="relative z-10 mx-auto mt-24 flex max-w-sm flex-col gap-4 rounded-xl border bg-background p-8 text-foreground" @submit.prevent="login">
+    <h1 class="text-xl font-semibold">登入 OmniKeep</h1>
+    <label for="api-key">存取金鑰</label>
+    <input id="api-key" v-model="credential" type="password" autocomplete="off" required class="rounded border bg-background p-3" />
+    <p class="text-sm text-muted-foreground">金鑰僅保留於本頁記憶體，重新整理後需再次登入。</p>
+    <p v-if="loginError" role="alert" class="text-sm text-red-500">{{ loginError }}</p>
+    <button type="submit" :disabled="loggingIn" class="rounded bg-primary p-3 text-primary-foreground">{{ loggingIn ? '驗證中…' : '登入' }}</button>
+  </form>
+  <div v-else class="relative z-10 flex h-screen flex-col overflow-hidden text-foreground">
+    <button class="absolute right-4 bottom-2 z-50 text-xs text-muted-foreground" @click="requireLogin">登出</button>
     <AppHeader ref="headerRef" />
     <TriageBar />
 

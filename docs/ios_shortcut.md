@@ -28,12 +28,12 @@
 
    * **動作 2：取得 URL 的內容（HTTP POST）**
      * 搜尋並加入：**「取得 URL 的內容」**。
-     * **網址**：`http://[你的Tailscale_IP]:5000/api/ingest?token=omnifs888`
+     * **網址**：`http://[你的Tailscale_IP]:5000/api/ingest`
      * 展開「進階」：
        * **方法**：`POST`
        * **標頭 (Headers)**：
          * `Content-Type`: `application/json`
-         * `X-API-Key`: `omnifs888`
+         * `X-API-Key`：從本機 `.env` 私下填入 `API_KEY`；換 key 後同步更新此標頭。
        * **要求主體 (Request Body)**：選擇 `JSON`
          * 新增欄位 1：`url`（文字）= 選擇變數 `TargetContent`
          * 新增欄位 2：`async_mode`（布林值）= `True`（秒級回傳，背景非同步雙層萃取，手機零等待）

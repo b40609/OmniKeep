@@ -127,6 +127,11 @@ def test_transcribe_local_whisper_synthetic_audio():
             ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", "libmp3lame", aud_path],
             capture_output=True
         )
-        res = transcribe_local_whisper(aud_path)
+        model = MagicMock()
+        model.transcribe.return_value = ([MagicMock(text=" synthetic transcript ")], None)
+        with patch("app.parsers.reel.get_local_whisper_model", return_value=model):
+            res = transcribe_local_whisper(aud_path)
+        assert res == "synthetic transcript"
+        model.transcribe.assert_called_once()
         # Should execute cleanly and return string (empty or hallucinated tone token)
         assert isinstance(res, str)
