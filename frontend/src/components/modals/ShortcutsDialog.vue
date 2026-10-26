@@ -29,10 +29,12 @@ const groups: { title: string; items: [string, string][] }[] = [
       ['N', '聚焦快速存入框'],
       ['/', '聚焦全文搜尋'],
       ['R', '情報雷達面板'],
+      ['I', '書籤與外部匯入'],
       ['?', '本快捷鍵指南'],
     ],
   },
 ]
+
 </script>
 
 <template>

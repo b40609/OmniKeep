@@ -15,7 +15,15 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
   const { toggleStar, toggleRead } = useMutations()
 
   function isAnyModalOpen() {
-    return ui.showNoteModal || ui.showCategoryModal || ui.showShortcutsModal || ui.showRadarModal
+    return (
+      ui.showNoteModal ||
+      ui.showCategoryModal ||
+      ui.showShortcutsModal ||
+      ui.showRadarModal ||
+      ui.showSessionModal ||
+      ui.showWatchModal ||
+      ui.showImportModal
+    )
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -38,6 +46,9 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         ui.showCategoryModal = false
         ui.showShortcutsModal = false
         ui.showRadarModal = false
+        ui.showSessionModal = false
+        ui.showWatchModal = false
+        ui.showImportModal = false
       }
       return
     }
@@ -53,6 +64,12 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         ui.showRadarModal = !ui.showRadarModal
         if (ui.showRadarModal) radar.ensureLoaded()
         return
+      case 'i':
+      case 'I':
+        e.preventDefault()
+        ui.showImportModal = !ui.showImportModal
+        return
+
       case '+':
       case '=':
         if (ui.activeItem) {

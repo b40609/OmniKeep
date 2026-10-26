@@ -22,13 +22,14 @@ export const useUiStore = defineStore('ui', () => {
   const showRadarModal = ref(false)
   const showSessionModal = ref(false)
   const showWatchModal = ref(false)
+  const showImportModal = ref(false)
 
   // Ingest
   const isIngesting = ref(false)
 
   return {
     activeItem, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
-    showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal,
+    showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal,
     isIngesting,
   }
 })
