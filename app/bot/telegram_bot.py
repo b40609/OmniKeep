@@ -55,17 +55,26 @@ async def notify_task_heartbeat(chat_id: int, message_id: int, text: str):
     except Exception as e:
         logger.warning(f"[Telegram Heartbeat] Failed to update ({chat_id}:{message_id}): {e}")
 
-async def notify_task_completed(chat_id: int, message_id: int, item: Dict[str, Any]):
+async def notify_task_completed(chat_id: int, message_id: int, item: Dict[str, Any], *, strict: bool = False):
     """Worker notification: renders finished intelligence card in place"""
     bot = get_telegram_bot()
     if not bot:
+        if strict:
+            raise RuntimeError("Telegram bot unavailable for completion delivery")
         return
     try:
         card = bot.build_item_card_html(item)
         kb = bot.build_item_keyboard(item)
-        await bot.edit_message_text(chat_id, message_id, card, reply_markup=kb)
+        result = await bot.edit_message_text(chat_id, message_id, card, reply_markup=kb)
+        if isinstance(result, dict) and result.get("ok") is False:
+            description = str(result.get("description", "Telegram API error"))
+            # A retry after a successful remote edit may find identical text.
+            if "message is not modified" not in description.lower():
+                raise RuntimeError(f"Telegram completion delivery: {description}")
     except Exception as e:
         logger.warning(f"[Telegram Complete] Failed to render card ({chat_id}:{message_id}): {e}")
+        if strict:
+            raise
 
 async def notify_task_failed(chat_id: int, message_id: int, error_text: str):
     """Worker notification: updates error state in place"""

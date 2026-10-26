@@ -940,10 +940,27 @@ def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
     if canon:
         m = re.match(r'^https?://(?:www\.)?github\.com/([^/]+)/([^/]+)', canon, re.IGNORECASE)
         if m:
+            # Narrow SQL candidates but verify the exact normalized repo key.
+            # Escaping LIKE metacharacters prevents '_' / '%' wildcard matches.
             slug = f"{m.group(1)}/{m.group(2)}"
-            cursor.execute("SELECT * FROM items WHERE url LIKE ? OR url LIKE ? LIMIT 1", 
-                           (f"%github.com/{slug}%", f"%github.com/{m.group(1).capitalize()}/{m.group(2)}%"))
-            row = cursor.fetchone()
+            escaped = slug.replace("~", "~~").replace("%", "~%").replace("_", "~_")
+            patterns = tuple(
+                f"{scheme}://{host}/{escaped}%"
+                for scheme in ("https", "http")
+                for host in ("github.com", "www.github.com")
+            )
+            cursor.execute("""
+                SELECT * FROM items
+                WHERE lower(url) LIKE ? ESCAPE '~'
+                   OR lower(url) LIKE ? ESCAPE '~'
+                   OR lower(url) LIKE ? ESCAPE '~'
+                   OR lower(url) LIKE ? ESCAPE '~'
+            """, patterns)
+            row = next(
+                (candidate for candidate in cursor.fetchall()
+                 if normalize_canonical_url(candidate["url"]) == canon),
+                None,
+            )
             if row:
                 conn.close()
                 d = dict(row)
@@ -1056,6 +1073,92 @@ def get_sub_entities_for_parent(source_parent_id: str) -> List[Dict[str, Any]]:
 
 # ── Ingest Tasks DAO (Hoarder Pattern / Persistent Queue) ──────
 
+# Schema-preserving completion outbox: ingestion remains 'completed' while
+# error_message stores a durable delivery cursor until the send succeeds.
+# Delivery is at-least-once (a crash after remote success may resend).
+_NOTIFY_PREFIX = "notify_v1:"
+NOTIFICATION_PENDING = "notify_v1:pending:0"
+
+
+def _parse_notification_state(value: Optional[str]):
+    if not value or not value.startswith(_NOTIFY_PREFIX):
+        return None
+    parts = value.split(":", 4)
+    if len(parts) < 3 or parts[1] not in {"pending", "inflight", "retry"}:
+        return None
+    try:
+        attempts = int(parts[2])
+        due = int(parts[3]) if parts[1] == "retry" and len(parts) > 3 else 0
+    except ValueError:
+        return None
+    return parts[1], attempts, due
+
+
+def claim_completion_notification(task_id: Optional[str] = None, now_epoch: Optional[int] = None):
+    """Claim one due delivery with SQLite's write lock (never rerun the LLM)."""
+    import time
+
+    now_epoch = int(time.time()) if now_epoch is None else now_epoch
+    conn = get_db_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        query = """
+            SELECT * FROM ingest_tasks
+            WHERE status = 'completed' AND error_message GLOB 'notify_v1:*'
+        """
+        params = ()
+        if task_id:
+            query += " AND id = ?"
+            params = (task_id,)
+        query += " ORDER BY updated_at ASC"
+        for row in conn.execute(query, params).fetchall():
+            state = _parse_notification_state(row["error_message"])
+            if not state or state[0] == "inflight":
+                continue
+            if state[0] == "retry" and state[2] > now_epoch:
+                continue
+            marker = f"notify_v1:inflight:{state[1]}"
+            updated = conn.execute("""
+                UPDATE ingest_tasks SET error_message = ?, updated_at = ?
+                WHERE id = ? AND status = 'completed' AND error_message = ?
+            """, (marker, datetime.now(timezone.utc).isoformat(),
+                  row["id"], row["error_message"]))
+            if updated.rowcount:
+                claimed = dict(row)
+                claimed["error_message"] = marker
+                conn.commit()
+                return claimed
+        conn.commit()
+        return None
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def finish_completion_notification(task_id: str, claim_marker: str, error: Optional[str] = None) -> bool:
+    """Clear a successful delivery or persist a capped exponential retry."""
+    import time
+
+    state = _parse_notification_state(claim_marker)
+    if not state or state[0] != "inflight":
+        raise ValueError("Expected a claimed completion notification")
+    next_marker = None
+    if error is not None:
+        attempts = state[1] + 1
+        delay = min(30 * (2 ** min(attempts - 1, 7)), 3600)
+        due = int(time.time()) + delay
+        detail = str(error).replace("\n", " ").replace("\r", " ")[:160]
+        next_marker = f"notify_v1:retry:{attempts}:{due}:{detail}"
+    with closing(get_db_connection()) as conn, conn:
+        updated = conn.execute("""
+            UPDATE ingest_tasks SET error_message = ?, updated_at = ?
+            WHERE id = ? AND status = 'completed' AND error_message = ?
+        """, (next_marker, datetime.now(timezone.utc).isoformat(),
+              task_id, claim_marker))
+        return updated.rowcount > 0
+
 def create_ingest_task(
     url: str,
     source: str = "telegram",
@@ -1127,10 +1230,17 @@ def update_task_status(
         UPDATE ingest_tasks
         SET status = ?,
             item_id = COALESCE(?, item_id),
-            error_message = ?,
+            error_message = CASE
+                WHEN ? = 'completed' AND (
+                    (source = 'telegram' AND chat_id IS NOT NULL AND message_id IS NOT NULL)
+                    OR (source = 'line' AND chat_id IS NOT NULL)
+                ) THEN ?
+                ELSE ?
+            END,
             updated_at = ?
         WHERE id = ?
-    """, (status, item_id, error_message, now_iso, task_id))
+    """, (status, item_id, status, NOTIFICATION_PENDING,
+          error_message, now_iso, task_id))
     changed = cursor.rowcount > 0
     conn.commit()
     conn.close()
@@ -1167,6 +1277,14 @@ def reset_stale_tasks(exclusive_owner: bool = False) -> int:
         WHERE status = 'processing'
     """, (now_iso,))
     count = cursor.rowcount
+    # A crash during delivery must restore only the notification, never
+    # the completed ingestion or its LLM retry counter.
+    cursor.execute("""
+        UPDATE ingest_tasks
+        SET error_message = replace(error_message, 'notify_v1:inflight:', 'notify_v1:pending:'),
+            updated_at = ?
+        WHERE status = 'completed' AND error_message GLOB 'notify_v1:inflight:*'
+    """, (now_iso,))
     conn.commit()
     conn.close()
     return count

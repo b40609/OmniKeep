@@ -51,6 +51,7 @@ async def send_line_api(endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any
     }
     async with httpx.AsyncClient(timeout=20.0) as client:
         resp = await client.post(f"{LINE_API_BASE}/{endpoint}", headers=headers, json=payload)
+        resp.raise_for_status()
         try:
             return resp.json()
         except Exception:
@@ -78,15 +79,19 @@ async def push_line_messages(to_user_id: str, messages: List[Dict[str, Any]]) ->
         "messages": messages
     })
 
-async def notify_line_completed(user_id: str, item: Dict[str, Any]):
+async def notify_line_completed(user_id: str, item: Dict[str, Any], *, strict: bool = False):
     """Pushes a completed Flex Message bubble directly to LINE chat"""
     if not settings.LINE_CHANNEL_ACCESS_TOKEN or not user_id:
+        if strict:
+            raise RuntimeError("LINE channel unavailable for completion delivery")
         return
     try:
         flex_msg = create_item_flex_bubble(item)
         await push_line_messages(user_id, [flex_msg])
     except Exception as e:
         logger.warning(f"[LINE Complete] Failed to push message to {user_id}: {e}")
+        if strict:
+            raise
 
 async def notify_line_failed(user_id: str, error_text: str):
     """Pushes a failure notice directly to LINE chat"""
