@@ -15,7 +15,7 @@ from app.database import (
     get_backup_runs,
 )
 from app.watch.scanner import scan_target, scan_target_by_id
-from app.backup import run_backup
+from app.backup import run_backup_async
 
 router = APIRouter(prefix="/api/watch", tags=["Watch & Proposals"])
 
@@ -128,7 +128,7 @@ async def decide(proposal_id: str, req: ProposalDecide):
 
 @router.post("/backup/run")
 async def backup_now(background_tasks: BackgroundTasks):
-    background_tasks.add_task(run_backup)
+    background_tasks.add_task(run_backup_async)
     return {"success": True, "status": "queued", "sink": settings.BACKUP_SINK}
 
 

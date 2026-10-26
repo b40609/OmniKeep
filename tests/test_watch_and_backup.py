@@ -13,6 +13,7 @@ from app.database import (
     update_watch_target,
     delete_watch_target,
     save_proposal,
+    save_item,
     get_proposals,
     decide_proposal,
     get_item_by_id,
@@ -46,6 +47,7 @@ def test_redact_text_catches_common_credential_formats():
         "aws: AKIAIOSFODNN7EXAMPLE\n"
         "slack: xoxb-1234567890-abcdefghijklmn\n"
         "key = -----BEGIN RSA PRIVATE KEY-----\n"
+        "synthetic-private-key-body\n-----END RSA PRIVATE KEY-----\n"
         "okx_secret: 7fJk29dkaQWERTYUIOpz123\n"
     )
     out = redact_text(text)
@@ -108,7 +110,7 @@ def test_proposal_dedup_and_decision_flow():
     try:
         t = add_watch_target(f"p-{uuid.uuid4().hex[:6]}", str(d), "folder", "open")
         dedup = f"risk:{t['id']}:{uuid.uuid4().hex[:6]}"
-        item_id = f"item-{uuid.uuid4().hex[:6]}"
+        item_id = save_item({"url": f"fixture://proposal/{uuid.uuid4().hex}", "title_l1": "Proposal fixture"})
 
         first = save_proposal({"item_id": item_id, "target_id": t["id"],
                                "proposal_type": "risk", "impact": 8, "confidence": 9,

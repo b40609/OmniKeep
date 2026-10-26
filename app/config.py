@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     API_KEY: str = ""
     CORS_ORIGINS: List[str] = []
     BACKGROUND_SERVICES_ENABLED: bool = True
+    RELEVANCE_CONCURRENCY: int = 2
+    RELEVANCE_QUEUE_SIZE: int = 100
+    ENABLE_BROWSER_FALLBACK: bool = False
     
     # Primary LLM Configuration (Agnes AI 3.0 OpenAI-Compatible Endpoint)
     PRIMARY_LLM_PROVIDER: str = "openai_compatible"

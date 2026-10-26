@@ -1,3 +1,4 @@
+from app.network import public_http_client
 import feedparser
 import httpx
 from datetime import datetime, timezone
@@ -23,7 +24,7 @@ class RSSAdapter(BaseSourceAdapter):
         if source.get("last_modified_header"):
             headers["If-Modified-Since"] = source["last_modified_header"]
 
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        async with public_http_client(timeout=15.0, follow_redirects=True) as client:
             try:
                 resp = await client.get(source_url, headers=headers)
             except Exception as e:

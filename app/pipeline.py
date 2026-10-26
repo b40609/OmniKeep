@@ -101,6 +101,8 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     detected_url = extract_target_url(clean_input)
     if detected_url:
         url = detected_url
+        from app.network import validate_url
+        validate_url(url)
         if is_youtube_url(url):
             source_type = "youtube"
             meta = await fetch_youtube_metadata(url)
@@ -287,7 +289,9 @@ URL：{url}
                 # If valid HTTP/HTTPS URL, spawn background ingestion
                 if canon_url and (canon_url.startswith("http://") or canon_url.startswith("https://")):
                     try:
-                        asyncio.create_task(_spawn_child_entity_background(item_id, cit_id, raw_name, canon_url, reason))
+                        from app.background import follow_up_pool
+                        follow_up_pool.submit(lambda parent=item_id, citation=cit_id, name=raw_name, url=canon_url, why=reason:
+                                              _spawn_child_entity_background(parent, citation, name, url, why))
                     except Exception as e:
                         print(f"[Entity Fan-out] Error scheduling child spawn: {e}")
 

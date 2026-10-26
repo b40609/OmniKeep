@@ -7,6 +7,9 @@ from app.database import (
     init_db,
     save_item,
     get_item_by_id,
+    add_watch_target,
+    get_watch_target,
+    update_watch_target,
     log_behavior_event,
     get_topic_weight,
     tune_topic_signal,
@@ -24,7 +27,7 @@ def setup_module(module):
 def _mk_item(origin="radar", tags=None, title=None) -> str:
     seed = uuid.uuid4().hex[:8]
     return save_item({
-        "url": f"https://p2-test.example/{seed}",
+        "url": f"https://taste-fixture.invalid/{seed}",
         "source_type": "web",
         "category_name": "AI",
         "title_l1": title or f"P2 測試 {seed}",
@@ -95,11 +98,10 @@ def test_relevance_tag_matching(monkeypatch):
 @pytest.mark.asyncio
 async def test_relevance_local_only_card_created_and_deduped(monkeypatch):
     fp_item = _mk_item(origin="watch", tags=["OKX", "量化"])
-    target = {"id": f"t-{uuid.uuid4().hex[:4]}", "name": "CatOS", "target_type": "folder",
-              "fingerprint_item_id": fp_item,
-              "outbound_consent": {"summary": False, "docs": False, "deps": False,
-                                   "code": False, "git": False}}
-    monkeypatch.setattr(relevance, "get_watch_targets", lambda active_only=True: [target])
+    target = add_watch_target("CatOS", str(_TMP.resolve()), "folder", "custom",
+                              read_scope={"filenames": True},
+                              outbound_consent={"summary": False})
+    update_watch_target(target["id"], {"fingerprint_item_id": fp_item})
 
     item = get_item_by_id(_mk_item(tags=["OKX", "量化", "新聞"]))
     prop = await relevance.maybe_propose_for_item(item)

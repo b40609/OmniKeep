@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from pydantic import BaseModel, HttpUrl
-from typing import Optional, Dict, Any
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import Optional
+from app.network import validate_url, UnsafeURL
 from app.pipeline import run_pipeline
 from app.database import create_ingest_task
 
@@ -16,13 +17,17 @@ class IngestRequest(BaseModel):
 @router.post("")
 async def ingest_url(
     req: IngestRequest,
-    background_tasks: BackgroundTasks,
 ):
     raw_input = req.content or req.text or req.url
     if not raw_input or not raw_input.strip():
         raise HTTPException(status_code=400, detail="請提供網址或文字段落內容 (URL or text is required)")
 
     clean_input = raw_input.strip()
+    if req.url or clean_input.lower().startswith(("http://", "https://")):
+        try:
+            validate_url(clean_input)
+        except UnsafeURL as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # If async_mode requested (e.g. quick return for iOS shortcut / fast ingestion)
     if req.async_mode:
@@ -42,5 +47,5 @@ async def ingest_url(
             "status": "completed",
             "item": item
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Ingestion failed") from exc

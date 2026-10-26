@@ -6,6 +6,8 @@ Two permission axes from the watch_targets row govern everything:
   passes through redact_text() first regardless of preset (the one hard rule).
 """
 import hashlib
+import json
+import uuid
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,13 +17,18 @@ from app.database import (
     save_item,
     update_watch_target,
     save_proposal,
+    get_watch_target,
+    proposal_seen,
 )
 from app.providers import get_primary_provider
-from app.watch.redact import redact_text, find_risky_files
+from app.config import settings
+from app.watch.redact import redact_text, find_risky_files, is_risky_filename
+from app.watch.locks import target_lock
 
 SKIP_DIRS = {
     "node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build",
     "target", ".next", ".idea", ".vscode", ".cache", "site-packages",
+    ".tmp", ".pytest_cache", ".ruff_cache",
 }
 README_NAMES = ["README.md", "README.rst", "README.txt", "readme.md", "README"]
 DEP_MANIFESTS = [
@@ -46,9 +53,12 @@ FINGERPRINT_SYSTEM_PROMPT = """你是一位資深技術架構偵察官。根據�
 def _walk_files(root: Path, max_files: int = 8000) -> List[str]:
     """Relative file paths, breadth-limited; directory names are visible too."""
     files: List[str] = []
-    if not root.exists():
+    if not root.is_dir():
         return files
     stack = [(root, 0)]
+    database = Path(settings.DATABASE_PATH).resolve()
+    runtime_files = {database, *(Path(str(database) + suffix) for suffix in ("-wal", "-shm", ".worker.lock"))}
+    backup_dir = Path(settings.BACKUP_DIR).resolve()
     while stack and len(files) < max_files:
         cur, depth = stack.pop()
         try:
@@ -56,6 +66,14 @@ def _walk_files(root: Path, max_files: int = 8000) -> List[str]:
         except (PermissionError, OSError):
             continue
         for entry in entries:
+            if len(files) >= max_files:
+                break
+            if entry.is_symlink() or getattr(entry, "is_junction", lambda: False)():
+                continue
+            if not entry.resolve().is_relative_to(root.resolve()):
+                continue
+            if entry.resolve() in runtime_files or entry.resolve() == backup_dir:
+                continue
             rel = str(entry.relative_to(root)).replace("\\", "/")
             if entry.is_dir():
                 if entry.name not in SKIP_DIRS and depth < 5:
@@ -67,7 +85,10 @@ def _walk_files(root: Path, max_files: int = 8000) -> List[str]:
 
 def _read_chunk(path: Path, limit: int = 8000) -> str:
     try:
-        return path.read_text(encoding="utf-8", errors="replace")[:limit]
+        if path.is_symlink() or is_risky_filename(path.name):
+            return ""
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            return handle.read(limit)
     except OSError:
         return ""
 
@@ -83,55 +104,62 @@ def _git_log(root: Path) -> str:
         return ""
 
 
-def _build_material(root: Path, files: List[str], scope: Dict[str, bool]) -> str:
-    parts: List[str] = []
+def _material_sections(root: Path, files: List[str], scope: Dict[str, bool]) -> Dict[str, str]:
     by_ext: Dict[str, int] = {}
     for f in files:
-        ext = f.rsplit(".", 1)[-1].lower() if "." in f.rsplit("/", 1)[-1] else "(noext)"
+        ext = Path(f).suffix.lower() or "(noext)"
         by_ext[ext] = by_ext.get(ext, 0) + 1
-    ext_line = ", ".join(f"{k}:{v}" for k, v in sorted(by_ext.items(), key=lambda x: -x[1])[:12])
-    parts.append(f"### 檔案結構（共 {len(files)} 檔）\n頂層：{', '.join(sorted({f.split('/')[0] for f in files}))[:300]}\n副檔名分布：{ext_line}")
-
+    sections = {"summary": f"檔案數：{len(files)}\n副檔名分布：{json.dumps(by_ext, ensure_ascii=False)}"}
     if scope.get("readme"):
-        for name in README_NAMES:
-            chunk = _read_chunk(root / name)
-            if chunk:
-                parts.append(f"### {name}\n{chunk}")
-                break
+        sections["docs"] = next((chunk for name in README_NAMES if name in files
+                                  and (chunk := _read_chunk(root / name))), "")
     if scope.get("deps"):
-        for name in DEP_MANIFESTS:
-            chunk = _read_chunk(root / name, limit=4000)
-            if chunk:
-                parts.append(f"### {name}\n{chunk}")
+        sections["deps"] = "\n\n".join(f"### {name}\n{_read_chunk(root / name, 4000)}"
+                                              for name in DEP_MANIFESTS if name in files)
+    if scope.get("code"):
+        extensions = {".py", ".ts", ".js", ".vue", ".rs", ".go", ".java", ".cpp", ".c", ".cs"}
+        samples = [name for name in files if Path(name).suffix.lower() in extensions and not is_risky_filename(name)][:12]
+        sections["code"] = "\n\n".join(f"### {name}\n{_read_chunk(root / name, 2000)}" for name in samples)
     if scope.get("git") and (root / ".git").exists():
-        log = _git_log(root)
-        if log:
-            parts.append(f"### git 近期提交\n{log}")
-    return "\n\n".join(parts)
+        sections["git"] = _git_log(root)
+    return sections
 
 
-def _fingerprint_version(files: List[str], root: Path) -> str:
-    h = hashlib.sha1()
-    for f in files:
-        h.update(f.encode("utf-8", errors="replace"))
-    for name in DEP_MANIFESTS + README_NAMES:
-        p = root / name
-        if p.exists():
-            h.update(f"{name}:{int(p.stat().st_mtime)}".encode())
-    return h.hexdigest()[:16]
+def _build_material(root: Path, files: List[str], scope: Dict[str, bool]) -> str:
+    return "\n\n".join(_material_sections(root, files, scope).values())
+
+
+def _fingerprint_version(files, root, scope=None, consent=None, sections=None) -> str:
+    h = hashlib.sha256()
+    h.update(json.dumps({"scope": scope, "consent": consent, "sections": sections}, sort_keys=True).encode())
+    for name in files:
+        try:
+            stat = (root / name).stat()
+            h.update(f"{name}:{stat.st_size}:{stat.st_mtime_ns}".encode())
+        except OSError:
+            continue
+    return "v2:" + h.hexdigest()[:24]
 
 
 async def scan_target(target: Dict[str, Any]) -> Dict[str, Any]:
+    async with target_lock(("scan", target["id"])):
+        latest = get_watch_target(target["id"])
+        if latest is None or not latest["is_active"]:
+            return {"target_id": target["id"], "ok": False, "error": "target unavailable"}
+        return await _scan_target(latest)
+
+
+async def _scan_target(target: Dict[str, Any]) -> Dict[str, Any]:
     """Scan one watch target: risk check (always, filenames only) + fingerprint refresh."""
     tid = target["id"]
-    root = Path(target["path"])
+    root = Path(target["path"]).resolve()
     scope = target["read_scope"]
     consent = target["outbound_consent"]
     now_iso = datetime.now(timezone.utc).isoformat()
     result: Dict[str, Any] = {"target_id": tid, "ok": False, "risk_proposal": False,
                               "fingerprint_updated": False}
 
-    if not root.exists():
+    if not root.is_dir():
         result["error"] = f"path not found: {root}"
         update_watch_target(tid, {"last_scan_at": now_iso})
         return result
@@ -143,11 +171,12 @@ async def scan_target(target: Dict[str, Any]) -> Dict[str, Any]:
 
     # 1) L0 risk scan — filenames only, pure local, no LLM needed
     risky = find_risky_files(files)
-    if risky and target["target_type"] in ("folder", "desktop_risk"):
-        day = datetime.now(timezone.utc).strftime("%Y%m%d")
+    risk_hash = hashlib.sha256("\n".join(risky).encode()).hexdigest()[:16]
+    risk_key = f"risk:{tid}:{risk_hash}"
+    if risky and target["target_type"] in ("folder", "desktop_risk") and not proposal_seen(risk_key):
         shown = ", ".join(risky[:8]) + ("…" if len(risky) > 8 else "")
-        item_id = save_item({
-            "url": f"proposal://risk/{tid}/{day}",
+        risk_card = {
+            "url": f"proposal://risk/{tid}/{risk_hash}/{uuid.uuid4().hex}",
             "source_type": "proposal",
             "origin": "proposal",
             "category_name": "提案",
@@ -161,37 +190,38 @@ async def scan_target(target: Dict[str, Any]) -> Dict[str, Any]:
                 "2. 若曾同步過雲端或 git → 視為已外洩，直接輪換金鑰\n"
                 "3. 純本機留存者至少改用加密容器\n\n_本提案僅讀取檔名，未開啟任何檔案內容。_"),
             "author": "OmniKeep 監看引擎",
-        })
+        }
         saved = save_proposal({
-            "item_id": item_id, "target_id": tid, "proposal_type": "risk",
+            "target_id": tid, "proposal_type": "risk",
             "impact": 8.0, "confidence": 9.0, "effort": 2.0,
-            "dedup_key": f"risk:{tid}:{day}",
-        })
+            "dedup_key": risk_key,
+        }, item_data=risk_card)
         result["risk_proposal"] = saved is not None
 
     # 2) Fingerprint refresh — skip Agnes when nothing changed
-    version = _fingerprint_version(files, root)
+    sections = _material_sections(root, files, scope)
+    version = _fingerprint_version(files, root, scope, consent, sections)
     if version == target.get("fingerprint_version"):
         update_watch_target(tid, {"last_scan_at": now_iso, "fingerprint_version": version})
         result.update(ok=True, changed=False, file_count=len(files))
         return result
 
-    material = _build_material(root, files, scope)
-    outbound_parts = []
-    if consent.get("summary"):
-        outbound_parts.append(material)  # assembled per read scope; redacted below
-    send_text = redact_text("\n\n".join(outbound_parts))[:12000]
+    material = redact_text("\n\n".join(sections.values()))
+    # Each content category needs its own outbound grant; summary grants statistics only.
+    outbound = "\n\n".join(f"### {kind}\n{value}" for kind, value in sections.items()
+                                  if value and consent.get(kind))
+    send_text = redact_text(f"專案名稱：{target['name']}\n\n{outbound}")[:12000] if outbound else ""
 
     fp: Dict[str, Any]
     if send_text:
         try:
             provider = get_primary_provider()
             fp = await provider.generate_json(
-                f"專案名稱：{target['name']}\n路徑：{root.name}\n\n{send_text}",
+                send_text,
                 FINGERPRINT_SYSTEM_PROMPT,
             )
         except Exception as e:  # LLM down → degrade to local-only fingerprint
-            fp = {"_fallback": str(e)}
+            fp = {}
     else:
         fp = {}
 
@@ -208,15 +238,20 @@ async def scan_target(target: Dict[str, Any]) -> Dict[str, Any]:
         tags = ["watch", target["target_type"]]
         deep = f"### 結構統計\n- 檔案數：{len(files)}\n- 頂層項目：{', '.join(sorted({f.split('/')[0] for f in files})[:20])}"
 
+    # Consent/path may have changed while the provider was running. Discard stale output.
+    latest = get_watch_target(tid)
+    if not latest or any(latest.get(key) != target.get(key) for key in ("path", "read_scope", "outbound_consent", "is_active")):
+        result["error"] = "target permissions changed during scan"
+        return result
     item_id = save_item({
         "url": f"watch://{tid}",
         "source_type": "watch",
         "origin": "watch",
         "category_name": "監看",
-        "title_l1": title,
-        "summary_l1": summary,
-        "tech_tags": tags if isinstance(tags, list) else [tags],
-        "deep_analysis": deep,
+        "title_l1": redact_text(str(title)),
+        "summary_l1": redact_text(str(summary)),
+        "tech_tags": [redact_text(str(tag)) for tag in (tags if isinstance(tags, list) else [tags])],
+        "deep_analysis": redact_text(str(deep)),
         "content_raw": material[:20000],
         "author": "OmniKeep 監看引擎",
     })

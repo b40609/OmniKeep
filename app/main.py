@@ -18,48 +18,51 @@ logger = logging.getLogger("omnikeep.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize SQLite database and tables
     init_db()
     if not settings.BACKGROUND_SERVICES_ENABLED:
         yield
         return
-    # Start task worker for persistent background queue processing
-    task_worker.start()
-    # Start periodic Radar Scheduler in background
-    if settings.RADAR_ENABLED:
-        radar_scheduler.start()
-    # Daily multi-sink backup loop (local/rclone/git; off disables)
-    backup_task = None
-    if settings.BACKUP_SINK != "off":
-        from app.backup import backup_loop
-        backup_task = asyncio.create_task(backup_loop())
-        logger.info("Backup scheduler started (sink=%s)", settings.BACKUP_SINK)
-    # Start Telegram ingestion bot polling in-process so a single
-    # `python run.py` brings up the whole stack (bot previously required
-    # a separate `python run_bot.py` process and silently died on reboot).
-    telegram_task = None
-    if settings.TELEGRAM_BOT_TOKEN:
-        from app.bot.telegram_bot import get_telegram_bot
-        bot = get_telegram_bot()
+    from app.background import follow_up_pool
+    from app.backup import backup_loop
+    from app.bot.telegram_bot import get_telegram_bot
+    tasks = []
+    bot = None
+    worker_started = False
+    radar_started = False
+    try:
+        follow_up_pool.start()
+        task_worker.start()
+        worker_started = True
+        if settings.RADAR_ENABLED:
+            radar_scheduler.start()
+            radar_started = True
+        if settings.BACKUP_SINK != "off":
+            tasks.append(asyncio.create_task(backup_loop()))
+        bot = get_telegram_bot() if settings.TELEGRAM_BOT_TOKEN else None
         if bot:
-            telegram_task = asyncio.create_task(bot.run_polling())
-            logger.info("Telegram ingestion bot polling started (embedded)")
-    yield
-    # Graceful shutdown of Radar Scheduler, Task Worker, Backup loop and Telegram bot
-    if backup_task:
-        backup_task.cancel()
+            tasks.append(asyncio.create_task(bot.run_polling()))
+        yield
+    finally:
+        # Stop polling/producers before draining consumers and closing bot HTTP.
+        for task in tasks:
+            task.cancel()
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error("Background service failed (%s)", type(result).__name__)
         try:
-            await backup_task
-        except asyncio.CancelledError:
-            pass
-    if telegram_task:
-        telegram_task.cancel()
-        try:
-            await telegram_task
-        except asyncio.CancelledError:
-            pass
-    await radar_scheduler.stop()
-    await task_worker.stop()
+            if radar_started:
+                await radar_scheduler.stop()
+        finally:
+            try:
+                if worker_started:
+                    await task_worker.stop()
+            finally:
+                try:
+                    await follow_up_pool.stop()
+                finally:
+                    if bot:
+                        await bot.close()
 
 app = FastAPI(
     title="OmniKeep",

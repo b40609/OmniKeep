@@ -1,5 +1,5 @@
 import re
-import httpx
+from app.network import public_http_client, validate_url
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -20,13 +20,14 @@ class YouTubeAdapter(BaseSourceAdapter):
         return None
 
     async def _resolve_channel_rss_url(self, url: str) -> str:
+        validate_url(url)
         cid = self._extract_channel_id(url)
         if cid:
             return f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}"
         
         # If given custom handle (e.g. https://www.youtube.com/@lexfridman)
         try:
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            async with public_http_client(timeout=10.0, follow_redirects=True) as client:
                 resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
                 if resp.status_code == 200:
                     m = re.search(r'<meta itemprop="channelId" content="(UC[\w-]+)"', resp.text)
@@ -52,7 +53,7 @@ class YouTubeAdapter(BaseSourceAdapter):
         if source.get("etag"):
             headers["If-None-Match"] = source["etag"]
 
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        async with public_http_client(timeout=15.0, follow_redirects=True) as client:
             try:
                 resp = await client.get(rss_url, headers=headers)
             except Exception as e:

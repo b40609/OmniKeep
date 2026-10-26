@@ -386,8 +386,7 @@ class TelegramBot:
             return
 
         if text.startswith("/deck"):
-            from app.watch.taste import rank_deck
-            deck = rank_deck(get_swipe_deck(limit=50))
+            deck = get_swipe_deck(limit=50)
             if not deck:
                 await self.send_message(chat_id, "🎉 雷達滑卡全部清空！等雷達進貨後再來 /deck。")
                 return
@@ -483,18 +482,9 @@ class TelegramBot:
             if not item:
                 await self.answer_callback_query(query_id, "找不到此項目", show_alert=True)
                 return
-            log_behavior_event(action, item_id=item_id, source="telegram")
-            # P2: true labels feed the radar topic-weight engine (💤 never does)
-            from app.watch.taste import apply_swipe_learning
-            apply_swipe_learning(action, item_id)
-            if action in ("swipe_up", "swipe_down"):
-                update_item_field(item_id, {"is_read": 1})
-            elif action == "swipe_star":
-                update_item_field(item_id, {"is_read": 1, "is_starred": 1})
-            # snooze: no state change — the deck query hides snoozed cards for a day
-
-            from app.watch.taste import rank_deck
-            deck = rank_deck(get_swipe_deck(limit=50))
+            from app.database import record_swipe
+            record_swipe(action, item_id, source="telegram")
+            deck = get_swipe_deck(limit=50)
             if deck:
                 await self.send_api("editMessageText", {
                     "chat_id": chat_id,
@@ -630,8 +620,9 @@ class TelegramBot:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Polling 異常: {e}")
+                logger.error("Polling 異常 (%s)", type(e).__name__)
                 await asyncio.sleep(3)
+        self.running = False
 
 def run_bot():
     if not settings.TELEGRAM_BOT_TOKEN:
@@ -649,12 +640,22 @@ def run_bot():
         global _bot_instance
         _bot_instance = bot
         # Start background queue worker
-        task_worker.start()
+        from app.background import follow_up_pool
+        follow_up_pool.start()
+        worker_started = False
         try:
+            task_worker.start()
+            worker_started = True
             await bot.run_polling()
         finally:
-            await task_worker.stop()
-            await bot.close()
+            try:
+                try:
+                    if worker_started:
+                        await task_worker.stop()
+                finally:
+                    await follow_up_pool.stop()
+            finally:
+                await bot.close()
 
     try:
         asyncio.run(_main())

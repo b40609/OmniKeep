@@ -1,4 +1,6 @@
 import asyncio
+import html
+from contextlib import closing
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from app.config import settings
@@ -54,14 +56,11 @@ async def scan_single_source(source: Dict[str, Any], force: bool = False) -> Lis
     if not raw_items:
         return []
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
     saved_items = []
     for raw in raw_items:
         # Deduplication check in items table
-        cursor.execute("SELECT id FROM items WHERE url = ?", (raw.url,))
-        existing = cursor.fetchone()
+        with closing(get_db_connection()) as conn:
+            existing = conn.execute("SELECT id FROM items WHERE url = ?", (raw.url,)).fetchone()
         if existing:
             continue
 
@@ -88,7 +87,6 @@ async def scan_single_source(source: Dict[str, Any], force: bool = False) -> Lis
         except Exception as e:
             print(f"[Radar:Scheduler] Error analyzing {raw.url}: {e}")
 
-    conn.close()
     return saved_items
 
 async def _safe_relevance_check(item: Dict[str, Any]) -> None:
@@ -110,9 +108,9 @@ async def _push_digest_to_telegram(digest_info: Dict[str, Any], ranked_items: Li
         bot = get_telegram_bot()
         if not bot:
             return
-        titles = "\n".join(f"• {it.get('title_l1', '')[:60]}" for it in ranked_items[:5])
+        titles = "\n".join(f"• {html.escape(it.get('title_l1', '')[:60])}" for it in ranked_items[:5])
         text = (
-            f"📰 <b>{digest_info.get('title', '雷達摘要')}</b>\n\n{titles}\n\n"
+            f"📰 <b>{html.escape(digest_info.get('title', '雷達摘要'))}</b>\n\n{titles}\n\n"
             f"<i>完整摘要在工作台；滑卡請用 /deck。</i>"
         )
         for chat_id in settings.telegram_allowed_ids:
@@ -149,10 +147,9 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
         digest_info = await generate_radar_digest(item_ids, digest_type=dtype)
         await _push_digest_to_telegram(digest_info, ranked_items)
 
-    # Relevance stage: match new radar items against watch fingerprints
-    # (fire-and-forget; one small guarded task per item, failures logged only)
+    from app.background import follow_up_pool
     for it in ranked_items:
-        asyncio.create_task(_safe_relevance_check(it))
+        follow_up_pool.submit(lambda item=it: _safe_relevance_check(item))
 
     return {
         "sources_scanned": len(sources),
@@ -216,12 +213,9 @@ class RadarScheduler:
             return
         print("[Radar:Scheduler] Stopping background scheduler...")
         self._stop_event.set()
-        if self._task and not self._task.done():
+        if self._task:
             self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+            await asyncio.gather(self._task, return_exceptions=True)
         self._is_running = False
         print("[Radar:Scheduler] Background scheduler stopped.")
 

@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import time
+from app.config import settings
+from app.file_lock import FileLock
 from typing import Dict, Any, Optional, Set
 from app.database import (
     claim_next_task,
@@ -50,7 +52,8 @@ class TaskWorker:
         self.concurrency = concurrency
         self.poll_interval = poll_interval
         self.max_retries = max_retries
-        self.semaphore: asyncio.Semaphore = asyncio.Semaphore(concurrency)
+        self.semaphore = asyncio.BoundedSemaphore(concurrency)
+        self._ownership = None
         self.running: bool = False
         self._loop_task: Optional[asyncio.Task] = None
         self.active_tasks: Set[asyncio.Task] = set()
@@ -63,12 +66,19 @@ class TaskWorker:
             return self._loop_task
 
         # 1. Crash recovery: reset stale 'processing' tasks back to 'queued'
-        recovered = reset_stale_tasks()
+        self._ownership = FileLock(settings.DATABASE_PATH + ".worker.lock")
+        if not self._ownership.acquire():
+            raise RuntimeError("Another queue worker owns this database")
+        try:
+            recovered = reset_stale_tasks(exclusive_owner=True)
+        except BaseException:
+            self._ownership.release()
+            raise
         if recovered > 0:
             logger.info(f"[Queue Worker] Crash recovery: reset {recovered} stale task(s) to queued")
 
         self.running = True
-        self.semaphore = asyncio.Semaphore(self.concurrency)
+        self.semaphore = asyncio.BoundedSemaphore(self.concurrency)
         self._loop_task = asyncio.create_task(self._run_loop())
         logger.info(f"[Queue Worker] Started with concurrency={self.concurrency}, poll_interval={self.poll_interval}s")
         return self._loop_task
@@ -93,35 +103,41 @@ class TaskWorker:
                 logger.warning("[Queue Worker] Graceful stop timeout exceeded, canceling running tasks")
                 for t in self.active_tasks:
                     t.cancel()
+                await asyncio.gather(*self.active_tasks, return_exceptions=True)
+
+        if self._ownership:
+            self._ownership.release()
 
         logger.info("[Queue Worker] Stopped successfully")
 
     async def _run_loop(self):
         while self.running:
+            acquired = False
             try:
                 # Global rate-limit cooldown: hold off claiming while the LLM
                 # quota recovers instead of retrying into a wall.
                 now = time.monotonic()
                 if now < self._rate_limit_until:
-                    self.semaphore.release()
                     await asyncio.sleep(min(self._rate_limit_until - now, 5.0))
                     continue
 
                 # Acquire concurrency slot before claiming from DB
                 await self.semaphore.acquire()
+                acquired = True
 
                 if not self.running:
-                    self.semaphore.release()
                     break
 
                 task = claim_next_task()
                 if not task:
                     self.semaphore.release()
+                    acquired = False
                     await asyncio.sleep(self.poll_interval)
                     continue
 
                 # Spawn background execution under semaphore control
                 t = asyncio.create_task(self._process_task_wrapper(task))
+                acquired = False  # The wrapper now owns this slot.
                 self.active_tasks.add(t)
                 t.add_done_callback(self.active_tasks.discard)
 
@@ -130,6 +146,9 @@ class TaskWorker:
             except Exception as e:
                 logger.error(f"[Queue Worker] Loop iteration error: {e}")
                 await asyncio.sleep(self.poll_interval)
+            finally:
+                if acquired:
+                    self.semaphore.release()
 
     async def _process_task_wrapper(self, task: Dict[str, Any]):
         try:

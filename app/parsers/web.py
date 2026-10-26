@@ -6,6 +6,7 @@ import httpx
 import trafilatura
 from bs4 import BeautifulSoup
 from app.parsers.cookie_manager import get_cookie_jar, inject_playwright_cookies
+from app.network import public_http_client, validate_url
 
 BROWSER_HEADERS = {
     "User-Agent": (
@@ -25,28 +26,53 @@ FB_HEADERS = {
 
 def is_facebook_url(url: str) -> bool:
     parsed = urlparse(url)
-    return "facebook.com" in parsed.netloc or "fb.watch" in parsed.netloc or "fb.com" in parsed.netloc
+    host = (parsed.hostname or "").lower()
+    return any(host == domain or host.endswith("." + domain) for domain in ("facebook.com", "fb.watch", "fb.com"))
 
 async def fetch_page_with_playwright(url: str) -> Optional[str]:
     """
     Fallback headless rendering via system Chrome with injected cookies.
     Used for JavaScript-heavy single-page applications or access-restricted pages.
     """
+    validate_url(url)
+    from app.config import settings
+    if not settings.ENABLE_BROWSER_FALLBACK:
+        return None
     try:
         from playwright.async_api import async_playwright
         async with async_playwright() as p:
             browser = await p.chromium.launch(channel="chrome", headless=True)
-            ctx = await browser.new_context(
-                user_agent=BROWSER_HEADERS["User-Agent"],
-                locale="zh-TW"
-            )
-            await inject_playwright_cookies(ctx)
-            page = await ctx.new_page()
-            await page.goto(url, timeout=20000, wait_until="domcontentloaded")
-            await asyncio.sleep(1.5)  # brief grace period for DOM hydration
-            content = await page.content()
-            await browser.close()
-            return content
+            try:
+                ctx = await browser.new_context(
+                    user_agent=BROWSER_HEADERS["User-Agent"],
+                    locale="zh-TW", service_workers="block"
+                )
+                # Every browser resource is fetched through the pinned public-only
+                # HTTP transport. Chromium never connects to a destination directly.
+                async def guarded_route(route):
+                    try:
+                        req = route.request
+                        validate_url(req.url)
+                        async with public_http_client(timeout=20, follow_redirects=False) as client:
+                            response = await client.request(req.method, req.url,
+                                                            headers=req.headers, content=req.post_data_buffer)
+                        headers = {k: v for k, v in response.headers.items()
+                                   if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")}
+                        await route.fulfill(status=response.status_code, headers=headers, body=response.content)
+                    except Exception:
+                        await route.abort()
+                await ctx.route("**/*", guarded_route)
+                async def reject_socket(ws):
+                    await ws.close()
+                await ctx.route_web_socket("**/*", reject_socket)
+                await inject_playwright_cookies(ctx)
+                page = await ctx.new_page()
+                await page.goto(url, timeout=20000, wait_until="domcontentloaded")
+                await asyncio.sleep(1.5)  # brief grace period for DOM hydration
+                content = await page.content()
+                return content
+            finally:
+                await browser.close()
     except Exception as e:
         print(f"[Web Parser] Playwright dynamic render fallback notice: {e}")
         return None
@@ -57,6 +83,7 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
     1. Tries user-authenticated session (with Chrome cookies) to fetch full text and comments.
     2. Falls back to facebookexternalhit crawler User-Agent for OpenGraph metadata if unauthenticated.
     """
+    validate_url(url)
     html_text = ""
     used_session = False
     jar = get_cookie_jar()
@@ -64,7 +91,7 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
     # 1. Try authenticated request using bridged session cookies
     if jar:
         try:
-            async with httpx.AsyncClient(headers=BROWSER_HEADERS, cookies=jar, timeout=20.0, follow_redirects=True) as client:
+            async with public_http_client(headers=BROWSER_HEADERS, cookies=jar, timeout=20.0, follow_redirects=True) as client:
                 resp = await client.get(url)
                 # Confirm we didn't get bounced to login / checkpoint
                 if resp.status_code == 200 and "login" not in str(resp.url).lower() and "checkpoint" not in str(resp.url).lower():
@@ -76,7 +103,7 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
     # 2. Fallback to Facebook crawler UA for public OpenGraph metadata
     if not html_text:
         try:
-            async with httpx.AsyncClient(headers=FB_HEADERS, timeout=20.0, follow_redirects=True) as client:
+            async with public_http_client(headers=FB_HEADERS, timeout=20.0, follow_redirects=True) as client:
                 resp = await client.get(url)
                 html_text = resp.text
         except Exception as e:
@@ -155,13 +182,14 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
     Fetch web page and extract clean reader-view text and metadata.
     Automatically injects browser cookies and falls back to Playwright if needed.
     """
+    validate_url(url)
     if is_facebook_url(url):
         return await parse_facebook_page(url)
 
     html = ""
     jar = get_cookie_jar()
     try:
-        async with httpx.AsyncClient(headers=BROWSER_HEADERS, cookies=jar, timeout=20.0, follow_redirects=True) as client:
+        async with public_http_client(headers=BROWSER_HEADERS, cookies=jar, timeout=20.0, follow_redirects=True) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
                 html = resp.text

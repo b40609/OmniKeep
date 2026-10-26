@@ -1,5 +1,5 @@
 import re
-import httpx
+from app.network import public_http_client
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse, parse_qs
@@ -48,7 +48,7 @@ class GitHubAdapter(BaseSourceAdapter):
         if repo_slug:
             api_url = f"https://api.github.com/repos/{repo_slug}/releases"
             headers = self._get_headers(etag=source.get("etag"))
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            async with public_http_client(timeout=15.0, follow_redirects=True) as client:
                 try:
                     resp = await client.get(api_url, headers=headers)
                 except Exception as e:
@@ -112,7 +112,7 @@ class GitHubAdapter(BaseSourceAdapter):
             api_url = f"https://api.github.com/search/repositories?q={query_str}&sort={sort_param}&order={order_param}&per_page=10"
             headers = self._get_headers(etag=source.get("etag"))
 
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            async with public_http_client(timeout=15.0, follow_redirects=True) as client:
                 try:
                     resp = await client.get(api_url, headers=headers)
                 except Exception as e:
@@ -166,7 +166,7 @@ class GitHubAdapter(BaseSourceAdapter):
                 return items
 
         # Case 3: GitHub Trending
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        async with public_http_client(timeout=15.0, follow_redirects=True) as client:
             try:
                 resp = await client.get(source_url, headers={"User-Agent": "Mozilla/5.0"})
             except Exception as e:

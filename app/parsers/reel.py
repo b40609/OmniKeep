@@ -8,7 +8,9 @@ import subprocess
 import tempfile
 from typing import Dict, Any, Optional
 import numpy as np
-import yt_dlp
+from urllib.parse import urlsplit
+from app.network import validate_url
+from app.parsers.media_network import PublicYoutubeDL
 
 from app.providers import get_primary_provider, get_gemini_provider
 from app.parsers.web import parse_facebook_page
@@ -19,6 +21,17 @@ logger = logging.getLogger("omnikeep.reel")
 
 _local_whisper_model = None
 _force_cpu_stt = False
+
+
+async def _run_thread(func):
+    """Keep temporary media alive until a cancelled native operation finishes."""
+    task = asyncio.create_task(asyncio.to_thread(func))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await asyncio.gather(task, return_exceptions=True)
+        raise
+
 
 def _preload_cuda_dlls() -> None:
     """Register CUDA 12 runtime DLLs shipped via pip wheels (nvidia-cublas-cu12 /
@@ -71,7 +84,8 @@ def transcribe_local_whisper(audio_path: str) -> str:
     if not model or not os.path.exists(audio_path):
         return ""
     try:
-        cmd = ["ffmpeg", "-y", "-i", audio_path, "-f", "f32le", "-ac", "1", "-ar", "16000", "pipe:1"]
+        cmd = ["ffmpeg", "-y", "-protocol_whitelist", "file,pipe", "-i", audio_path,
+               "-f", "f32le", "-ac", "1", "-ar", "16000", "pipe:1"]
         proc = subprocess.run(cmd, capture_output=True, timeout=15)
         if proc.returncode != 0 or not proc.stdout:
             return ""
@@ -92,13 +106,16 @@ def transcribe_local_whisper(audio_path: str) -> str:
         return ""
 
 def is_video_reel_url(url: str) -> bool:
-    clean = url.lower()
-    return (
-        "facebook.com/reel" in clean
-        or "facebook.com/share/r" in clean
-        or "fb.watch" in clean
-        or "instagram.com/reel" in clean
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower()
+    path = parsed.path.lower()
+    if host == "fb.watch" or host.endswith(".fb.watch"):
+        return True
+    domains = ("facebook.com", "instagram.com")
+    return any(host == domain or host.endswith("." + domain) for domain in domains) and (
+        path.startswith("/reel/") or path.startswith("/reels/") or path.startswith("/share/r/")
     )
+
 
 def extract_scene_tile(video_path: str, tile_output_path: str, duration: float = 10.0) -> bool:
     """
@@ -108,7 +125,7 @@ def extract_scene_tile(video_path: str, tile_output_path: str, duration: float =
     """
     # 1. Primary approach: FFmpeg dynamic scene cut gt(scene, 0.35) into 3x3 tile
     cmd_scene = [
-        "ffmpeg", "-y", "-hwaccel", "auto", "-i", video_path,
+        "ffmpeg", "-y", "-hwaccel", "auto", "-protocol_whitelist", "file,pipe", "-i", video_path,
         "-vf", r"select=gt(scene\,0.35),scale=640:-1,tile=3x3",
         "-frames:v", "1",
         tile_output_path
@@ -126,7 +143,7 @@ def extract_scene_tile(video_path: str, tile_output_path: str, duration: float =
     logger.info("[Reel SceneCut] Few/no scene cuts detected, falling back to uniform interval 3x3 tile...")
     sample_rate = "1" if duration <= 15 else "0.5"
     cmd_uniform = [
-        "ffmpeg", "-y", "-hwaccel", "auto", "-i", video_path,
+        "ffmpeg", "-y", "-hwaccel", "auto", "-protocol_whitelist", "file,pipe", "-i", video_path,
         "-vf", f"fps={sample_rate},scale=640:-1,tile=3x3",
         "-frames:v", "1",
         tile_output_path
@@ -144,7 +161,7 @@ def extract_audio_stream(video_path: str, audio_output_path: str) -> bool:
     Takes ~0.05-0.2 seconds.
     """
     cmd = [
-        "ffmpeg", "-y", "-i", video_path,
+        "ffmpeg", "-y", "-protocol_whitelist", "file,pipe", "-i", video_path,
         "-vn", "-acodec", "libmp3lame",
         "-ar", "16000", "-ac", "1", "-q:a", "5",
         audio_output_path
@@ -204,9 +221,7 @@ async def analyze_storyboard_vision(tile_path: str) -> str:
             key = gemini_prov._get_next_key()
             if key:
                 client = genai.Client(api_key=key)
-                loop = asyncio.get_event_loop()
-                resp = await loop.run_in_executor(
-                    None,
+                resp = await _run_thread(
                     lambda: client.models.generate_content(
                         model=gemini_prov.model,
                         contents=[
@@ -231,10 +246,8 @@ async def transcribe_audio_stream(audio_path: str) -> str:
     if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 500:
         return ""
 
-    loop = asyncio.get_event_loop()
-
     # 1. Try Local faster-whisper
-    local_text = await loop.run_in_executor(None, lambda: transcribe_local_whisper(audio_path))
+    local_text = await _run_thread(lambda: transcribe_local_whisper(audio_path))
     if local_text and len(local_text.strip()) > 2:
         logger.info(f"[Reel Audio] Local Whisper transcribed {len(local_text)} chars")
         return local_text.strip()
@@ -266,8 +279,7 @@ async def transcribe_audio_stream(audio_path: str) -> str:
                 client = genai.Client(api_key=key)
                 with open(audio_path, "rb") as af:
                     audio_bytes = af.read()
-                resp = await loop.run_in_executor(
-                    None,
+                resp = await _run_thread(
                     lambda: client.models.generate_content(
                         model=gemini_prov.model,
                         contents=[
@@ -291,6 +303,9 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
     4. Concurrently gathers Visual + Audio tracks into comprehensive technical briefing.
     Falls back gracefully to web page metadata parser if video download fails.
     """
+    validate_url(url)
+    if not is_video_reel_url(url):
+        raise ValueError("Unsupported reel host or path")
     temp_dir = tempfile.mkdtemp(prefix="omni_reel_")
     video_path = os.path.join(temp_dir, "reel.mp4")
     tile_path = os.path.join(temp_dir, "storyboard_tile.jpg")
@@ -305,23 +320,26 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
             'quiet': True,
             'overwrites': True,
             'socket_timeout': 15,
+            'hls_prefer_native': True,
+            'external_downloader': {'default': 'native'},
+            'external_downloader_args': {'ffmpeg_i': ['-protocol_whitelist', 'file,pipe']},
+            'allowed_extractors': ['facebook.*', 'instagram.*'],
             **cookie_opts
         }
 
-        loop = asyncio.get_event_loop()
         def _download():
             try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                with PublicYoutubeDL(ydl_opts) as ydl:
                     return ydl.extract_info(url, download=True)
             except Exception as e:
                 if "cookiesfrombrowser" in ydl_opts or "cookiefile" in ydl_opts:
                     logger.info(f"[Reel Analyzer] Cookie extraction notice ({e}), retrying without cookies...")
                     fallback_opts = {k: v for k, v in ydl_opts.items() if k not in ("cookiesfrombrowser", "cookiefile")}
-                    with yt_dlp.YoutubeDL(fallback_opts) as ydl_fb:
+                    with PublicYoutubeDL(fallback_opts) as ydl_fb:
                         return ydl_fb.extract_info(url, download=True)
                 raise
 
-        info = await loop.run_in_executor(None, _download)
+        info = await _run_thread(_download)
         raw_title = info.get("title") or ""
         uploader = info.get("uploader") or ""
         description = info.get("description") or ""
@@ -344,13 +362,20 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
             audio_ok = extract_audio_stream(video_path, audio_path)
             return tile_ok, audio_ok
 
-        tile_ok, audio_ok = await loop.run_in_executor(None, _ffmpeg_dual_stream)
+        tile_ok, audio_ok = await _run_thread(_ffmpeg_dual_stream)
 
         # 3. Parallel Multimodal Ingestion: Single Vision Call + Audio Transcript
         vision_task = analyze_storyboard_vision(tile_path) if tile_ok else asyncio.sleep(0, result="")
         audio_task = transcribe_audio_stream(audio_path) if audio_ok else asyncio.sleep(0, result="")
 
-        visual_content, audio_transcript = await asyncio.gather(vision_task, audio_task)
+        tasks = [asyncio.create_task(vision_task), asyncio.create_task(audio_task)]
+        try:
+            visual_content, audio_transcript = await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
         # 4. Synthesize raw content combining description + speech transcript + visual OCR
         combined_raw = f"""# {cleaned_title}

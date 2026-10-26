@@ -20,6 +20,8 @@ def calculate_time_decay(weight: float, last_interacted_iso: str) -> float:
         return weight
     try:
         last_dt = datetime.fromisoformat(last_interacted_iso.replace("Z", "+00:00"))
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
         now_dt = datetime.now(timezone.utc)
         delta_days = (now_dt - last_dt).total_seconds() / 86400.0
         if delta_days <= 0:

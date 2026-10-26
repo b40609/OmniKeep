@@ -172,7 +172,7 @@ async def writeback_insight(
         row = conn.execute(
             """SELECT id, updated_at FROM items
                WHERE source_type = 'insight' AND title_l1 = ?
-               AND updated_at > datetime('now', '-7 days')
+               AND julianday(updated_at) > julianday('now', '-7 days')
                ORDER BY updated_at DESC LIMIT 1""",
             (title,),
         ).fetchone()
