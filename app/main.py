@@ -8,7 +8,10 @@ from app.static_assets import CurrentBuildFiles
 from fastapi.responses import FileResponse
 from app.config import settings
 from app.database import init_db
-from app.routers import items_router, categories_router, ingest_router, line_router, radar_router, session_router, watch_router, behavior_router
+from app.routers import (
+    items_router, categories_router, ingest_router, line_router,
+    radar_router, session_router, watch_router, behavior_router, rules_router
+)
 from app.mcp_server import mcp
 from app.radar.scheduler import radar_scheduler
 from app.queue.worker import task_worker
@@ -97,6 +100,7 @@ app.include_router(radar_router)
 app.include_router(session_router)
 app.include_router(watch_router)
 app.include_router(behavior_router)
+app.include_router(rules_router)
 
 # Mount Remote MCP Server (SSE Transport)
 app.mount("/mcp", mcp.sse_app(mount_path="/mcp"))
