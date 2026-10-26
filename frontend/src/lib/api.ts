@@ -546,3 +546,30 @@ export function logBehaviorEvent(payload: BehaviorEventPayload): Promise<{ succe
 export function getBehaviorStats(days = 7): Promise<{ total_events: number; window_days: number; by_type: Record<string, number> }> {
   return request(`/api/behavior/stats?days=${days}`)
 }
+
+/* ---------------- Bookmark Importer ---------------- */
+
+export interface BookmarkImportResult {
+  success: boolean
+  total_parsed: number
+  imported_count: number
+  queued_count: number
+  skipped_count: number
+  errors: string[]
+  sample_ids: string[]
+}
+
+export function importBookmarks(
+  content: string,
+  options?: { filename?: string; enqueue_ai?: boolean; default_category?: string }
+): Promise<BookmarkImportResult> {
+  return request<BookmarkImportResult>('/api/items/import/bookmarks', {
+    method: 'POST',
+    body: JSON.stringify({
+      content,
+      filename: options?.filename || 'bookmarks.html',
+      enqueue_ai: options?.enqueue_ai ?? false,
+      default_category: options?.default_category || 'Inbox',
+    }),
+  })
+}

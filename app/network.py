@@ -42,6 +42,15 @@ def validate_url(url: str) -> str:
     return url
 
 
+def is_safe_url(url: str) -> bool:
+    """Return True if the URL passes SSRF and scheme validation, False otherwise."""
+    try:
+        validate_url(url)
+        return True
+    except (UnsafeURL, Exception):
+        return False
+
+
 class PublicNetworkBackend(httpcore.AsyncNetworkBackend):
     def __init__(self):
         self.backend = AutoBackend()

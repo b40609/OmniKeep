@@ -1,0 +1,29 @@
+services:
+  omnikeep:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: omnikeep:latest
+    container_name: omnikeep
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - API_KEY=${API_KEY:-omnikeep-secret-key-change-me}
+      - PRIMARY_LLM_PROVIDER=${PRIMARY_LLM_PROVIDER:-openai_compatible}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://platform.agnes-ai.com/v1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEYS=${GEMINI_API_KEYS:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ALLOWED_USER_IDS=${TELEGRAM_ALLOWED_USER_IDS:-}
+      - DATABASE_PATH=/data/omnikeep.db
+      - SNAPSHOT_DIR=/data/snapshots
+      - BACKUP_DIR=/data/backups
+    volumes:
+      - omnikeep_data:/data
+
+volumes:
+  omnikeep_data:
+    driver: local
