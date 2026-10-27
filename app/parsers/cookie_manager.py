@@ -3,15 +3,18 @@ import time
 import tempfile
 import subprocess
 import http.cookiejar
+import threading
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 import httpx
+import psutil
 import yt_dlp.cookies
 from app.config import settings
 
 _cached_jar: Optional[http.cookiejar.CookieJar] = None
 _cached_jar_time: float = 0
 _CACHE_TTL_SECONDS = 900  # 15 minutes cache
+_cdp_launch_lock = threading.RLock()
 
 # Chrome 127+ App-Bound Encryption (yt-dlp #10927) plus the DB file lock while
 # Chrome runs (yt-dlp #7271) make direct DB extraction dead on Windows. The
@@ -47,13 +50,92 @@ def _cdp_reachable(port: int, timeout: float = 1.5) -> bool:
         return False
 
 
-def ensure_cdp_browser() -> bool:
-    """Make sure a Chrome with the DevTools port is up (auto-launching a
-    dedicated persistent profile when needed). Returns True when reachable."""
+def _managed_cdp_browser() -> Optional[psutil.Process]:
+    """Find only the Chrome root process using OmniKeep's dedicated profile/port."""
+    profile = str(Path(settings.BROWSER_CDP_PROFILE_DIR).expanduser())
+    profile_arg = f"--user-data-dir={profile}"
+    port_arg = f"--remote-debugging-port={settings.BROWSER_CDP_PORT}"
+    for process in psutil.process_iter(["name", "cmdline"]):
+        try:
+            args = process.info["cmdline"] or []
+            if (
+                (process.info["name"] or "").lower() in {"chrome", "chrome.exe"}
+                and port_arg in args
+                and any(a.casefold() == profile_arg.casefold() for a in args)
+                and not any(a.startswith("--type=") for a in args)
+            ):
+                return process
+        except (psutil.AccessDenied, psutil.NoSuchProcess):
+            continue
+    return None
+
+
+def _close_managed_browser(process: psutil.Process) -> bool:
+    """Ask Chrome to flush its profile and exit before switching modes."""
+    from playwright.sync_api import sync_playwright
+
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.connect_over_cdp(
+                f"http://127.0.0.1:{settings.BROWSER_CDP_PORT}"
+            )
+            browser.new_browser_cdp_session().send("Browser.close")
+    except Exception as exc:
+        # Closing the browser can disconnect CDP before it returns a response.
+        print(f"[Cookie Bridge] Chrome shutdown notice: {type(exc).__name__}")
+    try:
+        process.wait(timeout=8)
+        return True
+    except (psutil.NoSuchProcess,):
+        return True
+    except psutil.TimeoutExpired:
+        print("[Cookie Bridge] Chrome did not exit; mode switch skipped.")
+        return False
+
+
+def ensure_cdp_browser(*, visible: bool = False) -> bool:
+    """Keep a headless CDP Chrome by default; show it only for manual login."""
+    with _cdp_launch_lock:
+        return _ensure_cdp_browser_locked(visible=visible)
+
+
+def restore_headless_cdp_browser() -> bool:
+    """Finish manual login and return the dedicated profile to background mode."""
+    if not settings.BROWSER_CDP_HEADLESS:
+        return True
+    with _cdp_launch_lock:
+        if _cdp_reachable(settings.BROWSER_CDP_PORT):
+            process = _managed_cdp_browser()
+            if process is None:
+                return False
+            try:
+                if any(a.startswith("--headless") for a in process.cmdline()):
+                    return True
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                return False
+            if not _close_managed_browser(process):
+                return False
+        return _ensure_cdp_browser_locked(visible=False)
+
+
+def _ensure_cdp_browser_locked(*, visible: bool) -> bool:
     port = settings.BROWSER_CDP_PORT
     if _cdp_reachable(port):
-        return True
-    if not settings.BROWSER_CDP_AUTOLAUNCH:
+        if not visible:
+            return True
+        process = _managed_cdp_browser()
+        if process is None:
+            print("[Cookie Bridge] CDP port is used by another browser; cannot open login window safely.")
+            return False
+        try:
+            if not any(a.startswith("--headless") for a in process.cmdline()):
+                return True
+        except (psutil.AccessDenied, psutil.NoSuchProcess):
+            return False
+        if not _close_managed_browser(process):
+            return False
+    # An explicit login request is allowed even when background auto-launch is off.
+    if not settings.BROWSER_CDP_AUTOLAUNCH and not visible:
         return False
 
     chrome = next((p for p in _CDP_LAUNCH_PATHS if Path(p).is_file()), None)
@@ -64,16 +146,20 @@ def ensure_cdp_browser() -> bool:
     profile_dir = str(Path(settings.BROWSER_CDP_PROFILE_DIR).expanduser())
     Path(profile_dir).mkdir(parents=True, exist_ok=True)
     try:
+        args = [
+            chrome,
+            f"--remote-debugging-port={port}",
+            "--remote-debugging-address=127.0.0.1",
+            f"--user-data-dir={profile_dir}",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ]
+        if settings.BROWSER_CDP_HEADLESS and not visible:
+            args.append("--headless=new")
+        args.append("about:blank")
         subprocess.Popen(
-            [
-                chrome,
-                f"--remote-debugging-port={port}",
-                f"--user-data-dir={profile_dir}",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "about:blank",
-            ],
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
+            args,
+            creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS) if os.name == "nt" else 0,
             close_fds=True,
         )
     except Exception as e:
@@ -84,8 +170,8 @@ def ensure_cdp_browser() -> bool:
         time.sleep(0.5)
         if _cdp_reachable(port):
             print(
-                f"[Cookie Bridge] Launched automation Chrome (CDP :{port}, profile {profile_dir}). "
-                f"在此視窗登入 Instagram / Facebook 一次，之後所有 Reel 解析都能帶會員狀態。"
+                f"[Cookie Bridge] Launched {'visible' if visible else 'background'} Chrome "
+                f"(CDP :{port}, profile {profile_dir})."
             )
             return True
     print("[Cookie Bridge] Chrome launched but CDP port did not open in time.")

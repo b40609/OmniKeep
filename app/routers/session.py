@@ -21,6 +21,7 @@ from app.parsers.cookie_manager import (
     _fetch_cdp_cookies,
     ensure_cdp_browser,
     get_cookie_jar,
+    restore_headless_cdp_browser,
 )
 
 logger = logging.getLogger("omnikeep.session")
@@ -102,8 +103,10 @@ async def session_status() -> Dict[str, Any]:
 
 @router.post("/refresh")
 async def session_refresh() -> Dict[str, Any]:
-    """Re-extract the cookie jar (may auto-launch the automation Chrome)."""
+    """Refresh login cookies, then return the login browser to headless mode."""
     await asyncio.to_thread(get_cookie_jar, True)
+    if not await asyncio.to_thread(restore_headless_cdp_browser):
+        logger.warning("[Session] Could not restore background Chrome after refresh")
     return {"bridge": _bridge_snapshot()}
 
 
@@ -114,7 +117,7 @@ async def session_login(req: LoginRequest) -> Dict[str, Any]:
     if not meta:
         raise HTTPException(status_code=404, detail=f"Unknown platform: {req.platform}")
 
-    ok = await asyncio.to_thread(ensure_cdp_browser)
+    ok = await asyncio.to_thread(ensure_cdp_browser, visible=True)
     if not ok:
         raise HTTPException(
             status_code=503,

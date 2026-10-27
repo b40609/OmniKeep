@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     BROWSER_CDP_PORT: int = 9222
     BROWSER_CDP_PROFILE_DIR: str = str(Path.home() / "AppData" / "Local" / "OmniKeep" / "chrome-cdp" if sys.platform == "win32" else Path.home() / ".omnikeep" / "chrome-cdp")
     BROWSER_CDP_AUTOLAUNCH: bool = True
+    BROWSER_CDP_HEADLESS: bool = True
 
     # Telegram Bot Configuration
     TELEGRAM_BOT_TOKEN: str = ""
