@@ -323,6 +323,7 @@ async def test_radar_api_endpoints():
 @pytest.mark.asyncio
 async def test_main_lifespan_integration(monkeypatch):
     monkeypatch.setattr(settings, "BACKGROUND_SERVICES_ENABLED", True)
+    monkeypatch.setattr(settings, "RADAR_ENABLED", True)
     from app.main import app
     from app.radar.scheduler import radar_scheduler
     from contextlib import asynccontextmanager
@@ -345,3 +346,60 @@ async def test_radar_network_outage_resilience():
         assert res["ranked_items"] == []
 
 
+
+@pytest.mark.asyncio
+async def test_radar_settings_and_source_toggle():
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test",
+                           headers={"Authorization": f"Bearer {settings.API_KEY}"}) as client:
+        # 1. Fetch settings
+        res = await client.get("/api/radar/settings")
+        assert res.status_code == 200
+        data = res.json()["settings"]
+        assert "enabled" in data
+        assert "interval_minutes" in data
+        assert "notification_mode" in data
+
+        # 2. Update settings
+        res_put = await client.put("/api/radar/settings", json={
+            "enabled": False,
+            "interval_minutes": 360,
+            "max_analyze_per_cycle": 2,
+            "notification_mode": "vip_alert",
+            "vip_threshold": 4.5
+        })
+        assert res_put.status_code == 200
+        updated = res_put.json()["settings"]
+        assert updated["enabled"] is False
+        assert updated["interval_minutes"] == 360
+        assert updated["notification_mode"] == "vip_alert"
+        assert updated["vip_threshold"] == 4.5
+
+        # 3. Validation rejection
+        res_bad = await client.put("/api/radar/settings", json={
+            "notification_mode": "unsupported_mode"
+        })
+        assert res_bad.status_code == 400
+
+        # 4. Source toggle
+        res_src = await client.post("/api/radar/sources", json={
+            "name": "Toggle Source",
+            "source_type": "rss",
+            "url": "https://test.example/feed.xml"
+        })
+        assert res_src.status_code == 200
+        sid = res_src.json()["source_id"]
+
+        res_tog = await client.patch(f"/api/radar/sources/{sid}/toggle")
+        assert res_tog.status_code == 200
+        assert res_tog.json()["source"]["is_active"] == 0
+
+        res_tog2 = await client.patch(f"/api/radar/sources/{sid}/toggle", json={"is_active": True})
+        assert res_tog2.status_code == 200
+        assert res_tog2.json()["source"]["is_active"] == 1
+
+        # Clean up
+        await client.delete(f"/api/radar/sources/{sid}")

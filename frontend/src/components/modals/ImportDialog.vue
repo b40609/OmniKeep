@@ -12,6 +12,11 @@ import {
   Zap,
   RotateCcw,
   FolderInput,
+  Download,
+  Bookmark,
+  Copy,
+  FileArchive,
+  Check,
 } from 'lucide-vue-next'
 
 import {
@@ -31,8 +36,55 @@ import { toast } from 'vue-sonner'
 const ui = useUiStore()
 const itemsStore = useItemsStore()
 
-type ImportTab = 'file' | 'text'
+type ImportTab = 'file' | 'text' | 'bookmarklet' | 'export'
 const activeTab = ref<ImportTab>('file')
+
+const exportStarredOnly = ref(false)
+const isExporting = ref(false)
+const copiedBookmarklet = ref(false)
+
+const bookmarkletHref = computed(() => {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8000'
+  return `javascript:(function(){const u=encodeURIComponent(window.location.href);const t=encodeURIComponent(document.querySelector('title')?.textContent||document.querySelector("meta[property='og:title']")?.getAttribute('content')||'');const d=encodeURIComponent(document.querySelector("meta[name='description']")?.getAttribute('content')||document.querySelector("meta[property='og:description']")?.getAttribute('content')||'');window.open('${origin}/?url='+u+'&title='+t+'&description='+d+'&auto_close=1','_blank','width=520,height=620');})();`
+})
+
+async function copyBookmarkletCode() {
+  await navigator.clipboard.writeText(bookmarkletHref.value)
+  copiedBookmarklet.value = true
+  toast.success('已複製書籤代碼至剪貼簿！')
+  setTimeout(() => (copiedBookmarklet.value = false), 2000)
+}
+
+async function handleExport(format: 'json' | 'markdown') {
+  isExporting.value = true
+  const t = toast.loading(`正在打包 ${format.toUpperCase()} 備份…`)
+  try {
+    const token = localStorage.getItem('omnikeep_api_key') || ''
+    const url = `/api/items/export?format=${format}&starred_only=${exportStarredOnly.value}`
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    const blob = await res.blob()
+    const disposition = res.headers.get('content-disposition') || ''
+    let filename = format === 'json' ? 'omnikeep_export.json' : 'omnikeep_markdown.zip'
+    const match = disposition.match(/filename="?([^";]+)"?/)
+    if (match && match[1]) filename = match[1]
+
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(a.href)
+    toast.success(`已開始下載 ${filename}`, { id: t })
+  } catch (e) {
+    toast.error('匯出失敗: ' + (e as Error).message, { id: t })
+  } finally {
+    isExporting.value = false
+  }
+}
 
 // File state
 const isDragging = ref(false)
@@ -226,6 +278,26 @@ function closeDialog() {
           直接貼上內容
           <span v-if="activeTab === 'text'" class="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" />
         </button>
+        <button
+          role="tab"
+          :aria-selected="activeTab === 'bookmarklet'"
+          class="relative flex h-10 items-center px-3 font-medium transition-colors"
+          :class="activeTab === 'bookmarklet' ? 'text-primary-soft-foreground' : 'text-muted-foreground hover:text-foreground'"
+          @click="activeTab = 'bookmarklet'"
+        >
+          一鍵隨手存書籤
+          <span v-if="activeTab === 'bookmarklet'" class="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" />
+        </button>
+        <button
+          role="tab"
+          :aria-selected="activeTab === 'export'"
+          class="relative flex h-10 items-center px-3 font-medium transition-colors"
+          :class="activeTab === 'export' ? 'text-primary-soft-foreground' : 'text-muted-foreground hover:text-foreground'"
+          @click="activeTab = 'export'"
+        >
+          資料庫全量匯出
+          <span v-if="activeTab === 'export'" class="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" />
+        </button>
       </div>
 
       <!-- Main Body -->
@@ -399,11 +471,90 @@ function closeDialog() {
                 v-model="selectedCategory"
                 class="h-7 rounded-md border border-border bg-input px-2 text-xs text-foreground focus:border-primary focus:outline-none"
               >
-                <option value="Inbox">Inbox (預設收件匣)</option>
-                <option v-for="c in itemsStore.categories" :key="c.id" :value="c.name">
+                <option value="Inbox" class="bg-popover text-foreground">Inbox (預設收件匣)</option>
+                <option v-for="c in itemsStore.categories" :key="c.id" :value="c.name" class="bg-popover text-foreground">
                   {{ c.name }}
                 </option>
               </select>
+            </div>
+          </div>
+        </div>
+        <!-- ── Bookmarklet Tab ── -->
+        <div v-if="activeTab === 'bookmarklet'" class="space-y-4 py-2">
+          <div class="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs space-y-3">
+            <div class="flex items-center gap-2 font-semibold text-foreground">
+              <Bookmark class="size-4 text-primary" />
+              <span>瀏覽器免安裝 1-Click 剪藏小工具</span>
+            </div>
+            <p class="text-muted-foreground leading-relaxed">
+              只需將下方按鈕<b>「拖曳至瀏覽器書籤列」</b>（Chrome、Edge、Safari、Firefox 皆支援）。
+              未來在閱讀任何文章、推文或觀看影片時，點擊書籤即可一鍵將當前網頁送入 OmniKeep 背景深度解構！
+            </p>
+            <div class="flex flex-wrap items-center gap-3 pt-1">
+              <a
+                :href="bookmarkletHref"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-primary bg-primary px-3.5 py-2 font-mono text-xs font-bold text-primary-foreground shadow-sm hover:opacity-90 active:scale-95 cursor-grab active:cursor-grabbing select-none"
+                title="請將我拖曳至瀏覽器書籤列"
+                @click.prevent="toast.info('請直接將按鈕拖曳到瀏覽器的書籤列（Bookmarks Bar）中！')"
+              >
+                <span>🧠 存入 OmniKeep</span>
+              </a>
+              <Button size="sm" variant="outline" class="h-8 gap-1.5 text-2xs" @click="copyBookmarkletCode">
+                <Check v-if="copiedBookmarklet" class="size-3 text-success" />
+                <Copy v-else class="size-3" />
+                <span>{{ copiedBookmarklet ? '已複製代碼' : '複製 JavaScript 代碼' }}</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Export Tab ── -->
+        <div v-if="activeTab === 'export'" class="space-y-4 py-2">
+          <div class="rounded-xl border border-border bg-card p-4 text-xs space-y-3">
+            <div class="flex items-center gap-2 font-semibold text-foreground">
+              <Download class="size-4 text-primary" />
+              <span>資料資產自主權（零廠商綁定）</span>
+            </div>
+            <p class="text-muted-foreground leading-relaxed">
+              你的情報與筆記 100% 屬於你。你可以隨時將整個知識庫打包導出為標準 JSON 或包含 YAML Frontmatter 的 Markdown 壓縮包（無損遷移至 Obsidian、Logseq、Notion）。
+            </p>
+
+            <div class="flex items-center gap-2 pt-1 pb-2">
+              <input
+                id="export-starred"
+                v-model="exportStarredOnly"
+                type="checkbox"
+                class="size-3.5 rounded border-border accent-primary cursor-pointer"
+              />
+              <label for="export-starred" class="text-xs text-foreground cursor-pointer select-none">
+                僅匯出加星標（Starred）的重要收藏
+              </label>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <button
+                :disabled="isExporting"
+                class="flex flex-col items-start gap-1 rounded-xl border border-border p-3 text-left transition hover:border-primary hover:bg-accent active:scale-98 disabled:opacity-50 cursor-pointer"
+                @click="handleExport('json')"
+              >
+                <div class="flex items-center gap-1.5 font-semibold text-foreground">
+                  <FileCode class="size-4 text-primary" />
+                  <span>全量 JSON 備份</span>
+                </div>
+                <span class="text-2xs text-muted-foreground">包含所有中繼資料、白話重點、規格拆解與原文</span>
+              </button>
+
+              <button
+                :disabled="isExporting"
+                class="flex flex-col items-start gap-1 rounded-xl border border-border p-3 text-left transition hover:border-primary hover:bg-accent active:scale-98 disabled:opacity-50 cursor-pointer"
+                @click="handleExport('markdown')"
+              >
+                <div class="flex items-center gap-1.5 font-semibold text-foreground">
+                  <FileArchive class="size-4 text-violet-500" />
+                  <span>Obsidian / Logseq 筆記包 (.zip)</span>
+                </div>
+                <span class="text-2xs text-muted-foreground">每篇生成獨立 .md 檔案，支援標籤與雙向連結</span>
+              </button>
             </div>
           </div>
         </div>
@@ -415,7 +566,7 @@ function closeDialog() {
           {{ importResult ? '關閉' : '取消' }}
         </Button>
         <Button
-          v-if="!importResult"
+          v-if="!importResult && (activeTab === 'file' || activeTab === 'text')"
           size="sm"
           :disabled="!canSubmit || isImporting"
           @click="runImport"

@@ -81,12 +81,16 @@ def test_only_current_static_build_is_served(isolated_runtime):
         (root / "dist/assets" / name).write_text("// synthetic bundle")
     (root / "dist/favicon.svg").write_text("<svg/>")
     (root / "legacy.html").write_text("synthetic legacy UI")
+    (root / "mobile_test.html").write_text("synthetic archived mobile test")
+    (root / "qr_webhook_public.png").write_bytes(b"synthetic legacy credential QR")
     test_app = FastAPI()
     test_app.mount("/static", CurrentBuildFiles(directory=root))
     with TestClient(test_app) as client:
         assert client.get("/static/dist/assets/current.js").status_code == 200
         assert client.get("/static/dist/assets/retired.js").status_code == 404
         assert client.get("/static/legacy.html").status_code == 404
+        assert client.get("/static/mobile_test.html").status_code == 404
+        assert client.get("/static/qr_webhook_public.png").status_code == 404
         assert client.get("/static/dist/favicon.svg").status_code == 200
         assert client.get("/static/dist/index.html").headers["cache-control"] == "no-cache"
 

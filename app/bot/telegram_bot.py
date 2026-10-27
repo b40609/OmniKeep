@@ -21,6 +21,7 @@ from app.database import (
     update_item_field,
     get_status_counts,
     create_ingest_task,
+    set_ingest_task_message_id,
     get_user_setting,
     set_user_setting,
     get_swipe_deck,
@@ -530,20 +531,31 @@ class TelegramBot:
         else:
             initial_status = "📥 <b>已加入處理佇列，準備啟動雙軌解析...</b>"
 
-        wait_msg = await self.send_message(
-            chat_id,
-            initial_status,
-            reply_to_message_id=message.get("message_id")
-        )
-        wait_msg_id = wait_msg.get("result", {}).get("message_id")
-
-        # Persist to SQLite Task Queue (Immediate non-blocking return)
-        create_ingest_task(
+        # Persist before Telegram network I/O. Replayed updates must not enqueue
+        # another LLM job or send a second receipt for the same source message.
+        task = create_ingest_task(
             url=text,
             source="telegram",
             chat_id=chat_id,
-            message_id=wait_msg_id
+            message_id=None,
+            dedupe_key=str(message.get("message_id") or update.get("update_id"))
         )
+        if task["message_id"] is not None:
+            return
+        try:
+            wait_msg = await self.send_message(
+                chat_id,
+                initial_status,
+                reply_to_message_id=message.get("message_id")
+            )
+            wait_msg_id = wait_msg.get("result", {}).get("message_id")
+            if wait_msg_id is None:
+                logger.warning("Telegram receipt unavailable for persisted task %s", task["id"])
+            else:
+                set_ingest_task_message_id(task["id"], wait_msg_id)
+        except Exception:
+            # The task is already durable and the worker can process it.
+            logger.exception("Telegram receipt failed for persisted task %s", task["id"])
 
     async def handle_callback(self, query: Dict[str, Any]):
         query_id = query["id"]
@@ -728,14 +740,7 @@ class TelegramBot:
         offset = 0
         client = await self.get_client()
 
-        print("=" * 60)
-        print("🤖 OmniKeep Telegram Private Ingest Bot 已啟動")
-        print(f"📡 Polling 模式運行中 (Ctrl+C 停止)...")
-        if settings.telegram_allowed_ids:
-            print(f"🔒 授權白名單 User IDs: {settings.telegram_allowed_ids}")
-        else:
-            print("⚠️ 尚未設定 TELEGRAM_ALLOWED_USER_IDS，首次私訊時 Bot 會回傳你的 User ID。")
-        print("=" * 60)
+        logger.warning("Telegram polling started (authorized users: %d)", len(settings.telegram_allowed_ids))
 
         while self.running:
             try:
@@ -744,6 +749,7 @@ class TelegramBot:
                     params={"offset": offset, "timeout": 25}
                 )
                 if resp.status_code != 200:
+                    logger.warning("Telegram polling HTTP status %s", resp.status_code)
                     await asyncio.sleep(3)
                     continue
 
@@ -754,16 +760,21 @@ class TelegramBot:
                     continue
 
                 for update in data.get("result", []):
-                    offset = update["update_id"] + 1
                     try:
                         await self.handle_update(update)
                     except Exception as e:
-                        logger.exception(f"處理 Telegram Update 失敗: {e}")
+                        # Keep the failing update unacknowledged so it can be
+                        # replayed; earlier updates have durable dedupe keys.
+                        logger.exception("Telegram update %s not yet persisted: %s", update.get("update_id"), e)
+                        await asyncio.sleep(3)
+                        break
+                    offset = update["update_id"] + 1
 
             except httpx.TimeoutException:
                 continue
             except asyncio.CancelledError:
-                break
+                self.running = False
+                raise
             except Exception as e:
                 logger.error("Polling 異常 (%s)", type(e).__name__)
                 await asyncio.sleep(3)

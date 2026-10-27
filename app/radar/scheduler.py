@@ -12,7 +12,8 @@ from app.database import (
     get_pending_analysis_items,
     update_item_field,
     log_behavior_event,
-    get_all_topic_weights
+    get_all_topic_weights,
+    get_radar_settings
 )
 from app.radar.adapters import get_adapter
 from app.radar.recommender import score_item_detailed, rank_items_with_exploration
@@ -224,9 +225,16 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
                 continue
             candidates.append((raw, src, pg_score))
 
+    # Load dynamic user settings
+    try:
+        cfg = get_radar_settings()
+    except Exception as e:
+        print(f"[Radar:Scheduler] Failed to get settings: {e}")
+        cfg = {"max_analyze_per_cycle": 3, "notification_mode": "silent"}
+
     # Backfill oldest pending stubs first, then spend remaining budget on the
     # best-ranked new candidates
-    budget = max(0, int(settings.RADAR_MAX_ANALYZE_PER_CYCLE))
+    budget = max(0, int(cfg.get("max_analyze_per_cycle") or settings.RADAR_MAX_ANALYZE_PER_CYCLE))
     all_new_items = await _backfill_pending(budget)
     budget -= len(all_new_items)
 
@@ -248,16 +256,33 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
     # Rank newly detected items using 80/20 Epsilon-Greedy exploration
     ranked_items = rank_items_with_exploration(all_new_items, exploration_ratio=0.2)
 
+    notification_mode = cfg.get("notification_mode", "silent")
     digest_info = None
-    if auto_digest and len(ranked_items) >= 2:
-        # Debounce and compile batched digest using top ranked items
-        item_ids = [it["id"] for it in ranked_items]
-        local_hour = datetime.now().astimezone().hour
-        dtype = "evening" if 17 <= local_hour <= 23 else "morning"
-        digest_info = await generate_radar_digest(item_ids, digest_type=dtype)
-        await _push_digest_to_telegram(digest_info, ranked_items)
 
-    await _push_autostar_notices(ranked_items)
+    if notification_mode == "daily_digest":
+        local_hour = datetime.now().astimezone().hour
+        target_hour = int(cfg.get("daily_digest_hour", 8))
+        if auto_digest and len(ranked_items) >= 2 and local_hour == target_hour:
+            item_ids = [it["id"] for it in ranked_items]
+            digest_info = await generate_radar_digest(item_ids, digest_type="daily")
+            await _push_digest_to_telegram(digest_info, ranked_items)
+    elif notification_mode == "vip_alert":
+        vip_threshold = float(cfg.get("vip_threshold", 4.0))
+        vip_items = [it for it in ranked_items if float(it.get("radar_score", 0.0)) >= vip_threshold]
+        if vip_items:
+            await _push_autostar_notices(vip_items)
+    elif notification_mode == "legacy" or cfg.get("auto_digest_push") or cfg.get("auto_star_push"):
+        if auto_digest and len(ranked_items) >= 2 and cfg.get("auto_digest_push"):
+            item_ids = [it["id"] for it in ranked_items]
+            local_hour = datetime.now().astimezone().hour
+            dtype = "evening" if 17 <= local_hour <= 23 else "morning"
+            digest_info = await generate_radar_digest(item_ids, digest_type=dtype)
+            await _push_digest_to_telegram(digest_info, ranked_items)
+        if cfg.get("auto_star_push"):
+            await _push_autostar_notices(ranked_items)
+    else:
+        # Default 'silent': zero Telegram messages!
+        pass
 
     from app.background import follow_up_pool
     for it in ranked_items:
@@ -280,19 +305,25 @@ class RadarScheduler:
     def __init__(self):
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+        self._wake_event = asyncio.Event()
         self._is_running = False
 
     @property
     def is_running(self) -> bool:
         return self._is_running
 
+    def wake(self):
+        """Immediately wake up scheduler loop to apply new settings or run cycle."""
+        self._wake_event.set()
+
     def start(self, initial_delay: float = 10.0):
         if self._is_running:
             return
         self._is_running = True
         self._stop_event.clear()
+        self._wake_event.clear()
         self._task = asyncio.create_task(self._loop(initial_delay=initial_delay))
-        print(f"[Radar:Scheduler] Background scheduler loop started (interval={settings.RADAR_INTERVAL_SECONDS}s).")
+        print(f"[Radar:Scheduler] Background scheduler loop started.")
 
     async def _loop(self, initial_delay: float = 10.0):
         if initial_delay > 0:
@@ -304,28 +335,48 @@ class RadarScheduler:
 
         while not self._stop_event.is_set():
             try:
-                print("[Radar:Scheduler] Starting periodic radar scan cycle...")
-                res = await run_radar_cycle(force=False, auto_digest=True)
-                print(f"[Radar:Scheduler] Cycle complete: {res['new_items_count']} new items detected across {res['sources_scanned']} sources.")
-            except asyncio.CancelledError:
-                break
+                cfg = get_radar_settings()
             except Exception as e:
-                print(f"[Radar:Scheduler] Error during periodic cycle: {e}")
+                print(f"[Radar:Scheduler] Error loading settings in loop: {e}")
+                cfg = {"enabled": True, "interval_minutes": 180, "max_analyze_per_cycle": 3}
 
-            try:
-                await asyncio.wait_for(
-                    self._stop_event.wait(),
-                    timeout=float(settings.RADAR_INTERVAL_SECONDS)
-                )
+            is_enabled = cfg.get("enabled", True)
+            interval_minutes = cfg.get("interval_minutes", 180)
+
+            if is_enabled and interval_minutes > 0:
+                try:
+                    print("[Radar:Scheduler] Starting periodic radar scan cycle...")
+                    res = await run_radar_cycle(force=False, auto_digest=True)
+                    print(f"[Radar:Scheduler] Cycle complete: {res['new_items_count']} new items detected across {res['sources_scanned']} sources.")
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    print(f"[Radar:Scheduler] Error during periodic cycle: {e}")
+
+            # Sleep duration in seconds
+            sleep_seconds = float(interval_minutes * 60) if (is_enabled and interval_minutes > 0) else 3600.0
+
+            # Wait until timeout, wake event, or stop event
+            self._wake_event.clear()
+            stop_task = asyncio.create_task(self._stop_event.wait())
+            wake_task = asyncio.create_task(self._wake_event.wait())
+            done, pending = await asyncio.wait(
+                [stop_task, wake_task],
+                timeout=sleep_seconds,
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            for p in pending:
+                p.cancel()
+
+            if stop_task in done and self._stop_event.is_set():
                 break
-            except asyncio.TimeoutError:
-                continue
 
     async def stop(self):
         if not self._is_running:
             return
         print("[Radar:Scheduler] Stopping background scheduler...")
         self._stop_event.set()
+        self._wake_event.set()
         if self._task:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)

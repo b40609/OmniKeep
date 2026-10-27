@@ -7,20 +7,31 @@ services:
     container_name: omnikeep
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-5000}:5000"
     environment:
       - HOST=0.0.0.0
-      - PORT=8000
-      - API_KEY=${API_KEY:-omnikeep-secret-key-change-me}
+      - PORT=5000
+      - API_KEY=${API_KEY:-}
+      - LOCAL_AUTO_LOGIN=${LOCAL_AUTO_LOGIN:-false}
       - PRIMARY_LLM_PROVIDER=${PRIMARY_LLM_PROVIDER:-openai_compatible}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://platform.agnes-ai.com/v1}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PRIMARY_MODEL=${PRIMARY_MODEL:-gpt-4o-mini}
       - GEMINI_API_KEYS=${GEMINI_API_KEYS:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_ALLOWED_USER_IDS=${TELEGRAM_ALLOWED_USER_IDS:-}
+      - LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET:-}
+      - LINE_CHANNEL_ACCESS_TOKEN=${LINE_CHANNEL_ACCESS_TOKEN:-}
+      - LINE_ALLOWED_USER_IDS=${LINE_ALLOWED_USER_IDS:-}
+      - RADAR_ENABLED=${RADAR_ENABLED:-false}
+      - RADAR_INTERVAL_SECONDS=${RADAR_INTERVAL_SECONDS:-10800}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - BACKUP_SINK=${BACKUP_SINK:-local}
+      - BACKUP_DIR=/data/backups
+      - BACKUP_KEEP=${BACKUP_KEEP:-14}
       - DATABASE_PATH=/data/omnikeep.db
       - SNAPSHOT_DIR=/data/snapshots
-      - BACKUP_DIR=/data/backups
     volumes:
       - omnikeep_data:/data
 

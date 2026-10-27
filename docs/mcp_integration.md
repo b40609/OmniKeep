@@ -13,10 +13,10 @@ OmniKeep 現已原生支援 **Anthropic Model Context Protocol (MCP)**，並提�
 | `get_item_architecture` | `item_id` | **Context 節食首選**：僅取得單一專案的 L1 白話痛點與 L2 深度技術架構/規格解構（無冗長原文）。 |
 | `get_item_raw` | `item_id`, `max_chars` (預設 2500) | 僅在 Agent 需要審查原始程式碼、設定檔或原文逐字引述時單獨調用。 |
 | `writeback_insight` | `title`, `summary`, `architecture_details`, `category`, `tech_tags`, `related_item_id` | **對話閉環**：將手機端深聊出的架構結論直接寫入 OmniKeep 第二大腦，並支援與庫存專案建立關聯圖譜。 |
-| `save_to_brain` | `content_or_url`, `category` | 由 Agent 直接存入網址、程式碼片段或筆記，觸發 AGNES 3.0 自動兩段式解構。 |
+| `save_to_brain` | `content_or_url`, `category` | 由 Agent 直接存入網址、程式碼片段或筆記，觸發 AI 模型自動兩段式解構。 |
 | `list_recent_items` | `triage_status`, `category`, `limit` | 列出最近情報（支援 `inbox` 待讀、`starred` 星標、`archived` 封存、`all` 全部）。 |
 | `update_item_status` | `item_id`, `is_read`, `is_starred` | 一鍵將項目標記為已讀／封存或加星標。 |
-| `ask_brain_synthesis` | `topic`, `top_k` | 利用 AGNES 3.0 超大 Context Window，針對庫存多篇項目進行**跨篇橫向技術架構綜述與選型對比**。 |
+| `ask_brain_synthesis` | `topic`, `top_k` | 利用高階 AI 模型超大上下文視窗，針對庫存多篇項目進行**跨篇橫向技術架構綜述與選型對比**。 |
 
 ---
 
@@ -62,7 +62,7 @@ REST 與遠端 MCP 請求均須攜帶 `.env` 中的 `API_KEY`，沒有預設憑�
     "omnikeep": {
       "command": "python",
       "args": [
-        "C:/Users/user/Desktop/OmniKeep/mcp_server.py"
+        "C:/path/to/OmniKeep/mcp_server.py"
       ],
       "env": {
         "PYTHONIOENCODING": "utf-8"
@@ -73,12 +73,12 @@ REST 與遠端 MCP 請求均須攜帶 `.env` 中的 `API_KEY`，沒有預設憑�
 ```
 
 ### 2. Antigravity IDE
-在 `C:\Users\user\.gemini\antigravity\mcp_config.json` 的 `mcpServers` 區塊中加入：
+在你的使用者目錄下 `.gemini/antigravity/mcp_config.json` 的 `mcpServers` 區塊中加入：
 ```json
 "omnikeep": {
   "command": "python",
   "args": [
-    "C:\\Users\\user\\Desktop\\OmniKeep\\mcp_server.py"
+    "C:\\path\\to\\OmniKeep\\mcp_server.py"
   ],
   "env": {
     "PYTHONIOENCODING": "utf-8"
@@ -94,7 +94,7 @@ REST 與遠端 MCP 請求均須攜帶 `.env` 中的 `API_KEY`，沒有預設憑�
     "omnikeep": {
       "command": "python",
       "args": [
-        "C:\\Users\\user\\Desktop\\OmniKeep\\mcp_server.py"
+        "C:\\path\\to\\OmniKeep\\mcp_server.py"
       ],
       "env": {
         "PYTHONIOENCODING": "utf-8"

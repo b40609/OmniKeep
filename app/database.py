@@ -27,6 +27,12 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Only seed defaults when creating a new database. Restarting must never
+    # restore categories that a user intentionally deleted.
+    new_categories = cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'categories'"
+    ).fetchone() is None
+
     # 1. Categories table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS categories (
@@ -38,13 +44,13 @@ def init_db():
         )
     """)
     
-    # 2. Default categories seed
-    default_categories = ["AI", "加密貨幣", "台股", "Github", "時事", "旅遊", "美食", "監看", "提案"]
-    for idx, cat_name in enumerate(default_categories):
-        cursor.execute("""
-            INSERT OR IGNORE INTO categories (name, sort_order)
-            VALUES (?, ?)
-        """, (cat_name, idx))
+    # 2. Neutral starting categories. All remain user-editable.
+    if new_categories:
+        for idx, cat_name in enumerate(["文章", "影片", "工具", "筆記"]):
+            cursor.execute("""
+                INSERT INTO categories (name, sort_order)
+                VALUES (?, ?)
+            """, (cat_name, idx))
     
     # 3. Items table
     cursor.execute("""
@@ -107,6 +113,10 @@ def init_db():
         END;
     """)
 
+    new_radar_sources = cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'radar_sources'"
+    ).fetchone() is None
+
     # 7. Radar Subscriptions table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS radar_sources (
@@ -124,6 +134,49 @@ def init_db():
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
+    """)
+
+    # Offer optional sample sources on first setup, initially disabled. Never
+    # resurrect subscriptions intentionally removed by the user.
+    default_sources = [
+        ("src_hn_best", "Hacker News (Top Stories)", "rss", "https://hnrss.org/best", 1, 180),
+        ("src_arxiv_ai", "ArXiv Computer Science (AI)", "rss", "https://rss.arxiv.org/rss/cs.AI", 2, 360),
+        ("src_verge_tech", "The Verge (Tech News)", "rss", "https://www.theverge.com/rss/index.xml", 2, 240),
+        ("src_fastapi_rel", "FastAPI (GitHub Releases)", "github", "https://github.com/fastapi/fastapi", 2, 720),
+    ]
+    if new_radar_sources:
+        for src_id, name, stype, url, tier, interval in default_sources:
+            cursor.execute("""
+                INSERT INTO radar_sources (id, name, source_type, url, tier, check_interval_minutes, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, 0)
+            """, (src_id, name, stype, url, tier, interval))
+
+
+    # 7b. Radar Settings table (User configurable scheduler & notification policy)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS radar_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            enabled INTEGER DEFAULT 1,
+            interval_minutes INTEGER DEFAULT 180,
+            max_analyze_per_cycle INTEGER DEFAULT 3,
+            notification_mode TEXT DEFAULT 'silent',
+            daily_digest_hour INTEGER DEFAULT 8,
+            vip_threshold REAL DEFAULT 4.0,
+            auto_digest_push INTEGER DEFAULT 0,
+            auto_star_push INTEGER DEFAULT 0,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    radar_settings_cols = {col[1] for col in cursor.execute("PRAGMA table_info(radar_settings)").fetchall()}
+    if "notification_mode" not in radar_settings_cols:
+        cursor.execute("ALTER TABLE radar_settings ADD COLUMN notification_mode TEXT DEFAULT 'silent'")
+    if "daily_digest_hour" not in radar_settings_cols:
+        cursor.execute("ALTER TABLE radar_settings ADD COLUMN daily_digest_hour INTEGER DEFAULT 8")
+    if "vip_threshold" not in radar_settings_cols:
+        cursor.execute("ALTER TABLE radar_settings ADD COLUMN vip_threshold REAL DEFAULT 4.0")
+    cursor.execute("""
+        INSERT OR IGNORE INTO radar_settings (id, enabled, interval_minutes, max_analyze_per_cycle, notification_mode, daily_digest_hour, vip_threshold, auto_digest_push, auto_star_push)
+        VALUES (1, 1, 180, 3, 'silent', 8, 4.0, 0, 0)
     """)
 
     # 8. User Topic Weights table (Signal Tuner: Boost / Dampen / Mute)
@@ -729,6 +782,100 @@ def update_radar_source_fetch_meta(
     conn.commit()
     conn.close()
 
+def toggle_radar_source_active(source_id: str, is_active: Optional[bool] = None) -> Optional[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM radar_sources WHERE id = ?", (source_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None
+    
+    if is_active is None:
+        new_active = 0 if row["is_active"] else 1
+    else:
+        new_active = 1 if is_active else 0
+        
+    cursor.execute("UPDATE radar_sources SET is_active = ? WHERE id = ?", (new_active, source_id))
+    conn.commit()
+    conn.close()
+    return get_radar_source(source_id)
+
+def get_radar_settings() -> Dict[str, Any]:
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM radar_settings WHERE id = 1").fetchone()
+        if not row:
+            conn.execute("""
+                INSERT OR IGNORE INTO radar_settings (
+                    id, enabled, interval_minutes, max_analyze_per_cycle,
+                    notification_mode, daily_digest_hour, vip_threshold,
+                    auto_digest_push, auto_star_push
+                )
+                VALUES (1, 1, 180, 3, 'silent', 8, 4.0, 0, 0)
+            """)
+            conn.commit()
+            row = conn.execute("SELECT * FROM radar_settings WHERE id = 1").fetchone()
+        
+        keys = row.keys() if hasattr(row, "keys") else []
+        return {
+            "enabled": bool(row["enabled"]) if "enabled" in keys else True,
+            "interval_minutes": int(row["interval_minutes"]) if "interval_minutes" in keys else 180,
+            "max_analyze_per_cycle": int(row["max_analyze_per_cycle"]) if "max_analyze_per_cycle" in keys else 3,
+            "notification_mode": str(row["notification_mode"]) if ("notification_mode" in keys and row["notification_mode"]) else "silent",
+            "daily_digest_hour": int(row["daily_digest_hour"]) if ("daily_digest_hour" in keys and row["daily_digest_hour"] is not None) else 8,
+            "vip_threshold": float(row["vip_threshold"]) if ("vip_threshold" in keys and row["vip_threshold"] is not None) else 4.0,
+            "auto_digest_push": bool(row["auto_digest_push"]) if "auto_digest_push" in keys else False,
+            "auto_star_push": bool(row["auto_star_push"]) if "auto_star_push" in keys else False,
+            "updated_at": row["updated_at"] if "updated_at" in keys else ""
+        }
+
+def update_radar_settings(
+    enabled: Optional[bool] = None,
+    interval_minutes: Optional[int] = None,
+    max_analyze_per_cycle: Optional[int] = None,
+    notification_mode: Optional[str] = None,
+    daily_digest_hour: Optional[int] = None,
+    vip_threshold: Optional[float] = None,
+    auto_digest_push: Optional[bool] = None,
+    auto_star_push: Optional[bool] = None,
+) -> Dict[str, Any]:
+    current = get_radar_settings()
+    new_enabled = enabled if enabled is not None else current["enabled"]
+    new_interval = interval_minutes if interval_minutes is not None else current["interval_minutes"]
+    new_max = max_analyze_per_cycle if max_analyze_per_cycle is not None else current["max_analyze_per_cycle"]
+    new_mode = notification_mode if notification_mode is not None else current["notification_mode"]
+    new_hour = daily_digest_hour if daily_digest_hour is not None else current["daily_digest_hour"]
+    new_vip = vip_threshold if vip_threshold is not None else current["vip_threshold"]
+    new_digest = auto_digest_push if auto_digest_push is not None else current["auto_digest_push"]
+    new_star = auto_star_push if auto_star_push is not None else current["auto_star_push"]
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("""
+            UPDATE radar_settings
+            SET enabled = ?,
+                interval_minutes = ?,
+                max_analyze_per_cycle = ?,
+                notification_mode = ?,
+                daily_digest_hour = ?,
+                vip_threshold = ?,
+                auto_digest_push = ?,
+                auto_star_push = ?,
+                updated_at = ?
+            WHERE id = 1
+        """, (
+            1 if new_enabled else 0,
+            new_interval,
+            new_max,
+            new_mode,
+            new_hour,
+            new_vip,
+            1 if new_digest else 0,
+            1 if new_star else 0,
+            now_iso
+        ))
+    return get_radar_settings()
+
 # ── Topic Signal Tuning (Weights) ───────────────────────────
 
 def get_all_topic_weights() -> List[Dict[str, Any]]:
@@ -1163,29 +1310,46 @@ def create_ingest_task(
     url: str,
     source: str = "telegram",
     chat_id: Optional[Any] = None,
-    message_id: Optional[int] = None
+    message_id: Optional[int] = None,
+    dedupe_key: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Insert a new ingestion task into SQLite queue (fast, <10ms)"""
+    """Persist a task, deduplicating replayed upstream messages without a migration."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    task_id = uuid.uuid4().hex[:12]
+    task_id = (uuid.uuid5(uuid.NAMESPACE_URL, f"omnikeep:{source}:{chat_id}:{dedupe_key}").hex[:12]
+               if dedupe_key is not None else uuid.uuid4().hex[:12])
     now_iso = datetime.now(timezone.utc).isoformat()
     cursor.execute("""
-        INSERT INTO ingest_tasks (id, url, source, chat_id, message_id, status, created_at, updated_at)
+        INSERT OR IGNORE INTO ingest_tasks (id, url, source, chat_id, message_id, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
     """, (task_id, url.strip(), source, chat_id, message_id, now_iso, now_iso))
     conn.commit()
+    row = conn.execute("SELECT * FROM ingest_tasks WHERE id = ?", (task_id,)).fetchone()
     conn.close()
-    return {
-        "id": task_id,
-        "url": url.strip(),
-        "source": source,
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "status": "queued",
-        "created_at": now_iso,
-        "updated_at": now_iso
-    }
+    res = dict(row)
+    if isinstance(chat_id, int) and res.get("chat_id") is not None:
+        try:
+            res["chat_id"] = int(res["chat_id"])
+        except (ValueError, TypeError):
+            pass
+    return res
+
+
+def set_ingest_task_message_id(task_id: str, message_id: int) -> bool:
+    """Attach the receipt after durable intake; restore delivery if work finished first."""
+    with closing(get_db_connection()) as conn, conn:
+        updated = conn.execute("""
+            UPDATE ingest_tasks
+            SET message_id = ?,
+                error_message = CASE
+                    WHEN status = 'completed' AND error_message IS NULL THEN ?
+                    ELSE error_message
+                END,
+                updated_at = ?
+            WHERE id = ? AND message_id IS NULL
+        """, (message_id, NOTIFICATION_PENDING,
+              datetime.now(timezone.utc).isoformat(), task_id))
+        return updated.rowcount > 0
 
 def claim_next_task() -> Optional[Dict[str, Any]]:
     """Atomically fetch and lock the oldest queued task into 'processing' status"""
@@ -1880,3 +2044,62 @@ def get_swipe_deck(limit: int = 10) -> List[Dict[str, Any]]:
     conn.close()
     from app.watch.taste import rank_deck
     return rank_deck(rows)[:limit]
+
+
+def seed_demo_items() -> List[Dict[str, Any]]:
+    """Seed high-quality demo items for cold-start first time users."""
+    demos = [
+        {
+            "url": "https://www.youtube.com/watch?v=kCc8FmEb1nY",
+            "source_type": "youtube",
+            "category_name": "AI",
+            "title_l1": "Andrej Karpathy: Let's reproduce GPT-2 (124M)",
+            "summary_l1": "Andrej Karpathy 從零使用 PyTorch 重現 GPT-2 (124M) 完整訓練流程，解說權重加載、FlashAttention-2 核心融合加速與混合精度數值穩定性。",
+            "tech_tags": ["LLM", "PyTorch", "FlashAttention", "GPT-2"],
+            "deep_analysis": "## 核心技術拆解\n\n### 1. 權重與字典載入\n- 使用 HuggingFace `gpt2` 官方權重進行位元層級無損轉換。\n- 特別處理 LayerNorm 與 Linear bias 權重衰減（Weight Decay）隔離。\n\n### 2. 核心計算加速\n- 引入 FlashAttention-2 核心融合，規避中間注意力矩陣寫入高頻寬記憶體（HBM）。\n- 採 `bfloat16` 格式進行矩陣乘法，兼顧數值動態範圍與硬體張量核心利用率。\n\n### 3. 架構決策與啟發\n- 小規模實驗首選高利用率核心融合；學習率調度採 Cosine Annealing 與 Warmup。",
+            "content_raw": "Andrej Karpathy: Let's reproduce GPT-2: 124M in code, from scratch. Walkthrough of building the model, training pipeline, and optimization tricks.",
+            "author": "Andrej Karpathy",
+            "published_date": "2024-06-12",
+            "cover_image": "https://img.youtube.com/vi/kCc8FmEb1nY/hqdefault.jpg",
+            "is_starred": 1,
+            "is_read": 0,
+            "origin": "manual",
+        },
+        {
+            "url": "https://www.bilibili.com/video/BV1xx411c7mD",
+            "source_type": "bilibili",
+            "category_name": "技術架構",
+            "title_l1": "【架構解析】大模型推理記憶體頻寬瓶頸與推測解碼 (Speculative Decoding) 原理",
+            "summary_l1": "深入解析自回歸大模型推理中的記憶體頻寬受限 (Memory Bound) 瓶頸，探討 Small Draft Model + Target Model 驗證的推測解碼機制，實現 2x-3x 無損加速。",
+            "tech_tags": ["推理優化", "推測解碼", "KV Cache", "Memory Bound"],
+            "deep_analysis": "## 架構關鍵點\n\n### 1. 自回歸瓶頸根源\n- Token-by-token 生成過程具有極低算力運算強度（Arithmetic Intensity），主要時間耗費在讀取模型權重與 KV Cache。\n\n### 2. Speculative Decoding 運作機制\n- 小型 Draft 模型先行連續猜測 K 個 Token（計算速度極快）。\n- 大型 Target 模型僅需做一次矩陣前向傳播（Forward Pass）即可同時驗證 K 個 Token。\n\n### 3. 拒絕採樣 (Rejection Sampling)\n- 嚴格維持目標模型原本的機率分佈，數學層面保證輸出品質與直接採樣完全無損。",
+            "content_raw": "大模型推理加速技術解析：推測解碼（Speculative Decoding）原理、拒絕採樣機制與實務落地指引。",
+            "author": "技術架構研究組",
+            "published_date": "2024-09-18",
+            "cover_image": "",
+            "is_starred": 0,
+            "is_read": 0,
+            "origin": "manual",
+        },
+        {
+            "url": "https://github.com/fastapi/fastapi",
+            "source_type": "web",
+            "category_name": "開源專案",
+            "title_l1": "FastAPI: 現代高效能非同步 Python Web 框架核心設計",
+            "summary_l1": "FastAPI 基於 Starlette 與 Pydantic 構建，透過 Python 類型標註實現自動資料驗證與 OpenAPI 交互式文件生成，效能逼近 NodeJS 與 Go。",
+            "tech_tags": ["FastAPI", "Python", "ASGI", "OpenAPI", "Pydantic"],
+            "deep_analysis": "## 框架設計哲學\n\n### 1. 類型驅動與資料驗證\n- 全面擁抱標準 Python 3.8+ Type Hints，降低開發者心理負擔。\n- Pydantic v2 底層採用 Rust (pydantic-core) 重寫，序列化效能大幅提升。\n\n### 2. 依賴注入 (Dependency Injection)\n- `Depends()` 設計讓資料庫連線、身分驗證與權限控制能以極低耦合度橫向組合。\n\n### 3. 非同步原生架構\n- 深度整合 ASGI 標準，無縫支援非同步 WebSocket 與長輪詢情境。",
+            "content_raw": "FastAPI framework, high performance, easy to learn, fast to code, ready for production.",
+            "author": "Tiangolo",
+            "published_date": "2024-08-01",
+            "cover_image": "",
+            "is_starred": 1,
+            "is_read": 1,
+            "origin": "manual",
+        }
+    ]
+    created = []
+    for d in demos:
+        save_item(d)
+        created.append(d)
+    return created

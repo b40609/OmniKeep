@@ -1,5 +1,10 @@
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
+import io
+import json
+import zipfile
+import re
+from datetime import datetime
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from app.database import (
@@ -9,7 +14,8 @@ from app.database import (
     delete_item,
     get_status_counts,
     get_citations_for_target,
-    get_sub_entities_for_parent
+    get_sub_entities_for_parent,
+    seed_demo_items
 )
 
 router = APIRouter(prefix="/api/items", tags=["Items"])
@@ -20,6 +26,16 @@ class ItemUpdate(BaseModel):
     is_read: Optional[int] = None
     title_l1: Optional[str] = None
     summary_l1: Optional[str] = None
+
+@router.post("/seed-demo")
+async def seed_demo():
+    items = seed_demo_items()
+    return {
+        "success": True,
+        "count": len(items),
+        "message": f"已成功注入 {len(items)} 個示範項目"
+    }
+
 
 @router.get("/stats", response_model=Dict[str, int])
 async def get_stats():
@@ -43,6 +59,88 @@ async def list_items(
     offset: int = Query(0, ge=0)
 ):
     return get_items(category=category, query=q, is_starred=starred, is_read=read, limit=limit, offset=offset)
+
+@router.get("/export")
+async def export_items(
+    format: str = Query("json", description="Export format: json or markdown (zip)"),
+    starred_only: bool = Query(False, description="Export only starred items"),
+    category: Optional[str] = Query(None, description="Filter by category")
+):
+    items = get_items(
+        category=category,
+        is_starred=True if starred_only else None,
+        limit=100000,
+        offset=0
+    )
+    now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if format.lower() == "json":
+        data = {
+            "version": "1.0",
+            "exported_at": datetime.now().isoformat(),
+            "count": len(items),
+            "items": items
+        }
+        json_bytes = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        return Response(
+            content=json_bytes,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="omnikeep_export_{now_str}.json"'
+            }
+        )
+    elif format.lower() in ("markdown", "zip", "md"):
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for item in items:
+                title = item.get("title_l1") or "untitled"
+                safe_title = re.sub(r'[\/:*?"<>|]', "_", title)[:60].strip()
+                date_prefix = (item.get("created_at") or "")[:10] or "nodate"
+                filename = f"{date_prefix}_{safe_title}.md"
+
+                tags_list = item.get("tech_tags") or "[]"
+                if isinstance(tags_list, str):
+                    try:
+                        tags_list = json.loads(tags_list)
+                    except Exception:
+                        tags_list = [t.strip() for t in tags_list.split(",") if t.strip()]
+                tags_yaml = ", ".join([f'"{t}"' for t in tags_list])
+
+                md_content = f"""---
+title: "{title.replace('"', '\"')}"
+url: "{item.get('url', '')}"
+category: "{item.get('category_name', 'Inbox')}"
+tags: [{tags_yaml}]
+starred: {str(bool(item.get('is_starred'))).lower()}
+read: {str(bool(item.get('is_read'))).lower()}
+created_at: "{item.get('created_at', '')}"
+---
+
+# {title}
+
+> **核心摘要與痛點**  
+> {item.get('summary_l1', '')}
+
+## 深度技術架構解構 (Architecture Details)
+{item.get('deep_analysis') or '（無深入分析）'}
+
+---
+## 原文收錄內容 (Raw Content)
+{item.get('content_raw') or '（無原文內容）'}
+"""
+                zf.writestr(filename, md_content.encode("utf-8"))
+
+        zip_buf.seek(0)
+        return StreamingResponse(
+            zip_buf,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="omnikeep_markdown_{now_str}.zip"'
+            }
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported export format. Use 'json' or 'markdown'")
+
 
 @router.get("/{item_id}/snapshot")
 async def get_snapshot(item_id: str):

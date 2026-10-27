@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.config import settings
@@ -139,3 +139,12 @@ async def session_login(req: LoginRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"已啟動 Chrome 但開啟登入頁失敗: {e}")
 
     return {"success": True, "platform": req.platform, "url": meta["login_url"]}
+
+@router.get("/local-auth")
+async def get_local_auth(request: Request):
+    """Zero-friction auto-auth for local users connecting via loopback (localhost)."""
+    client_host = request.client.host if request.client else ""
+    is_loopback = client_host in {"127.0.0.1", "::1", "localhost", "testclient"}
+    if not (is_loopback and settings.LOCAL_AUTO_LOGIN):
+        return {"authenticated": False, "api_key": ""}
+    return {"authenticated": True, "api_key": settings.API_KEY}

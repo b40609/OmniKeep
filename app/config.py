@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -7,20 +8,21 @@ from pydantic import Field, field_validator
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
-    HOST: str = "0.0.0.0"
+    HOST: str = "127.0.0.1"
     PORT: int = 5000
     API_KEY: str = ""
+    LOCAL_AUTO_LOGIN: bool = False
     CORS_ORIGINS: List[str] = []
     BACKGROUND_SERVICES_ENABLED: bool = True
     RELEVANCE_CONCURRENCY: int = 2
     RELEVANCE_QUEUE_SIZE: int = 100
     ENABLE_BROWSER_FALLBACK: bool = False
     
-    # Primary LLM Configuration (Agnes AI 3.0 OpenAI-Compatible Endpoint)
+    # Primary LLM Configuration (OpenAI-Compatible Endpoint: OpenAI, DeepSeek, Ollama, Groq, etc.)
     PRIMARY_LLM_PROVIDER: str = "openai_compatible"
-    OPENAI_BASE_URL: str = "https://platform.agnes-ai.com/v1"
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_API_KEY: str = ""
-    PRIMARY_MODEL: str = "agnes-3.0-flash"
+    PRIMARY_MODEL: str = "gpt-4o-mini"
     
     # Gemini Configuration
     GEMINI_API_KEYS_RAW: str = Field(default="", validation_alias="GEMINI_API_KEYS")
@@ -36,7 +38,7 @@ class Settings(BaseSettings):
     # live extraction impossible, so we fetch decrypted cookies over the
     # DevTools protocol from a dedicated automation profile instead.
     BROWSER_CDP_PORT: int = 9222
-    BROWSER_CDP_PROFILE_DIR: str = str(Path.home() / "AppData" / "Local" / "OmniKeep" / "chrome-cdp")
+    BROWSER_CDP_PROFILE_DIR: str = str(Path.home() / "AppData" / "Local" / "OmniKeep" / "chrome-cdp" if sys.platform == "win32" else Path.home() / ".omnikeep" / "chrome-cdp")
     BROWSER_CDP_AUTOLAUNCH: bool = True
 
     # Telegram Bot Configuration
@@ -44,13 +46,13 @@ class Settings(BaseSettings):
     TELEGRAM_ALLOWED_USER_IDS_RAW: str = Field(default="", validation_alias="TELEGRAM_ALLOWED_USER_IDS")
 
     # Radar Engine Configuration
-    RADAR_ENABLED: bool = True
-    RADAR_INTERVAL_SECONDS: int = 300
+    RADAR_ENABLED: bool = False
+    RADAR_INTERVAL_SECONDS: int = 10800
     GITHUB_TOKEN: str = ""
 
     # Radar cost gate (A-minimal): analyze only the best candidates per cycle;
     # the rest are stored as pending stubs and backfilled in later cycles.
-    RADAR_MAX_ANALYZE_PER_CYCLE: int = 6
+    RADAR_MAX_ANALYZE_PER_CYCLE: int = 3
     # Auto-star tiering: analyzed items scoring at/above the threshold are
     # bookmarked, behavior-logged and announced on Telegram. Conservative
     # default — needs multiple explicitly boosted topics to reach 2.5.
@@ -71,7 +73,7 @@ class Settings(BaseSettings):
     BACKUP_HOUR: int = 4                # daily backup window (local time)
 
     # LLM rate-limit protection (client-side pacing shared by all callers).
-    # Agnes 3.0 Flash is priced at $0 (unlimited tokens) but free-tier API keys
+    # Cloud LLMs may enforce rate limits (RPM);
     # carry a low requests-per-minute ceiling — pace conservatively by default
     # and let the adaptive limiter ease off when the account allows more.
     LLM_MIN_REQUEST_INTERVAL: float = 2.5   # seconds between request starts (≈24 RPM); adapts up on 429

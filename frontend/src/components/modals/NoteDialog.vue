@@ -52,19 +52,16 @@ async function submit() {
       <div class="flex items-center justify-between gap-3">
         <div class="flex items-center gap-2 text-xs">
           <span class="text-subtle-foreground">指定分類</span>
-          <select
-            v-model="noteCategory"
-            class="h-8 cursor-pointer rounded-full bg-white/55 px-3 text-xs font-semibold text-foreground shadow-sm focus:outline-none dark:bg-white/[0.08]"
-          >
-            <option value="">🤖 AI 自動研判</option>
-            <option v-for="c in itemsStore.categories" :key="c.id" :value="c.name">{{ c.name }}</option>
+          <select v-model="noteCategory" class="h-8 cursor-pointer rounded-lg border border-border bg-input px-3 text-xs font-medium text-foreground shadow-sm focus:border-primary focus:outline-none">
+            <option value="" class="bg-popover text-foreground">AI 自動分類</option>
+            <option v-for="c in itemsStore.categories" :key="c.id" :value="c.name" class="bg-popover text-foreground">{{ c.name }}</option>
           </select>
         </div>
         <div class="flex items-center gap-2">
           <Button variant="ghost" @click="ui.showNoteModal = false">取消</Button>
           <Button :disabled="!noteContent.trim() || ui.isIngesting" @click="submit">
             <Loader2 v-if="ui.isIngesting" class="size-3.5 animate-spin" />
-            {{ ui.isIngesting ? 'AI 解析中…' : '存入大腦' }}
+            {{ ui.isIngesting ? '建立中…' : '儲存筆記' }}
           </Button>
         </div>
       </div>
