@@ -52,14 +52,21 @@ if not exist ".env" (
     )
 )
 
-:: 4. Start Server and open browser
+:: 4. Detect Port and Start Server
+set "OMNI_PORT=5000"
+if exist ".env" (
+    for /f "tokens=1,2 delims==" %%A in (.env) do (
+        if "%%A"=="PORT" set "OMNI_PORT=%%B"
+    )
+)
+
 echo.
 echo [*] 正在啟動 OmniKeep 伺服器...
-echo [*] 本機存取儀表板: http://localhost:8000
-echo [*] API 規格文件:   http://localhost:8000/docs
+echo [*] 本機存取儀表板: http://localhost:!OMNI_PORT!
+echo [*] API 規格文件:   http://localhost:!OMNI_PORT!/docs
 echo.
 
-start "" "http://localhost:8000"
+start "" "http://localhost:!OMNI_PORT!"
 
 .venv\Scripts\python.exe run.py
 
