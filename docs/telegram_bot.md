@@ -9,12 +9,12 @@ OmniKeep Telegram Bot 讓你無論在手機端（iPhone、Android）或電腦端
 ### 第一步：取得 Telegram Bot Token
 1. 在 Telegram 中搜尋官方機器人 **`@BotFather`**。
 2. 發送 `/newbot`，依提示依序輸入：
-   - 機器人名稱（例如：`Ryan Second Brain`）
-   - 機器人帳號使用者名稱（必須以 `bot` 結尾，例如：`ryan_omnifs_bot`）
+   - 機器人名稱（例如：`My OmniKeep Brain`）
+   - 機器人帳號使用者名稱（必須以 `bot` 結尾，例如：`my_omnikeep_bot`）
 3. BotFather 會產生一組專屬 Token（格式如：`7123456789:AAFn_xxxxxxxxxxxxxxxx`）。
-4. 開啟 `c:\Users\user\Desktop\OmniKeep\.env`，填入：
+4. 開啟 `.env`，填入：
    ```env
-   TELEGRAM_BOT_TOKEN=7123456789:AAFn_xxxxxxxxxxxxxxxx
+   TELEGRAM_BOT_TOKEN=your_bot_token_here
    ```
 
 ---

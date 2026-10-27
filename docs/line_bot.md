@@ -9,7 +9,7 @@
 
 ### 第一步：在 LINE Developers 建立免費 Bot
 1. 前往 **[LINE Developers Console](https://developers.line.biz/)** 並以你的 LINE 帳號登入。
-2. 建立或選擇一個 Provider（例如：`Ryan Personal`）。
+2. 建立或選擇一個 Provider（例如：`Example Provider`）。
 3. 點擊 **Create a new channel**，選擇 **Messaging API**：
    - Channel name：`OmniKeep`（或任意你喜歡的名稱）
    - Channel description：`My AI Second Brain`
@@ -17,7 +17,7 @@
 4. 進入剛建好的 Channel 頁面，取得兩組關鍵憑證：
    - **Basic settings 頁籤**：複製 **`Channel secret`**。
    - **Messaging API 頁籤**：滑到最下方，點擊 Issue 取得 **`Channel access token (long-lived)`**。
-5. 開啟 `c:\Users\user\Desktop\OmniKeep\.env`，填入：
+5. 編輯專案根目錄的 `.env`，填入自己在 LINE Developers 建立的憑證：
    ```env
    LINE_CHANNEL_SECRET=你的ChannelSecret
    LINE_CHANNEL_ACCESS_TOKEN=你的ChannelAccessToken

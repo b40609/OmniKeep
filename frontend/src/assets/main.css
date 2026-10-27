@@ -9,6 +9,7 @@
    frosted-glass surfaces, soft shadows.
    ============================================================ */
 :root {
+  color-scheme: light;
   /* iOS Light */
   --background: #f2f2f7;            /* systemGroupedBackground */
   --background-subtle: #ffffff;     /* secondarySystemGroupedBackground */
@@ -59,14 +60,16 @@
   --glass-tint: rgba(255, 255, 255, 0.42);
 }
 
+:root.dark,
 .dark {
-  /* iOS Dark */
-  --background: #000000;
-  --background-subtle: #1c1c1e;     /* secondarySystemGroupedBackground dark */
+  color-scheme: dark;
+  /* Modern Deep Slate Dark */
+  --background: #111216;
+  --background-subtle: #18191f;
   --foreground: #ffffff;
-  --card: #1c1c1e;
+  --card: #18191f;
   --card-foreground: #ffffff;
-  --popover: #2c2c2e;
+  --popover: #22232a;
   --popover-foreground: #ffffff;
   --muted: rgba(118, 118, 128, 0.24);
   --muted-foreground: rgba(235, 235, 245, 0.6);
@@ -76,14 +79,10 @@
   --border: rgba(84, 84, 88, 0.6);
   --border-strong: rgba(110, 110, 115, 0.7);
   --hairline: rgba(84, 84, 88, 0.45);
-  --input: #1c1c1e;
+  --input: #18191f;
   --ring: #0a84ff;
 
-  --primary: #0a84ff;
-  --primary-hover: #409cff;
-  --primary-foreground: #ffffff;
-  --primary-soft: rgba(10, 132, 255, 0.18);
-  --primary-soft-foreground: #64aefc;
+  /* Primary accent colors managed by data-accent */
 
   --success: #30d158;
   --success-soft: rgba(48, 209, 88, 0.18);
@@ -98,16 +97,234 @@
 
   --scrollbar-thumb: rgba(235, 235, 245, 0.2);
   --scrollbar-thumb-hover: rgba(235, 235, 245, 0.35);
-  --nav-blur: rgba(18, 18, 22, 0.55);
+  --nav-blur: rgba(18, 18, 22, 0.7);
   --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   --float-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
 
   /* Liquid glass surfaces */
-  --glass-bg: rgba(30, 30, 36, 0.5);
-  --glass-bg-strong: rgba(36, 36, 44, 0.66);
+  --glass-bg: rgba(30, 30, 36, 0.7);
+  --glass-bg-strong: rgba(36, 36, 44, 0.85);
   --glass-border: rgba(255, 255, 255, 0.14);
   --glass-highlight: rgba(255, 255, 255, 0.12);
   --glass-tint: rgba(120, 120, 135, 0.14);
+}
+
+/* OLED Pure Black (High Contrast / Zero-Glass) */
+:root.oled,
+.oled {
+  color-scheme: dark;
+  --background: #000000;
+  --background-subtle: #0d0d0f;
+  --foreground: #ffffff;
+  --card: #121214;
+  --card-foreground: #ffffff;
+  --popover: #18181b;
+  --popover-foreground: #ffffff;
+  --muted: rgba(255, 255, 255, 0.1);
+  --muted-foreground: #a1a1aa;
+  --subtle-foreground: #71717a;
+  --accent: rgba(255, 255, 255, 0.1);
+  --accent-foreground: #ffffff;
+  --border: rgba(255, 255, 255, 0.16);
+  --border-strong: rgba(255, 255, 255, 0.28);
+  --hairline: rgba(255, 255, 255, 0.1);
+  --input: #121214;
+  --ring: #0a84ff;
+
+  /* Primary accent colors managed by data-accent */
+
+  --success: #30d158;
+  --success-soft: rgba(48, 209, 88, 0.18);
+  --warning: #ff9f0a;
+  --warning-soft: rgba(255, 159, 10, 0.18);
+  --danger: #ff453a;
+  --danger-soft: rgba(255, 69, 58, 0.16);
+  --info: #64d2ff;
+  --info-soft: rgba(100, 210, 255, 0.18);
+  --purple: #bf5af2;
+  --purple-soft: rgba(191, 90, 242, 0.18);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
+  --nav-blur: #000000;
+  --card-shadow: none;
+  --float-shadow: 0 4px 24px rgba(0, 0, 0, 0.9);
+
+  --glass-bg: #121214;
+  --glass-bg-strong: #18181b;
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-highlight: transparent;
+  --glass-tint: #18181b;
+}
+
+/* Hide floating aurora blur in OLED mode for true pure black and zero GPU waste */
+.oled .aurora {
+  display: none !important;
+}
+
+/* ============================================================
+   Accent Color Palettes (Data-Accent on root/html)
+   Rock-solid specificity across Light, Dark, and OLED pure black
+   ============================================================ */
+
+/* 1. iOS Blue (Default) */
+[data-accent="blue"],
+:root[data-accent="blue"] {
+  --primary: #007aff;
+  --primary-hover: #0071eb;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(0, 122, 255, 0.12);
+  --primary-soft-foreground: #007aff;
+  --ring: #007aff;
+}
+:root.dark[data-accent="blue"],
+:root.oled[data-accent="blue"],
+.dark[data-accent="blue"],
+.oled[data-accent="blue"] {
+  --primary: #0a84ff;
+  --primary-hover: #409cff;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(10, 132, 255, 0.18);
+  --primary-soft-foreground: #64aefc;
+  --ring: #0a84ff;
+}
+
+/* 2. Linear Violet */
+[data-accent="violet"],
+:root[data-accent="violet"] {
+  --primary: #5e6ad2;
+  --primary-hover: #4f5bc4;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(94, 106, 210, 0.14);
+  --primary-soft-foreground: #5e6ad2;
+  --ring: #5e6ad2;
+}
+:root.dark[data-accent="violet"],
+:root.oled[data-accent="violet"],
+.dark[data-accent="violet"],
+.oled[data-accent="violet"] {
+  --primary: #6e79d6;
+  --primary-hover: #828df8;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(110, 121, 214, 0.22);
+  --primary-soft-foreground: #9ba5ff;
+  --ring: #6e79d6;
+}
+
+/* 3. Emerald Green */
+[data-accent="emerald"],
+:root[data-accent="emerald"] {
+  --primary: #059669;
+  --primary-hover: #047857;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(5, 150, 105, 0.14);
+  --primary-soft-foreground: #059669;
+  --ring: #059669;
+}
+:root.dark[data-accent="emerald"],
+:root.oled[data-accent="emerald"],
+.dark[data-accent="emerald"],
+.oled[data-accent="emerald"] {
+  --primary: #10b981;
+  --primary-hover: #34d399;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(16, 185, 129, 0.22);
+  --primary-soft-foreground: #6ee7b7;
+  --ring: #10b981;
+}
+
+/* 4. Amber Orange */
+[data-accent="amber"],
+:root[data-accent="amber"] {
+  --primary: #d97706;
+  --primary-hover: #b45309;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(217, 119, 6, 0.14);
+  --primary-soft-foreground: #d97706;
+  --ring: #d97706;
+}
+:root.dark[data-accent="amber"],
+:root.oled[data-accent="amber"],
+.dark[data-accent="amber"],
+.oled[data-accent="amber"] {
+  --primary: #f59e0b;
+  --primary-hover: #fbbf24;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(245, 158, 11, 0.22);
+  --primary-soft-foreground: #fcd34d;
+  --ring: #f59e0b;
+}
+
+/* 5. Rose Red */
+[data-accent="rose"],
+:root[data-accent="rose"] {
+  --primary: #e11d48;
+  --primary-hover: #be123c;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(225, 29, 72, 0.14);
+  --primary-soft-foreground: #e11d48;
+  --ring: #e11d48;
+}
+:root.dark[data-accent="rose"],
+:root.oled[data-accent="rose"],
+.dark[data-accent="rose"],
+.oled[data-accent="rose"] {
+  --primary: #f43f5e;
+  --primary-hover: #fb7185;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(244, 63, 94, 0.22);
+  --primary-soft-foreground: #fda4af;
+  --ring: #f43f5e;
+}
+
+/* 6. Minimalist Zinc */
+[data-accent="zinc"],
+:root[data-accent="zinc"] {
+  --primary: #3f3f46;
+  --primary-hover: #27272a;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(63, 63, 70, 0.14);
+  --primary-soft-foreground: #3f3f46;
+  --ring: #52525b;
+}
+:root.dark[data-accent="zinc"],
+:root.oled[data-accent="zinc"],
+.dark[data-accent="zinc"],
+.oled[data-accent="zinc"] {
+  --primary: #e4e4e7;
+  --primary-hover: #ffffff;
+  --primary-foreground: #09090b;
+  --primary-soft: rgba(255, 255, 255, 0.15);
+  --primary-soft-foreground: #f4f4f5;
+  --ring: #d4d4d8;
+}
+
+/* ============================================================
+   Native Form Elements Dark Mode Fix (Chromium / Windows)
+   ============================================================ */
+select {
+  color-scheme: light dark;
+}
+
+option {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.dark select,
+.oled select {
+  color-scheme: dark;
+}
+
+.dark option,
+.oled option {
+  background-color: #18191f;
+  color: #ffffff;
+}
+
+.oled option {
+  background-color: #121214;
+  color: #ffffff;
 }
 
 @theme inline {
@@ -149,6 +366,8 @@
   --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo,
     Consolas, monospace;
 
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.875rem;
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
 

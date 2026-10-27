@@ -18,6 +18,12 @@ import {
   Star,
   Archive,
   VolumeX,
+  Bell,
+  BellOff,
+  Clock,
+  Save,
+  Pause,
+  Play,
 } from 'lucide-vue-next'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import Badge from '@/components/ui/badge/Badge.vue'
@@ -35,8 +41,51 @@ const ui = useUiStore()
 const radar = useRadarStore()
 const { tuneTopic } = useSignal()
 
-type RadarTab = 'sources' | 'topics' | 'digests' | 'dreampass' | 'rules'
-const tab = ref<RadarTab>('sources')
+type RadarTab = 'settings' | 'sources' | 'topics' | 'digests' | 'dreampass' | 'rules'
+const tab = ref<RadarTab>('settings')
+
+// ---------------- Radar Settings & Schedule ----------------
+const isSavingSettings = ref(false)
+const scheduleSettings = ref<api.RadarSettings>({
+  enabled: true,
+  interval_minutes: 180,
+  max_analyze_per_cycle: 3,
+  notification_mode: 'silent',
+  daily_digest_hour: 8,
+  vip_threshold: 4.0,
+})
+
+watch(
+  () => radar.settings,
+  (st) => {
+    if (st) {
+      scheduleSettings.value = { ...st }
+    }
+  },
+  { immediate: true }
+)
+
+async function handleSaveSettings() {
+  isSavingSettings.value = true
+  try {
+    await radar.updateSettings(scheduleSettings.value)
+    toast.success('排程與推播設定已儲存更新')
+  } catch (e) {
+    toast.error('儲存設定失敗', { description: (e as Error).message })
+  } finally {
+    isSavingSettings.value = false
+  }
+}
+
+async function handleToggleSource(src: api.RadarSource) {
+  try {
+    const nextActive = src.is_active === 0 ? true : false
+    await radar.toggleSource(src.id, nextActive)
+    toast.success(nextActive ? `已啟用來源「${src.name}」` : `已暫停來源「${src.name}」`)
+  } catch (e) {
+    toast.error('切換來源失敗', { description: (e as Error).message })
+  }
+}
 const isScanning = ref(false)
 
 // Sources
@@ -297,7 +346,7 @@ watch(tab, (t) => {
           </div>
           <DialogHeader>
             <DialogTitle class="flex items-center gap-2">
-              情報雷達與自適應調度引擎
+              自動訂閱排程與監控中心 (Radar Engine)
               <span class="rounded border border-primary/30 bg-primary-soft px-1.5 py-px font-mono text-2xs text-primary-soft-foreground">ADAPTIVE RADAR</span>
             </DialogTitle>
             <DialogDescription>自適應排程 · Google News · 網頁監控 · Dream Pass 自省 · 0 Token 確定性規則</DialogDescription>
@@ -313,13 +362,14 @@ watch(tab, (t) => {
       <div class="flex shrink-0 items-center gap-1 border-b border-border px-5 text-xs overflow-x-auto" role="tablist">
         <button
           v-for="t in [
+            { id: 'settings', label: '排程與推播' },
             { id: 'sources', label: `訂閱來源 (${radar.sources.length})` },
-            { id: 'topics', label: `話題調諧 (${radar.topics.length})` },
-            { id: 'digests', label: `自動戰報 (${radar.digests.length})` },
-            { id: 'dreampass', label: '品味自省畫像' },
-            { id: 'rules', label: `硬規則引擎 (${rules.length || '•'})` },
+            { id: 'topics', label: `主題偏好 (${radar.topics.length})` },
+            { id: 'digests', label: `戰報彙整 (${radar.digests.length})` },
+            { id: 'dreampass', label: '興趣畫像' },
+            { id: 'rules', label: `自動化規則 (${rules.length || '•'})` },
           ]"
-          :key="t.id"
+          :key="t.id" 
           role="tab"
           :aria-selected="tab === t.id"
           class="relative flex h-10 shrink-0 items-center px-3 font-medium transition-colors"
@@ -333,6 +383,192 @@ watch(tab, (t) => {
 
       <!-- Panels -->
       <div class="min-h-0 flex-1 overflow-y-auto p-5">
+        <!-- Settings Panel -->
+        <div v-if="tab === 'settings'" class="space-y-4">
+          <!-- Background Polling Switch Card -->
+          <div class="glass-tint rounded-xl p-4 flex items-center justify-between gap-4">
+            <div class="space-y-0.5">
+              <div class="flex items-center gap-2">
+                <Clock class="size-4 text-primary" />
+                <span class="text-sm font-semibold text-foreground">背景自動巡檢排程</span>
+              </div>
+              <p class="text-2xs text-muted-foreground">
+                開啟後系統將在背景依照設定間隔週期自動探測來源更新。關閉時僅在點擊「立即巡檢」時觸發。
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              :aria-checked="scheduleSettings.enabled"
+              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+              :class="scheduleSettings.enabled ? 'bg-primary' : 'bg-muted-foreground/30'"
+              @click="scheduleSettings.enabled = !scheduleSettings.enabled"
+            >
+              <span
+                class="pointer-events-none inline-block size-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                :class="scheduleSettings.enabled ? 'translate-x-5' : 'translate-x-0'"
+              />
+            </button>
+          </div>
+
+          <!-- Interval & Budget -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <!-- Interval -->
+            <div class="glass-tint rounded-xl p-3.5 space-y-2">
+              <label class="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <RefreshCw class="size-3.5 text-muted-foreground" />
+                巡檢週期頻率
+              </label>
+              <select
+                v-model.number="scheduleSettings.interval_minutes"
+                :disabled="!scheduleSettings.enabled"
+                class="w-full h-8.5 rounded-md border border-border bg-input px-2.5 text-xs text-foreground focus:border-primary focus:outline-none disabled:opacity-50"
+              >
+                <option :value="0">手動巡檢（不排程）</option>
+                <option :value="60">每 1 小時</option>
+                <option :value="180">每 3 小時（預設推薦）</option>
+                <option :value="360">每 6 小時</option>
+                <option :value="720">每 12 小時</option>
+                <option :value="1440">每 24 小時（每日一次）</option>
+              </select>
+              <p class="text-3xs text-subtle-foreground">
+                自適應演算法會在非熱門更新時段主動退避，兼顧及時性與系統節能。
+              </p>
+            </div>
+
+            <!-- Budget Cap -->
+            <div class="glass-tint rounded-xl p-3.5 space-y-2">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Sliders class="size-3.5 text-muted-foreground" />
+                  單輪 AI 分析上限
+                </label>
+                <span class="font-mono text-xs font-bold text-primary">{{ scheduleSettings.max_analyze_per_cycle }} 篇</span>
+              </div>
+              <input
+                v-model.number="scheduleSettings.max_analyze_per_cycle"
+                type="range"
+                min="1"
+                max="10"
+                step="1"
+                class="w-full accent-primary h-2 bg-muted rounded-lg cursor-pointer mt-1"
+              >
+              <p class="text-3xs text-subtle-foreground">
+                超額候選文章將延後暫存為待分析 stub，分攤至後續輪次，避免消耗過多額度。
+              </p>
+            </div>
+          </div>
+
+          <!-- Telegram Notification Policy -->
+          <div class="glass-tint rounded-xl p-3.5 space-y-3">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Bell class="size-3.5 text-muted-foreground" />
+                Telegram 推播策略
+              </label>
+              <span class="text-3xs text-muted-foreground font-mono">
+                當前模式：{{ scheduleSettings.notification_mode === 'silent' ? '完全靜音' : scheduleSettings.notification_mode === 'daily_digest' ? '每日戰報' : 'VIP警戒' }}
+              </span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <!-- Silent Option -->
+              <div
+                class="cursor-pointer rounded-lg border p-3 transition-all"
+                :class="scheduleSettings.notification_mode === 'silent' ? 'border-primary bg-primary/5 text-foreground shadow-sm' : 'border-border/60 hover:border-border text-muted-foreground'"
+                @click="scheduleSettings.notification_mode = 'silent'"
+              >
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                    <BellOff class="size-3.5 text-muted-foreground" />
+                    完全靜音入庫
+                  </span>
+                  <span class="text-3xs rounded px-1.5 py-0.5 bg-primary/10 text-primary font-mono">推薦</span>
+                </div>
+                <p class="text-3xs leading-relaxed">
+                  巡檢與 AI 分析正常入庫，完全不推播 Telegram 訊息，消除通知疲勞。
+                </p>
+              </div>
+
+              <!-- Daily Digest Option -->
+              <div
+                class="cursor-pointer rounded-lg border p-3 transition-all"
+                :class="scheduleSettings.notification_mode === 'daily_digest' ? 'border-primary bg-primary/5 text-foreground shadow-sm' : 'border-border/60 hover:border-border text-muted-foreground'"
+                @click="scheduleSettings.notification_mode = 'daily_digest'"
+              >
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                    <Clock class="size-3.5 text-muted-foreground" />
+                    每日定時戰報
+                  </span>
+                </div>
+                <p class="text-3xs leading-relaxed">
+                  每天於指定時段彙整當日精華，發送單則彙整，不零散干擾。
+                </p>
+              </div>
+
+              <!-- VIP Alert Option -->
+              <div
+                class="cursor-pointer rounded-lg border p-3 transition-all"
+                :class="scheduleSettings.notification_mode === 'vip_alert' ? 'border-primary bg-primary/5 text-foreground shadow-sm' : 'border-border/60 hover:border-border text-muted-foreground'"
+                @click="scheduleSettings.notification_mode = 'vip_alert'"
+              >
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                    <Star class="size-3.5 text-amber-500" />
+                    重大警戒推播
+                  </span>
+                </div>
+                <p class="text-3xs leading-relaxed">
+                  平時完全靜默，僅在命中高分星標情報時立即推播。
+                </p>
+              </div>
+            </div>
+
+            <!-- Conditional sub-settings for daily_digest -->
+            <div v-if="scheduleSettings.notification_mode === 'daily_digest'" class="pt-2 border-t border-border/50 flex items-center justify-between text-xs">
+              <span class="text-muted-foreground text-2xs">每日戰報發送時段：</span>
+              <select
+                v-model.number="scheduleSettings.daily_digest_hour"
+                class="h-7 rounded border border-border bg-input px-2 text-2xs text-foreground focus:border-primary focus:outline-none"
+              >
+                <option v-for="h in 24" :key="h-1" :value="h-1">
+                  {{ String(h-1).padStart(2, '0') }}:00（{{ h-1 < 12 ? '上午' : '下午' }}）
+                </option>
+              </select>
+            </div>
+
+            <!-- Conditional sub-settings for vip_alert -->
+            <div v-if="scheduleSettings.notification_mode === 'vip_alert'" class="pt-2 border-t border-border/50 flex items-center justify-between text-xs">
+              <span class="text-muted-foreground text-2xs">推播評分門檻：</span>
+              <div class="flex items-center gap-2">
+                <input
+                  v-model.number="scheduleSettings.vip_threshold"
+                  type="range"
+                  min="3.0"
+                  max="5.0"
+                  step="0.5"
+                  class="w-24 accent-primary h-1.5 bg-muted rounded cursor-pointer"
+                >
+                <span class="font-mono text-xs font-semibold text-primary">>= {{ scheduleSettings.vip_threshold.toFixed(1) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Save Button Bar -->
+          <div class="flex items-center justify-between pt-1">
+            <span v-if="scheduleSettings.updated_at" class="text-3xs text-subtle-foreground font-mono">
+              上次更新：{{ scheduleSettings.updated_at.slice(0, 19).replace('T', ' ') }}
+            </span>
+            <span v-else />
+            <Button size="sm" :disabled="isSavingSettings" @click="handleSaveSettings">
+              <Loader2 v-if="isSavingSettings" class="size-3.5 animate-spin" />
+              <Save v-else class="size-3.5" />
+              儲存排程設定
+            </Button>
+          </div>
+        </div>
+
         <!-- Sources -->
         <div v-if="tab === 'sources'" class="space-y-4">
           <div class="glass-tint rounded-xl p-3.5">
@@ -364,15 +600,20 @@ watch(tab, (t) => {
             <Skeleton v-for="i in 3" :key="i" class="h-16 w-full rounded-xl" />
           </div>
           <div v-else class="space-y-2">
-            <div
+                        <div
               v-for="src in radar.sources"
               :key="src.id"
-              class="flex items-center justify-between gap-3 rounded-xl border-0 bg-white/45 p-3 text-xs shadow-sm transition-colors hover:bg-white/70 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]"
+              class="flex items-center justify-between gap-3 rounded-xl border-0 p-3 text-xs shadow-sm transition-all"
+              :class="src.is_active === 0
+                ? 'bg-muted/30 opacity-60 dark:bg-white/[0.02]'
+                : 'bg-white/45 hover:bg-white/70 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]'"
             >
               <div class="min-w-0 flex-1">
                 <div class="mb-1 flex items-center gap-2">
                   <Badge :class="sourceMeta(src.source_type).badgeClass">{{ sourceMeta(src.source_type).label }}</Badge>
                   <span class="truncate font-semibold text-foreground">{{ src.name }}</span>
+                  <span v-if="src.is_active === 0" class="rounded bg-muted px-1.5 py-px text-2xs text-muted-foreground font-mono">已暫停</span>
+                  <span v-else class="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-px text-2xs font-mono">運行中</span>
                   <span class="font-mono text-2xs text-subtle-foreground">Tier {{ src.tier ?? '—' }}</span>
                 </div>
                 <div class="flex items-center gap-3 truncate font-mono text-2xs text-subtle-foreground">
@@ -380,17 +621,31 @@ watch(tab, (t) => {
                   <span v-if="(src.hot_hours ?? []).length" class="shrink-0 rounded bg-primary-soft px-1.5 py-px text-primary-soft-foreground">
                     學習時段 {{ (src.hot_hours ?? []).map((h) => h + ':00').join('、') }}
                   </span>
-                  <span v-else class="shrink-0">時段分析中…</span>
+                  <span v-else class="shrink-0">時段學習中</span>
                 </div>
               </div>
-              <button
-                class="shrink-0 rounded-md p-2 text-subtle-foreground transition-colors hover:bg-danger-soft hover:text-danger"
-                title="移除追蹤"
-                aria-label="移除追蹤"
-                @click="removeSource(src.id)"
-              >
-                <Trash2 class="size-3.5" />
-              </button>
+              <div class="flex items-center gap-1 shrink-0">
+                <button
+                  class="rounded-md p-2 transition-colors"
+                  :class="src.is_active === 0
+                    ? 'text-primary hover:bg-primary-soft'
+                    : 'text-subtle-foreground hover:bg-muted hover:text-foreground'"
+                  :title="src.is_active === 0 ? '恢復自動巡檢' : '暫停此來源'"
+                  :aria-label="src.is_active === 0 ? '恢復' : '暫停'"
+                  @click="handleToggleSource(src)"
+                >
+                  <Play v-if="src.is_active === 0" class="size-3.5" />
+                  <Pause v-else class="size-3.5" />
+                </button>
+                <button
+                  class="rounded-md p-2 text-subtle-foreground transition-colors hover:bg-danger-soft hover:text-danger"
+                  title="刪除來源"
+                  aria-label="刪除來源"
+                  @click="removeSource(src.id)"
+                >
+                  <Trash2 class="size-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>

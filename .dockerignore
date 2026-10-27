@@ -21,3 +21,4 @@ tests/.tmp
 frontend/node_modules
 frontend/dist
 static/dist
+snapshots

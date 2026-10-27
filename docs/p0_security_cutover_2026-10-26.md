@@ -47,7 +47,7 @@ MCP 使用不存在的有限端點驗證閘門，未宣稱完成 SSE 工具握�
 
 建議訊息：`fix(security): 全域保護 REST 與 MCP，補上私密換 key 流程`
 
-P0 補丁另存於 `C:/Users/user/Desktop/OmniKeep-research/p0-security-review-20261026.patch`，以目前 HEAD 為基底，納入本次修補及必要的既有認證、登入、測試隔離底座；不含其餘 SSRF、DAO、提案、雷達與備份重構。尚未 stage 或 commit。
+P0 補丁另存於研究者本機的 `p0-security-review-20261026.patch`（未隨本倉庫發布），以當時 HEAD 為基底，納入本次修補及必要的既有認證、登入、測試隔離底座；不含其餘 SSRF、DAO、提案、雷達與備份重構。當時尚未 stage 或 commit。
 
 已在獨立目錄以 HEAD 加上 P0 補丁執行測試，**56 passed in 12.99s**（原始 51 例加本次 5 例），證明不依賴其餘未提交稽核修改。原工作目錄仍為 **105 passed**；前端認證測試 `npm test` 亦為 **4 passed**。補丁已確認可套用目前 index，`git diff --check` 通過。
 

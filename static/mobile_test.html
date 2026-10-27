@@ -52,6 +52,12 @@
       </div>
     </div>
 
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 mb-4">
+      <label class="text-sm text-zinc-300" for="api-key">API Key（僅供本次測試，不儲存）</label>
+      <input id="api-key" type="password" autocomplete="off" class="mt-2 w-full rounded border border-zinc-700 bg-zinc-950 p-2 text-white" placeholder="輸入自己安裝環境的 API Key">
+      <p class="mt-2 text-xs text-zinc-400">iOS 捷徑需自行設定 X-API-Key 標頭，請勿將金鑰放在網址中。</p>
+    </div>
+
     <!-- 1-Click Mobile Acceptance Test -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 mb-4 shadow-lg">
       <h2 class="text-sm font-semibold text-white mb-2 flex items-center gap-2">
@@ -96,7 +102,7 @@
             <li>• URL: <span class="text-blue-400">點上方「複製」按鈕貼上</span></li>
             <li>• 方法: <span class="text-emerald-400">POST</span></li>
             <li>• 標頭: <span class="text-zinc-300">Content-Type: application/json</span></li>
-            <li>• 標頭: <span class="text-zinc-300">X-API-Key: omnifs888</span></li>
+            <li>• 標頭: <span class="text-zinc-300">X-API-Key: 請填入自己的 API Key</span></li>
             <li>• 要求主體: <span class="text-zinc-300">JSON</span></li>
             <li>• 欄位 <span class="text-orange-400">url</span> = 選擇捷徑輸入（快捷方式輸入）</li>
             <li>• 欄位 <span class="text-orange-400">async_mode</span> = <span class="text-emerald-400">True</span> (布林值)</li>
@@ -125,11 +131,13 @@
 
   <script>
     const API_BASE = window.location.origin;
-    const API_KEY = "omnifs888";
+    function apiKey() {
+      return document.getElementById("api-key").value.trim();
+    }
 
     // Set initial webhook url dynamically based on current origin
     document.addEventListener("DOMContentLoaded", () => {
-      document.getElementById('webhook-url').innerText = `${API_BASE}/api/ingest?token=${API_KEY}`;
+      document.getElementById('webhook-url').innerText = `${API_BASE}/api/ingest`;
     });
 
     // Check backend health
@@ -172,19 +180,24 @@
         return;
       }
 
+      if (!apiKey()) {
+        alert("請先輸入自己的 API Key。")
+        return;
+      }
+
       btn.disabled = true;
       btn.innerText = "發送請求中...";
       box.classList.remove('hidden');
       status.className = "text-yellow-400 mb-1 flex items-center gap-1.5 font-bold";
       status.innerText = "⏳ 正在模擬 iOS 捷徑送出 POST 請求...";
-      detail.innerText = `POST ${API_BASE}/api/ingest?token=${API_KEY}\nPayload: ${JSON.stringify({ url: inputUrl, async_mode: true })}`;
+      detail.innerText = `POST ${API_BASE}/api/ingest\nPayload: ${JSON.stringify({ url: inputUrl, async_mode: true })}`;
 
       try {
-        const res = await fetch(`${API_BASE}/api/ingest?token=${API_KEY}`, {
+        const res = await fetch(`${API_BASE}/api/ingest`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-API-Key": API_KEY
+            "X-API-Key": apiKey()
           },
           body: JSON.stringify({
             url: inputUrl,

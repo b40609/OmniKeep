@@ -1,13 +1,16 @@
 import asyncio
 import pytest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.database import (
     init_db,
     create_ingest_task,
+    get_db_connection,
     get_ingest_task,
     get_user_setting,
     set_user_setting,
-    update_task_status
+    update_task_status,
+    set_ingest_task_message_id,
 )
 from app.queue.worker import TaskWorker
 from app.bot.telegram_bot import TelegramBot, build_mode_keyboard
@@ -151,7 +154,9 @@ async def test_telegram_bot_fast_ingestion():
 
     chat_id = 888222
     # Ingest URL with mock on create_ingest_task to test fast non-blocking queueing
-    with patch("app.bot.telegram_bot.create_ingest_task") as mock_create:
+    with patch("app.bot.telegram_bot.create_ingest_task") as mock_create, \
+         patch("app.bot.telegram_bot.set_ingest_task_message_id") as mock_attach:
+        mock_create.return_value = {"id": "test-task", "message_id": None}
         await bot.handle_update({
             "message": {
                 "chat": {"id": chat_id},
@@ -169,5 +174,101 @@ async def test_telegram_bot_fast_ingestion():
             url="https://github.com/fastapi/fastapi",
             source="telegram",
             chat_id=chat_id,
-            message_id=1001
+            message_id=None,
+            dedupe_key="50",
         )
+        mock_attach.assert_called_once_with("test-task", 1001)
+
+
+@pytest.mark.asyncio
+async def test_telegram_replayed_message_is_persisted_once_and_acknowledged_once():
+    bot = TelegramBot(token="123456:dummy-token-for-test")
+    bot.is_authorized = MagicMock(return_value=True)
+    bot.send_message = AsyncMock(return_value={"ok": True, "result": {"message_id": 130}})
+    update = {"update_id": 700, "message": {
+        "chat": {"id": 451}, "from": {"id": 451},
+        "message_id": 55, "text": "https://example.org/replay-once",
+    }}
+
+    await bot.handle_update(update)
+    await bot.handle_update(update)
+    rows = get_db_connection().execute(
+        "SELECT * FROM ingest_tasks WHERE url = ?", ("https://example.org/replay-once",)
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["message_id"] == 130
+    bot.send_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_telegram_receipt_failure_does_not_drop_intake():
+    bot = TelegramBot(token="123456:dummy-token-for-test")
+    bot.is_authorized = MagicMock(return_value=True)
+    bot.send_message = AsyncMock(side_effect=[
+        RuntimeError("temporary Telegram outage"),
+        {"ok": True, "result": {"message_id": 131}},
+    ])
+    update = {"update_id": 701, "message": {
+        "chat": {"id": 452}, "from": {"id": 452},
+        "message_id": 56, "text": "https://example.org/receipt-failure",
+    }}
+    await bot.handle_update(update)
+    task = get_db_connection().execute(
+        "SELECT * FROM ingest_tasks WHERE url = ?", ("https://example.org/receipt-failure",)
+    ).fetchone()
+    assert task["status"] == "queued"
+    assert task["message_id"] is None
+
+    await bot.handle_update(update)
+    task = get_db_connection().execute(
+        "SELECT * FROM ingest_tasks WHERE id = ?", (task["id"],)
+    ).fetchone()
+    assert task["message_id"] == 131
+    assert bot.send_message.await_count == 2
+
+
+def test_telegram_receipt_after_processing_restores_completion_delivery():
+    task = create_ingest_task("https://example.org/late-receipt", source="telegram",
+                              chat_id=456, dedupe_key="late")
+    update_task_status(task["id"], status="completed", item_id="preexisting-item")
+    assert set_ingest_task_message_id(task["id"], 200)
+    row = get_db_connection().execute("SELECT error_message FROM ingest_tasks WHERE id = ?",
+                                      (task["id"],)).fetchone()
+    assert row["error_message"] == "notify_v1:pending:0"
+
+
+@pytest.mark.asyncio
+async def test_telegram_polling_retries_failed_update_without_skipping():
+    bot = TelegramBot(token="123456:dummy-token-for-test")
+    updates = [{"update_id": 10}, {"update_id": 11}]
+    response = SimpleNamespace(status_code=200, json=lambda: {"ok": True, "result": updates})
+    client = MagicMock(get=AsyncMock(return_value=response))
+    bot.get_client = AsyncMock(return_value=client)
+    attempts = []
+
+    async def handle(update):
+        attempts.append(update["update_id"])
+        if len(attempts) == 1:
+            raise RuntimeError("transient database error")
+        if len(attempts) == 3:
+            bot.running = False
+
+    bot.handle_update = handle
+    with patch("app.bot.telegram_bot.asyncio.sleep", new=AsyncMock()):
+        await bot.run_polling()
+    assert attempts == [10, 10, 11]
+    assert [call.kwargs["params"]["offset"] for call in client.get.await_args_list] == [0, 0]
+
+
+@pytest.mark.asyncio
+async def test_telegram_supervisor_restarts_crashed_poller():
+    from app.main import supervise_telegram_polling
+
+    bot = MagicMock(run_polling=AsyncMock(side_effect=[
+        RuntimeError("temporary failure"), asyncio.CancelledError(),
+    ]))
+    with patch("app.main.asyncio.sleep", new=AsyncMock()) as sleep:
+        with pytest.raises(asyncio.CancelledError):
+            await supervise_telegram_polling(bot)
+    assert bot.run_polling.await_count == 2
+    sleep.assert_awaited_once_with(3)

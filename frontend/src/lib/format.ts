@@ -40,7 +40,7 @@ export function estimateReadTime(text: string | null | undefined): number {
   return Math.max(1, Math.round(cjk / 400 + latinWords / 220))
 }
 
-export type SourceVariant = 'youtube' | 'github' | 'note' | 'rss' | 'web'
+export type SourceVariant = 'youtube' | 'bilibili' | 'github' | 'note' | 'rss' | 'web'
 
 export interface SourceMeta {
   variant: SourceVariant
@@ -57,6 +57,12 @@ export function sourceMeta(source: SourceType | null | undefined): SourceMeta {
         variant: 'youtube',
         label: 'YouTube',
         badgeClass: 'bg-danger-soft text-danger',
+      }
+    case 'bilibili':
+      return {
+        variant: 'bilibili',
+        label: 'Bilibili',
+        badgeClass: 'bg-sky-500/10 text-sky-500 dark:text-sky-400',
       }
     case 'github':
       return {

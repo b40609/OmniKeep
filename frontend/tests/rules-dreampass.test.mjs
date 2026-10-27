@@ -152,3 +152,63 @@ test('Bookmark Importer API flow', async () => {
   assert.equal(requestedBody.default_category, '科技')
   assert.equal(res.imported_count, 5)
 })
+
+test('Radar Settings & Source Toggle API flow', async () => {
+  api.setApiKey('test-token-777')
+  let requestedUrl = ''
+  let requestedMethod = ''
+  let requestedBody = null
+
+  // 1. getRadarSettings
+  globalThis.fetch = async (url) => {
+    requestedUrl = url
+    return new Response(JSON.stringify({
+      success: true,
+      settings: {
+        enabled: true,
+        interval_minutes: 180,
+        max_analyze_per_cycle: 3,
+        notification_mode: 'silent',
+        daily_digest_hour: 8,
+        vip_threshold: 4.0,
+      },
+    }), { status: 200 })
+  }
+  const sRes = await api.getRadarSettings()
+  assert.equal(requestedUrl, '/api/radar/settings')
+  assert.equal(sRes.settings.notification_mode, 'silent')
+  assert.equal(sRes.settings.interval_minutes, 180)
+
+  // 2. updateRadarSettings
+  globalThis.fetch = async (url, init) => {
+    requestedUrl = url
+    requestedMethod = init?.method || 'GET'
+    requestedBody = JSON.parse(init?.body || '{}')
+    return new Response(JSON.stringify({ success: true, settings: { ...requestedBody } }), { status: 200 })
+  }
+  const uRes = await api.updateRadarSettings({
+    notification_mode: 'vip_alert',
+    vip_threshold: 4.5,
+  })
+  assert.equal(requestedUrl, '/api/radar/settings')
+  assert.equal(requestedMethod, 'PUT')
+  assert.equal(requestedBody.notification_mode, 'vip_alert')
+  assert.equal(requestedBody.vip_threshold, 4.5)
+  assert.equal(uRes.settings.notification_mode, 'vip_alert')
+
+  // 3. toggleRadarSourceActive
+  globalThis.fetch = async (url, init) => {
+    requestedUrl = url
+    requestedMethod = init?.method || 'GET'
+    requestedBody = JSON.parse(init?.body || '{}')
+    return new Response(JSON.stringify({
+      success: true,
+      source: { id: 123, is_active: requestedBody.is_active ? 1 : 0 },
+    }), { status: 200 })
+  }
+  const tRes = await api.toggleRadarSourceActive(123, false)
+  assert.equal(requestedUrl, '/api/radar/sources/123/toggle')
+  assert.equal(requestedMethod, 'PATCH')
+  assert.equal(requestedBody.is_active, false)
+  assert.equal(tRes.source.is_active, 0)
+})

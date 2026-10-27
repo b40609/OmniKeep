@@ -54,7 +54,7 @@ def _preload_cuda_dlls() -> None:
                 os.environ["PATH"] = p + os.pathsep + os.environ.get("PATH", "")
 
 def get_local_whisper_model():
-    """Lazily load local faster-whisper model (optimized for i7-14700 8-thread int8 / CUDA)"""
+    """Lazily load local faster-whisper model (optimized for CUDA GPU / CPU multi-thread int8)"""
     global _local_whisper_model
     if _local_whisper_model is None:
         try:
@@ -70,23 +70,26 @@ def get_local_whisper_model():
                 except Exception as e:
                     logger.warning(f"[Local STT] CUDA init failed, falling back to CPU: {e}")
 
-            _local_whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=8)
-            logger.info("[Local STT] Initialized faster-whisper on CPU (i7-14700 8 threads int8)")
+            threads = min(8, max(2, os.cpu_count() or 4))
+            _local_whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=threads)
+            logger.info(f"[Local STT] Initialized faster-whisper on CPU ({threads} threads int8)")
         except Exception as e:
             logger.warning(f"[Local STT] Could not load faster-whisper: {e}")
             _local_whisper_model = False
     return _local_whisper_model if _local_whisper_model is not False else None
 
-def transcribe_local_whisper(audio_path: str) -> str:
+def transcribe_local_whisper(audio_path: str, timeout: int = 60, max_duration_sec: Optional[int] = None) -> str:
     """Decodes audio via FFmpeg pipe to 16kHz float32 and transcribes locally in ~0.3s"""
     global _force_cpu_stt
     model = get_local_whisper_model()
     if not model or not os.path.exists(audio_path):
         return ""
     try:
-        cmd = ["ffmpeg", "-y", "-protocol_whitelist", "file,pipe", "-i", audio_path,
-               "-f", "f32le", "-ac", "1", "-ar", "16000", "pipe:1"]
-        proc = subprocess.run(cmd, capture_output=True, timeout=15)
+        cmd = ["ffmpeg", "-y", "-protocol_whitelist", "file,pipe"]
+        if max_duration_sec:
+            cmd.extend(["-t", str(max_duration_sec)])
+        cmd.extend(["-i", audio_path, "-f", "f32le", "-ac", "1", "-ar", "16000", "pipe:1"])
+        proc = subprocess.run(cmd, capture_output=True, timeout=timeout)
         if proc.returncode != 0 or not proc.stdout:
             return ""
         audio_np = np.frombuffer(proc.stdout, dtype=np.float32)

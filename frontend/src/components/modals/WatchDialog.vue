@@ -219,7 +219,7 @@ function fmtSize(n?: number) {
       <!-- ── Targets ── -->
       <div v-else-if="tab === 'targets'" class="space-y-3">
         <div class="flex items-center justify-between">
-          <p class="text-xs text-muted-foreground">權限兩軸：<b>讀取</b>=本機可看什麼 · <b>外送</b>=可送 Agnes 分析什麼</p>
+          <p class="text-xs text-muted-foreground">權限兩軸：<b>讀取</b>=本機可看什麼 · <b>外送</b>=可送雲端 AI 分析什麼</p>
           <Button size="sm" variant="secondary" @click="showAdd = !showAdd">
             <Plus class="size-3.5" /> {{ showAdd ? '收起' : '新增目標' }}
           </Button>
@@ -228,9 +228,9 @@ function fmtSize(n?: number) {
         <!-- Add form -->
         <div v-if="showAdd" class="rounded-xl border border-black/[0.06] bg-black/[0.02] p-3 space-y-2.5 dark:border-white/[0.08] dark:bg-white/[0.03]">
           <div class="grid grid-cols-[1fr_2fr] gap-2">
-            <input v-model="newName" placeholder="名稱（如 CatOS_Astra）"
+            <input v-model="newName" placeholder="名稱（如 MyProject）"
               class="rounded-lg border border-black/10 bg-white/80 px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-black/10 dark:border-white/10 dark:bg-white/5" />
-            <input v-model="newPath" placeholder="資料夾完整路徑（如 C:\Users\user\Desktop\CatOS_Astra）"
+            <input v-model="newPath" placeholder="資料夾完整路徑（如 C:\Projects\MyProject）"
               class="rounded-lg border border-black/10 bg-white/80 px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-black/10 dark:border-white/10 dark:bg-white/5" />
           </div>
           <div class="flex flex-wrap gap-1.5">
@@ -251,7 +251,7 @@ function fmtSize(n?: number) {
               </label>
             </div>
             <div class="space-y-1 rounded-lg bg-white/60 p-2 text-xs dark:bg-white/[0.04]">
-              <p class="font-semibold">外送軸（送 Agnes）</p>
+              <p class="font-semibold">外送軸（送雲端 AI）</p>
               <label v-for="(label, key) in OUT_LABELS" :key="key" class="flex cursor-pointer items-center justify-between gap-2">
                 {{ label }}
                 <input type="checkbox" v-model="(customOut as any)[key]" class="accent-foreground" />
@@ -263,7 +263,7 @@ function fmtSize(n?: number) {
 
         <!-- Target cards -->
         <p v-if="!targets.length" class="py-6 text-center text-sm text-muted-foreground">
-          尚無監看目標。把 CatOS 或桌面加進來，第一張提案卡幾秒內就會出現。
+          尚無監看目標。請選擇要監看的本機專案資料夾；完成掃描後才會依取得的內容產生建議。
         </p>
         <div v-for="t in targets" :key="t.id"
           class="rounded-xl border border-black/[0.06] bg-white/70 p-3 dark:border-white/[0.08] dark:bg-white/[0.03]">
@@ -322,7 +322,7 @@ function fmtSize(n?: number) {
                 </button>
               </div>
               <div class="space-y-1 rounded-lg bg-black/[0.03] p-2 dark:bg-white/[0.04]">
-                <p class="text-[11px] font-semibold">外送（Agnes）</p>
+                <p class="text-[11px] font-semibold">外送（雲端 AI）</p>
                 <button v-for="(label, key) in OUT_LABELS" :key="key"
                   class="flex w-full items-center justify-between rounded-md px-1.5 py-0.5 text-xs"
                   :class="t.outbound_consent[key] ? 'text-foreground' : 'text-muted-foreground/60'"
@@ -411,7 +411,7 @@ function fmtSize(n?: number) {
             <div class="flex items-center gap-2">
               <HardDriveDownload class="size-4 text-muted-foreground" />
               <div>
-                <p class="text-sm font-semibold">第二大腦每日備份</p>
+                <p class="text-sm font-semibold">資料庫自動每日備份</p>
                 <p class="text-[11px] text-muted-foreground">
                   {{ backup?.sink === 'off' ? '已停用' : `每天 ${String(backup?.backup_hour ?? 4).padStart(2, '0')}:00 後自動執行 · 保留 ${backup?.keep ?? 14} 份` }}
                 </p>

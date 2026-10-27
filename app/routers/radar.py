@@ -6,12 +6,16 @@ from app.database import (
     get_radar_source,
     save_radar_source,
     delete_radar_source,
+    toggle_radar_source_active,
+    get_radar_settings,
+    update_radar_settings,
     get_all_topic_weights,
     tune_topic_signal,
     get_latest_radar_digests,
     get_interest_profile_record,
     set_interest_profile
 )
+from app.radar.scheduler import radar_scheduler
 from app.radar.recommender import tune_item_signal
 from app.radar.scheduler import run_radar_cycle
 from app.radar.digest import generate_radar_digest
@@ -38,6 +42,19 @@ class ManualDigestRequest(BaseModel):
 
 class InterestProfileRequest(BaseModel):
     profile: str
+
+class RadarSettingsUpdateRequest(BaseModel):
+    enabled: Optional[bool] = None
+    interval_minutes: Optional[int] = None
+    max_analyze_per_cycle: Optional[int] = None
+    notification_mode: Optional[str] = None  # 'silent', 'daily_digest', 'vip_alert'
+    daily_digest_hour: Optional[int] = None
+    vip_threshold: Optional[float] = None
+    auto_digest_push: Optional[bool] = None
+    auto_star_push: Optional[bool] = None
+
+class SourceToggleRequest(BaseModel):
+    is_active: Optional[bool] = None
 
 # ── User Interest Profile Endpoints (Cruxwire/Brain pattern) ─
 
@@ -148,6 +165,43 @@ async def remove_source(source_id: str):
     if not ok:
         raise HTTPException(status_code=404, detail="Source not found")
     return {"success": True, "message": "Source removed"}
+
+@router.patch("/sources/{source_id}/toggle")
+async def toggle_source(source_id: str, req: Optional[SourceToggleRequest] = None):
+    is_act = req.is_active if req else None
+    src = toggle_radar_source_active(source_id, is_active=is_act)
+    if not src:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return {"success": True, "source": src}
+
+# ── Radar Scheduler & Notification Settings ─────────────────
+
+@router.get("/settings")
+async def get_settings():
+    return {"success": True, "settings": get_radar_settings()}
+
+@router.put("/settings")
+async def update_settings(req: RadarSettingsUpdateRequest):
+    valid_modes = ["silent", "daily_digest", "vip_alert"]
+    if req.notification_mode is not None and req.notification_mode not in valid_modes:
+        raise HTTPException(status_code=400, detail=f"notification_mode must be one of {valid_modes}")
+    if req.interval_minutes is not None and req.interval_minutes < 0:
+        raise HTTPException(status_code=400, detail="interval_minutes cannot be negative")
+    if req.max_analyze_per_cycle is not None and req.max_analyze_per_cycle < 1:
+        raise HTTPException(status_code=400, detail="max_analyze_per_cycle must be >= 1")
+
+    updated = update_radar_settings(
+        enabled=req.enabled,
+        interval_minutes=req.interval_minutes,
+        max_analyze_per_cycle=req.max_analyze_per_cycle,
+        notification_mode=req.notification_mode,
+        daily_digest_hour=req.daily_digest_hour,
+        vip_threshold=req.vip_threshold,
+        auto_digest_push=req.auto_digest_push,
+        auto_star_push=req.auto_star_push,
+    )
+    radar_scheduler.wake()
+    return {"success": True, "settings": updated}
 
 # ── Scanning & Digest Endpoints ─────────────────────────────
 

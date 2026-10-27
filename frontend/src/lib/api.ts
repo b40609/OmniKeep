@@ -3,7 +3,7 @@
  * Backend contract: app/routers/{items,categories,ingest,radar}.py
  */
 
-export type SourceType = 'youtube' | 'github' | 'rss' | 'note' | 'snippet' | string
+export type SourceType = 'youtube' | 'bilibili' | 'github' | 'rss' | 'note' | 'snippet' | string
 
 export interface Citation {
   citation_id: number
@@ -66,6 +66,19 @@ export interface RadarSource {
   url: string
   tier?: number
   hot_hours?: number[]
+  is_active?: number | boolean
+}
+
+export interface RadarSettings {
+  enabled: boolean
+  interval_minutes: number
+  max_analyze_per_cycle: number
+  notification_mode: 'silent' | 'daily_digest' | 'vip_alert'
+  daily_digest_hour: number
+  vip_threshold: number
+  auto_digest_push?: boolean
+  auto_star_push?: boolean
+  updated_at?: string
 }
 
 export interface RadarTopic {
@@ -160,6 +173,12 @@ export function getStats(): Promise<Stats> {
   return request<Stats>('/api/items/stats')
 }
 
+export function seedDemoItems(): Promise<{ success: boolean; count: number; message: string }> {
+  return request<{ success: boolean; count: number; message: string }>('/api/items/seed-demo', {
+    method: 'POST',
+  })
+}
+
 export function searchSemantic(q: string, limit: number = 20): Promise<Item[]> {
   const params = new URLSearchParams()
   params.append('q', q)
@@ -245,8 +264,26 @@ export function addRadarSource(source: { name: string; source_type: string; url:
   return request('/api/radar/sources', { method: 'POST', body: JSON.stringify(source) })
 }
 
-export function deleteRadarSource(id: number): Promise<unknown> {
+export function deleteRadarSource(id: number | string): Promise<unknown> {
   return request(`/api/radar/sources/${id}`, { method: 'DELETE' })
+}
+
+export function toggleRadarSourceActive(id: number | string, isActive?: boolean): Promise<{ success: boolean; source: RadarSource }> {
+  return request<{ success: boolean; source: RadarSource }>(`/api/radar/sources/${id}/toggle`, {
+    method: 'PATCH',
+    body: JSON.stringify(isActive !== undefined ? { is_active: isActive } : {}),
+  })
+}
+
+export function getRadarSettings(): Promise<{ success: boolean; settings: RadarSettings }> {
+  return request<{ success: boolean; settings: RadarSettings }>('/api/radar/settings')
+}
+
+export function updateRadarSettings(settings: Partial<RadarSettings>): Promise<{ success: boolean; settings: RadarSettings }> {
+  return request<{ success: boolean; settings: RadarSettings }>('/api/radar/settings', {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  })
 }
 
 export function getRadarTopics(): Promise<{ topics: RadarTopic[] }> {
@@ -572,4 +609,21 @@ export function importBookmarks(
       default_category: options?.default_category || 'Inbox',
     }),
   })
+}
+
+/* ---------------- Localhost Auto-Auth ---------------- */
+
+export interface LocalAuthResult {
+  authenticated: boolean
+  api_key: string
+}
+
+export async function checkLocalAuth(): Promise<LocalAuthResult> {
+  try {
+    const res = await fetch('/api/session/local-auth')
+    if (!res.ok) return { authenticated: false, api_key: '' }
+    return await res.json()
+  } catch {
+    return { authenticated: false, api_key: '' }
+  }
 }

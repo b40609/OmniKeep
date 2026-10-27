@@ -6,6 +6,10 @@ import type { Item } from '@/lib/api'
 export type ReaderTab = 'analysis' | 'reader'
 
 export const useUiStore = defineStore('ui', () => {
+  // Navigation & Layout
+  const sidebarOpen = useLocalStorage('omnikeep-sidebar', true)
+  const sidebarMobileOpen = ref(false)
+
   // Reader pane — deep reactive: the same item exists as separate objects in
   // the list and here, so mutations are synced into both copies by id.
   const activeItem = ref<Item | null>(null)
@@ -28,6 +32,7 @@ export const useUiStore = defineStore('ui', () => {
   const isIngesting = ref(false)
 
   return {
+    sidebarOpen, sidebarMobileOpen,
     activeItem, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
     showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal,
     isIngesting,

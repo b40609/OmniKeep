@@ -19,6 +19,21 @@ from app.security import verify_api_key
 
 logger = logging.getLogger("omnikeep.main")
 
+
+async def supervise_telegram_polling(bot):
+    """Restart a crashed/returned poller while the web service remains alive."""
+    while True:
+        try:
+            await bot.run_polling()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Telegram polling exited unexpectedly; restarting")
+        else:
+            logger.error("Telegram polling stopped unexpectedly; restarting")
+        await asyncio.sleep(3)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -48,7 +63,7 @@ async def lifespan(app: FastAPI):
             tasks.append(asyncio.create_task(backup_loop()))
         bot = get_telegram_bot() if settings.TELEGRAM_BOT_TOKEN else None
         if bot:
-            tasks.append(asyncio.create_task(bot.run_polling()))
+            tasks.append(asyncio.create_task(supervise_telegram_polling(bot)))
         yield
     finally:
         # Stop polling/producers before draining consumers and closing bot HTTP.

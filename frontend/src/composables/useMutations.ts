@@ -125,13 +125,13 @@ export function useMutations() {
   }
 
   /** Quick ingest from the omnibox. */
-  async function quickIngest(content: string): Promise<void> {
+  async function quickIngest(content: string): Promise<boolean> {
     ui.isIngesting = true
-    const t = toast.loading('AI 解析中（L1/L2 兩段式解構）…')
+    const t = toast.loading('內容解析與結構化中…')
     try {
       const data = await api.ingest(content)
       if (data.success) {
-        toast.success('已存入情報庫', {
+        toast.success('已成功收錄', {
           id: t,
           description: data.item?.title_l1?.slice(0, 70),
           action: data.item
@@ -146,11 +146,14 @@ export function useMutations() {
         })
         await itemsStore.refreshAll()
         if (data.item) ui.activeItem = data.item
+        return true
       } else {
         toast.error('解析失敗', { id: t, description: data.detail || '未知錯誤' })
+        return false
       }
     } catch (e) {
-      toast.error('存入失敗', { id: t, description: (e as Error).message })
+      toast.error('擷取失敗', { id: t, description: (e as Error).message })
+      return false
     } finally {
       ui.isIngesting = false
     }
@@ -159,11 +162,11 @@ export function useMutations() {
   /** Long-form note ingest. */
   async function noteIngest(content: string, category: string | null): Promise<boolean> {
     ui.isIngesting = true
-    const t = toast.loading('AI 解析技術筆記中…')
+    const t = toast.loading('筆記建立中…')
     try {
       const data = await api.ingest(content, { category })
       if (data.success) {
-        toast.success('筆記已存入大腦', { id: t })
+        toast.success('筆記已建立', { id: t })
         await itemsStore.refreshAll()
         if (data.item) ui.activeItem = data.item
         return true
@@ -171,7 +174,7 @@ export function useMutations() {
       toast.error('解析失敗', { id: t, description: data.detail || '未知錯誤' })
       return false
     } catch (e) {
-      toast.error('存入失敗', { id: t, description: (e as Error).message })
+      toast.error('擷取失敗', { id: t, description: (e as Error).message })
       return false
     } finally {
       ui.isIngesting = false

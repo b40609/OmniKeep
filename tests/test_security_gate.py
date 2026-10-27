@@ -107,3 +107,27 @@ def test_rotation_refuses_environment_override(isolated_runtime, monkeypatch):
     with pytest.raises(RuntimeError, match="override"):
         rotate_api_key(path)
     assert path.read_text(encoding="utf-8") == content
+
+
+def test_local_auto_login_loopback_and_remote(monkeypatch):
+    monkeypatch.setattr(settings, "LOCAL_AUTO_LOGIN", True)
+    monkeypatch.setattr(settings, "API_KEY", "test-synthetic-key-12345")
+    # Loopback client should get authenticated=True and the API key
+    with TestClient(app) as local_client:
+        res = local_client.get("/api/session/local-auth")
+        assert res.status_code == 200
+        assert res.json() == {"authenticated": True, "api_key": "test-synthetic-key-12345"}
+
+    # Remote client should get authenticated=False and empty key
+    with TestClient(app, client=("192.168.1.100", 50000)) as remote_client:
+        res = remote_client.get("/api/session/local-auth")
+        assert res.status_code == 200
+        assert res.json() == {"authenticated": False, "api_key": ""}
+
+    # Disabled auto login should return False even for loopback
+    monkeypatch.setattr(settings, "LOCAL_AUTO_LOGIN", False)
+    with TestClient(app) as local_client:
+        res = local_client.get("/api/session/local-auth")
+        assert res.status_code == 200
+        assert res.json() == {"authenticated": False, "api_key": ""}
+

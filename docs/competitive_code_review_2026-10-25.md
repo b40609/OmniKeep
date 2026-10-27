@@ -22,7 +22,7 @@
 
 先讀取 AUDIT_HANDOFF_GPT61.md 與 docs/competitive_landscape.md，包含第 F 節。之後直接檢查 GitHub 原始碼與本機 clone，不以 README、stars 或宣傳文案推定功能。
 
-全部 clone 位於 C:/Users/user/Desktop/OmniKeep-research/，六套深讀、四套定向讀。固定版本如下；文內程式碼連結一律使用完整 commit，不指向會移動的 main。
+競品 clone 保存在研究者本機的獨立研究目錄（未納入本倉庫），六套深讀、四套定向讀。固定版本如下；文內程式碼連結一律使用完整 commit，不指向會移動的 main。
 
 | 專案 | 讀取深度 | 固定 commit | 根目錄授權 |
 |---|---|---|---|
@@ -37,7 +37,7 @@
 | SurfSense | 定向讀 | [e3de9e0d293b](https://github.com/MODSetter/SurfSense/tree/e3de9e0d293b2ebb1fb813628ecc1d6f26909396) | Apache-2.0 |
 | khoj | 定向讀 | [ae229ca894c0](https://github.com/khoj-ai/khoj/tree/ae229ca894c0b80ad84664afcfdde523b5e87057) | AGPL-3.0 |
 
-可重現清單：[research_manifest_2026-10-25.json](C:/Users/user/Desktop/OmniKeep-research/research_manifest_2026-10-25.json)。包含完整 SHA、clone 路徑、授權、研究範圍及 OmniKeep 重要檔案 SHA-256。
+可重現清單：`research_manifest_2026-10-25.json`（研究時產生的本機紀錄，未隨本倉庫發布）。包含完整 SHA、clone 路徑、授權、研究範圍及 OmniKeep 重要檔案 SHA-256。
 
 OmniKeep 比較基準是 HEAD a7ad9d4e46c207035b05d3004cf438486255724f **加上當時已存在的未提交稽核修正**，最後核對時間 2026-10-25T15:47:15.615Z。初次擷取後，並行稽核更新了 relevance.py；本輪已重讀、刷新其雜湊，核心比較結論不變。因此不能只 checkout HEAD 就重現目前比較結果；須搭配 manifest 的檔案雜湊。本輪沒有改動這些產品檔案。
 
@@ -52,18 +52,18 @@ OmniKeep 比較基準是 HEAD a7ad9d4e46c207035b05d3004cf438486255724f **加上�
 
 | 面向 | 本次讀到的程式碼 | 影響 |
 |---|---|---|
-| 雷達成本 | [app/radar/scheduler.py:60](C:/Users/user/Desktop/OmniKeep/app/radar/scheduler.py:60) 先逐項 run_pipeline，才依分析後 tags 評分、刪除 blocked item | 明確排除或低價值候選也可能先付完整分析成本；應加前段候選層 |
-| 偏好 | [app/radar/recommender.py:35](C:/Users/user/Desktop/OmniKeep/app/radar/recommender.py:35) 使用 tag 權重、最大值與平均值、來源 tier；[app/watch/taste.py:19](C:/Users/user/Desktop/OmniKeep/app/watch/taste.py:19) 只從真實標籤學習 | 已有可保留的規則基礎；snooze 是延後，不是喜歡或討厭 |
-| 探索 | [app/radar/recommender.py:64](C:/Users/user/Desktop/OmniKeep/app/radar/recommender.py:64) 依分數切前後段，再固定 4:1 插入尾段 | 名稱寫 epsilon-greedy，但程式沒有隨機抽樣或新穎性計算；不能把註解當演算法保證 |
-| 事件分群 | [app/radar/clustering.py:7](C:/Users/user/Desktop/OmniKeep/app/radar/clustering.py:7) 只有標題關鍵字 Jaccard，48 小時、門檻 0.35 | 連續中文缺少斷詞；跨語、同義改寫難合併；summary、tags 雖讀取但未參與相似度 |
-| 來源數 | [app/radar/clustering.py:59](C:/Users/user/Desktop/OmniKeep/app/radar/clustering.py:59) 每次合併把 unique_source_count 加 1 | 這是合併文章次數，不是不同來源的去重數；不宜拿來當交叉佐證強度 |
-| 檢索 | [app/database.py:78](C:/Users/user/Desktop/OmniKeep/app/database.py:78) 建立 FTS5；[app/database.py:401](C:/Users/user/Desktop/OmniKeep/app/database.py:401) 查詢路徑仍是詞彙檢索 | 本次範圍未找到已接通的 embedding 索引或語意搜尋 |
-| 專案建議 | [app/watch/relevance.py:54](C:/Users/user/Desktop/OmniKeep/app/watch/relevance.py:54) 先找至少兩個相同 tags 的最強單一 target；[app/watch/relevance.py:107](C:/Users/user/Desktop/OmniKeep/app/watch/relevance.py:107) prompt 只有情報、名稱、重疊數 | 無法據此確認本地模組缺口、API 相容性或修改位置；較接近相關性提示 |
-| 本地指紋 | [app/watch/scanner.py:107](C:/Users/user/Desktop/OmniKeep/app/watch/scanner.py:107) 已依 read_scope 納入摘要、README、依賴、程式碼、git；[app/watch/scanner.py:132](C:/Users/user/Desktop/OmniKeep/app/watch/scanner.py:132) 版本雜湊包含材料、範圍與同意狀態 | 不能延用「只看檔名／mtime」的舊結論；但指紋不等於 proposal 已取得可引用的本地程式證據 |
-| 影片 | [app/pipeline.py:106](C:/Users/user/Desktop/OmniKeep/app/pipeline.py:106) Gemini 分支可直接分析影片；fallback 用標題／頻道／URL | 不能把全部影片路徑描述成只看標題；仍缺可保存、可定位的 transcript／timestamp 證據層 |
-| 引用與流程 | [app/database.py:921](C:/Users/user/Desktop/OmniKeep/app/database.py:921) 已有 citation 儲存；[app/database.py:1279](C:/Users/user/Desktop/OmniKeep/app/database.py:1279) 已有 proposal 與決策狀態 | 應延伸既有模型，先確認與 chunk／版本／locator 的差距，避免另建平行系統 |
+| 雷達成本 | [app/radar/scheduler.py:60](../app/radar/scheduler.py#L60) 先逐項 run_pipeline，才依分析後 tags 評分、刪除 blocked item | 明確排除或低價值候選也可能先付完整分析成本；應加前段候選層 |
+| 偏好 | [app/radar/recommender.py:35](../app/radar/recommender.py#L35) 使用 tag 權重、最大值與平均值、來源 tier；[app/watch/taste.py:19](../app/watch/taste.py#L19) 只從真實標籤學習 | 已有可保留的規則基礎；snooze 是延後，不是喜歡或討厭 |
+| 探索 | [app/radar/recommender.py:64](../app/radar/recommender.py#L64) 依分數切前後段，再固定 4:1 插入尾段 | 名稱寫 epsilon-greedy，但程式沒有隨機抽樣或新穎性計算；不能把註解當演算法保證 |
+| 事件分群 | [app/radar/clustering.py:7](../app/radar/clustering.py#L7) 只有標題關鍵字 Jaccard，48 小時、門檻 0.35 | 連續中文缺少斷詞；跨語、同義改寫難合併；summary、tags 雖讀取但未參與相似度 |
+| 來源數 | [app/radar/clustering.py:59](../app/radar/clustering.py#L59) 每次合併把 unique_source_count 加 1 | 這是合併文章次數，不是不同來源的去重數；不宜拿來當交叉佐證強度 |
+| 檢索 | [app/database.py:78](../app/database.py#L78) 建立 FTS5；[app/database.py:401](../app/database.py#L401) 查詢路徑仍是詞彙檢索 | 本次範圍未找到已接通的 embedding 索引或語意搜尋 |
+| 專案建議 | [app/watch/relevance.py:54](../app/watch/relevance.py#L54) 先找至少兩個相同 tags 的最強單一 target；[app/watch/relevance.py:107](../app/watch/relevance.py#L107) prompt 只有情報、名稱、重疊數 | 無法據此確認本地模組缺口、API 相容性或修改位置；較接近相關性提示 |
+| 本地指紋 | [app/watch/scanner.py:107](../app/watch/scanner.py#L107) 已依 read_scope 納入摘要、README、依賴、程式碼、git；[app/watch/scanner.py:132](../app/watch/scanner.py#L132) 版本雜湊包含材料、範圍與同意狀態 | 不能延用「只看檔名／mtime」的舊結論；但指紋不等於 proposal 已取得可引用的本地程式證據 |
+| 影片 | [app/pipeline.py:106](../app/pipeline.py#L106) Gemini 分支可直接分析影片；fallback 用標題／頻道／URL | 不能把全部影片路徑描述成只看標題；仍缺可保存、可定位的 transcript／timestamp 證據層 |
+| 引用與流程 | [app/database.py:921](../app/database.py#L921) 已有 citation 儲存；[app/database.py:1279](../app/database.py#L1279) 已有 proposal 與決策狀態 | 應延伸既有模型，先確認與 chunk／版本／locator 的差距，避免另建平行系統 |
 
-此外，[app/security.py:8](C:/Users/user/Desktop/OmniKeep/app/security.py:8) 已有 API key 驗證，[app/network.py:1](C:/Users/user/Desktop/OmniKeep/app/network.py:1) 已有對外 URL／連線限制，[app/background.py:12](C:/Users/user/Desktop/OmniKeep/app/background.py:12) 已有有界後續處理 pool，[tests/conftest.py:1](C:/Users/user/Desktop/OmniKeep/tests/conftest.py:1) 已有測試環境隔離。這些修正仍需由原稽核工作完成驗證，本報告沒有把「尚未加上這些機制」列為待辦，也沒有替它們宣告測試通過。
+此外，[app/security.py:8](../app/security.py#L8) 已有 API key 驗證，[app/network.py:1](../app/network.py#L1) 已有對外 URL／連線限制，[app/background.py:12](../app/background.py#L12) 已有有界後續處理 pool，[tests/conftest.py:1](../tests/conftest.py#L1) 已有測試環境隔離。這些修正仍需由原稽核工作完成驗證，本報告沒有把「尚未加上這些機制」列為待辦，也沒有替它們宣告測試通過。
 
 ## 4. 六套深讀
 
@@ -383,7 +383,7 @@ OmniKeep 比較基準是 HEAD a7ad9d4e46c207035b05d3004cf438486255724f **加上�
 - 完成指定十個 GitHub clone，固定 commit；六套沿實際呼叫路徑深讀，四套依目標模組定向讀取。十個研究 clone 在 manifest 擷取時皆無工作樹變更。
 - 新增本報告與 research manifest；保留原 competitive_landscape 與前份 survey，未覆寫待討論路線圖，也未修改產品功能、資料庫、既有稽核變更或外部 repository。
 - 證據連結指向所讀 commit。授權以本次固定版本根目錄 LICENSE 與已讀檔案為依據；未逐一稽核所有子依賴或確認將來的發佈法務結論。
-- 靜態檢查通過：81 個固定 commit 的競品程式引用、19 個本機程式引用，其檔案與行號均有效；十個 clone 的 HEAD 與 manifest 相符且工作樹乾淨。核對紀錄：[research_verification_2026-10-25.json](C:/Users/user/Desktop/OmniKeep-research/research_verification_2026-10-25.json)。這些檢查確認引用位置與版本，並不代表功能或效果已通過測試。
+- 靜態檢查通過：81 個固定 commit 的競品程式引用、19 個本機程式引用，其檔案與行號均有效；十個 clone 的 HEAD 與 manifest 相符且工作樹乾淨。核對紀錄：`research_verification_2026-10-25.json`（研究時產生的本機紀錄，未隨本倉庫發布）。這些檢查確認引用位置與版本，並不代表功能或效果已通過測試。
 - 未執行 OmniKeep 測試套件、競品測試、模型效能或正式推薦 A/B。不要把本報告當成這些驗證已通過。
 - 下一步是與 Ryan 決定主要目標及第一切片；尚未進入產品開工。
 

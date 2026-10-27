@@ -10,7 +10,7 @@ from app.database import (
     find_item_by_canonical_or_url,
     save_citation
 )
-from app.parsers import is_youtube_url, fetch_youtube_metadata, parse_web_page
+from app.parsers import is_youtube_url, fetch_youtube_metadata, parse_web_page, is_bilibili_url, parse_bilibili_video
 from app.parsers.reel import is_video_reel_url, parse_video_reel
 from app.providers import get_primary_provider, get_gemini_provider
 from app.config import settings
@@ -163,6 +163,28 @@ URL：{url}
             cover_image = meta.get("cover_image", "")
             author = meta.get("author", "")
             default_title = meta.get("title", "未命名項目")
+
+        elif is_bilibili_url(url):
+            source_type = "bilibili"
+            bili_data = await parse_bilibili_video(url)
+            content_raw = bili_data.get("content_raw", "")
+            cover_image = bili_data.get("cover_image", "")
+            author = bili_data.get("author", "")
+            default_title = bili_data.get("title", "Bilibili 影片")
+
+            primary = get_primary_provider()
+            prompt = f"""深度分析以下 Bilibili 影片內容，輸出專業中文結構化總結、技術標籤與核心洞見：
+影片標題：{default_title}
+UP主：{author}
+URL：{url}
+
+可選分類清單：[{cat_list_str}]
+
+影片完整資訊（包含簡介與逐字稿）：
+{content_raw[:12000]}
+"""
+            prompt += interest_profile_block()
+            ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
 
         elif is_video_reel_url(url):
             # Short Video Reel (Facebook / Instagram Reels with Vision OCR)

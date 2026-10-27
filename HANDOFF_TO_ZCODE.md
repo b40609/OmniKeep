@@ -1,5 +1,7 @@
 # 🧠 OmniKeep 專案交接手冊（交接給 ZCode / GLM-5.3）
 
+> 此為舊版開發交接紀錄，環境與測試數字已過時。公開安裝請以 [README](README.md) 和 [iOS 設定指南](docs/ios_shortcut.md) 為準。
+
 > **專案定位**：自託管多模態情報雷達與兩段式第二大腦（Self-hosted Multimodal Information Radar & Second Brain）。  
 > **交接目標**：全面進行 UI/UX 頂級精緻化升級，使介面視覺、動效、觸感與操作流暢度達到如 **Linear、Raycast、Readwise Reader、Superhuman** 等開源或商業收費款軟體的頂級水準。
 
@@ -7,13 +9,13 @@
 
 ## 🏗️ 1. 系統現況與運行環境 (Current Runtime Matrix)
 
-* **專案實體目錄**：`C:\Users\user\Desktop\OmniKeep`（已建立 Junction 映射 `C:\Users\user\Desktop\Hub`，路徑完全等價）
+* **專案目錄**：使用目前 Git clone 的專案根目錄；歷史本機路徑及 Junction 不適用於新安裝。
 * **後端架構**：FastAPI + SQLite (WAL Mode + Unicode61 FTS5 全文檢索)
 * **核心服務端口**：`http://localhost:5000`（API Docs: `http://localhost:5000/docs`）
 * **啟動指令**：`python run.py`
 * **整合通道**：
   * **PWA & Web 看板**：`static/index.html`（Vue 3 CDN + Tailwind CSS CDN，單檔 SPA 架構）
-  * **iOS 原生捷徑 (Share Sheet)**：`POST /api/ingest?token=omnifs888`（支援非同步佇列 `async_mode=true`）
+  * **iOS 分享捷徑（Share Sheet）**：`POST /api/ingest`，在 `X-API-Key` 標頭傳送自己的金鑰，支援 `async_mode=true`。
   * **Telegram Bot**：`python -X utf8 run_bot.py`（長輪詢模式）
   * **LINE Bot**：`app/bot/line_bot.py`（暗黑 Flex Message 卡片）
   * **MCP Server**：`mcp_server.py`（雙模：本機 stdio + 遠端 SSE，支援 8 項 Tools + 2 項 Resources）

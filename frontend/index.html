@@ -14,8 +14,11 @@
       // Apply persisted theme before first paint to avoid FOUC (iOS: follow system by default).
       try {
         var t = localStorage.getItem('omnikeep-theme') || 'system';
-        var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        var dark = t === 'dark' || t === 'oled' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.classList.toggle('dark', dark);
+        if (t === 'oled') document.documentElement.classList.add('oled');
+        var a = localStorage.getItem('omnikeep-accent') || 'blue';
+        document.documentElement.setAttribute('data-accent', a);
       } catch (e) {}
     </script>
   </head>

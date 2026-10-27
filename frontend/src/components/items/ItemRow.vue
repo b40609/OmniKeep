@@ -46,10 +46,10 @@ function select() {
         </Badge>
         <span
           v-if="item.origin === 'radar'"
-          title="雷達自動抓取（可與手動加入的內容分流）"
+          title="自動訂閱排程收錄"
           class="inline-flex items-center rounded-md bg-violet-500/10 px-1.5 py-px text-2xs font-semibold text-violet-600 dark:text-violet-400"
         >
-          📡 雷達
+          📡 自動訂閱
         </span>
         <span class="rounded-md bg-muted px-1.5 py-px text-2xs font-medium text-muted-foreground">
           {{ item.category_name }}
@@ -96,10 +96,10 @@ function select() {
 
     <!-- Hover quick actions (floating pill) -->
     <div class="absolute -top-1 right-2 z-10 hidden items-center gap-0.5 rounded-full border border-hairline bg-popover/95 p-1 opacity-0 shadow-float backdrop-blur-xl transition-all duration-150 group-hover:opacity-100">
-      <button class="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary-soft hover:text-primary" title="增強訊號" aria-label="增強訊號" @click.stop="tuneItem({ item, action: 'boost' })">
+      <button class="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary-soft hover:text-primary" title="提升推薦權重" aria-label="提升推薦權重" @click.stop="tuneItem({ item, action: 'boost' })">
         <ChevronUp class="size-3.5" />
       </button>
-      <button class="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-danger-soft hover:text-danger" title="降低頻率" aria-label="降低頻率" @click.stop="tuneItem({ item, action: 'dampen' })">
+      <button class="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-danger-soft hover:text-danger" title="降低推薦權重" aria-label="降低推薦權重" @click.stop="tuneItem({ item, action: 'dampen' })">
         <ChevronDown class="size-3.5" />
       </button>
       <button class="rounded-full p-1.5 transition-colors hover:bg-warning-soft" :class="item.is_starred ? 'text-warning' : 'text-muted-foreground hover:text-warning'" title="星標" aria-label="星標" @click.stop="toggleStar(item)">
@@ -108,7 +108,7 @@ function select() {
       <button class="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-success-soft hover:text-success" title="封存" aria-label="封存" @click.stop="toggleRead(item)">
         <Archive class="size-3.5" />
       </button>
-      <button class="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary-soft hover:text-primary" title="開啟離線快照（防腐爛）" aria-label="開啟離線快照" @click.stop="openSnapshot(item)">
+      <button class="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-primary-soft hover:text-primary" title="開啟離線快照存檔 (Snapshot)" aria-label="開啟離線快照" @click.stop="openSnapshot(item)">
         <Camera class="size-3.5" />
       </button>
       <a :href="item.url" target="_blank" rel="noopener" class="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="原始網頁" aria-label="開啟原始網頁" @click.stop>

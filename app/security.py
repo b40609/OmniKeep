@@ -29,7 +29,7 @@ async def verify_api_key(request: Request, call_next):
     path = request.url.path
     public = (
         request.method in {"GET", "HEAD"}
-        and (path in {"/", "/health"} or path.startswith("/static/"))
+        and (path in {"/", "/health", "/api/session/local-auth"} or path.startswith("/static/"))
     ) or (request.method == "POST" and path == "/api/line/webhook")
     preflight = (
         request.method == "OPTIONS"
