@@ -54,7 +54,7 @@ async function login(platform: SessionPlatformId) {
   try {
     await api.openPlatformLogin(platform)
     toast.info(`${meta.label} 登入視窗已開啟`, {
-      description: '在彈出的 Chrome 視窗完成登入後按「重新檢測」，Session 將永久保存於本機 profile。',
+      description: '完成登入後按「重新檢測」，Chrome 將返回背景模式並保留本機登入狀態。',
       duration: 8000,
     })
     // Poll briefly for the connection to appear
