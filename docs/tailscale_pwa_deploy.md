@@ -93,8 +93,10 @@ curl https://<主機名>.<tailnet 名>.ts.net/api/session/local-auth
 
 可以，條件都符合：
 
+- **先決修正**：`290b783` 之前，靜態檔白名單擋掉了 `sw.js` 載入的 Workbox 執行庫，Service Worker 在任何網址都裝不起來。請確認主機的程式包含這個修正，並重新 `npm run build`。
 - **安全來源**：Service Worker 只在 HTTPS（或 localhost）運作。`*.ts.net` 用的是 Let's Encrypt 簽發的公開信任憑證，所以是安全來源。
 - **scope**：Service Worker 檔案在 `/static/dist/sw.js`，以 scope `/` 註冊（`frontend/src/main.ts`）。伺服器回應帶 `Service-Worker-Allowed: /`（`app/main.py:136-146`），跟網域名稱無關。
+- **確認方式**：在筆電的 Chrome 或 Edge 開 ts.net 網址，DevTools → Application → Service Workers 應看到 `/static/dist/sw.js` 為 activated。
 - **manifest**：`static/manifest.json` 的 `start_url`、`scope` 都是 `/`，`display` 是 `standalone`，都是相對於來源的路徑，換成 ts.net 網域不需要修改。
 - **離線行為**：`/api/*` 設為 NetworkOnly（`frontend/vite.config.ts`），私人資料不會留在快取。離線時只開得出外殼，看不到資料，這是刻意的設計。
 
@@ -102,7 +104,25 @@ curl https://<主機名>.<tailnet 名>.ts.net/api/session/local-auth
 
 - `static/manifest.json` 的圖示指向外部 icons8 網址，也還沒有 `apple-touch-icon`，主畫面圖示可能缺失或依賴外部網路。這會在 PWA 打底的第 4 項修正。
 - 不同網址是不同來源，`http://localhost:5000` 與 `https://….ts.net` 的登入狀態、主題設定不共用。
-- 以上是依規格與程式設定推得的結論，還沒有在實機上驗證過。實際設定後請照第 5、6 節操作，確認可以安裝、可以登入。
+- Service Worker 安裝與推播已在本機 headless Chrome（`http://127.0.0.1`）實測；ts.net 網域與 iPhone、iPad 實機還沒有驗證。實際設定後請照第 5、6、8 節操作，確認可以安裝、登入、收到推播。
+
+## 8. 推播通知（Web Push）
+
+**伺服器（一次性）**
+1. 在主機的專案目錄執行 `python scripts/generate_vapid_keys.py`。它會把 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY` 寫進既有的 `.env`，不會印出金鑰；若已有金鑰則拒絕覆寫。之後不要重產，換金鑰會讓所有裝置的訂閱失效。
+2. 選填 `VAPID_SUBJECT`：推播服務的聯絡方式，必須是 `mailto:` 或 `https://` 開頭；沒設就用專案網址。
+3. 重新啟動 OmniKeep。
+4. 主機要能以 HTTPS 連到各家推播服務，例如 Chrome 的 `fcm.googleapis.com`、Apple 的 `*.push.apple.com`。
+
+**每台裝置各自開啟**
+- iPhone、iPad：需要 iOS／iPadOS 16.4 以上，而且**一定要先照第 6 節加到主畫面**，再從主畫面圖示開啟。Safari 分頁裡收不到推播。
+- 開啟側欄底部的「通知」→「開啟這台裝置的推播」→ 允許通知，再按「傳送測試通知」確認。
+- 筆電、桌機的 Chrome、Edge 也是同一個對話框。
+
+**會推播什麼**
+- 雷達戰報、雷達自動收藏（VIP），和 Telegram 同一組事件、同樣依雷達設定的通知模式；Telegram 照常發送。
+- 待決提案目前不會主動通知，Telegram 也沒有；要看提案仍需打開監看中心或 Telegram `/proposals`。
+- 裝置解除安裝或撤銷權限後，推播服務回 404／410 時伺服器會自動刪掉那筆訂閱。
 
 ## 參考資料
 
@@ -114,3 +134,5 @@ curl https://<主機名>.<tailnet 名>.ts.net/api/session/local-auth
 - iPhone 加入主畫面：<https://support.apple.com/guide/iphone/bookmark-a-website-iph42ab2f3a7/ios>、<https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/ios>
 - Chrome 安裝 PWA：<https://support.google.com/chrome/answer/9658361>
 - Service Worker 需要安全來源、`Service-Worker-Allowed`：<https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers>
+- Apple Web Push（iOS 16.4 主畫面 App、手勢授權、不可無聲推播、`*.push.apple.com`、JWT 規定、410 表示訂閱失效）：<https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers>
+- WebKit：iOS／iPadOS 主畫面網頁 App 的 Web Push：<https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/>
