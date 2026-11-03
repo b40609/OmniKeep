@@ -23,7 +23,8 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
       ui.showSessionModal ||
       ui.showWatchModal ||
       ui.showImportModal ||
-      ui.showDeckModal
+      ui.showDeckModal ||
+      ui.showPushModal
     )
   }
 
@@ -51,6 +52,7 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         ui.showWatchModal = false
         ui.showImportModal = false
         ui.showDeckModal = false
+        ui.showPushModal = false
       }
       return
     }

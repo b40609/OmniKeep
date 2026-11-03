@@ -11,7 +11,7 @@ class CurrentBuildFiles(StaticFiles):
         # Starlette normalizes mount paths with os.path on Windows.
         path = path.replace("\\", "/")
         root = Path(self.directory)
-        allowed = {"manifest.json", "dist/index.html", "dist/sw.js",
+        allowed = {"manifest.json", "dist/index.html", "dist/sw.js", "dist/push-sw.js",
                    "dist/favicon.svg", "dist/icons.svg"}
         index = root / "dist/index.html"
         if index.is_file():
@@ -30,6 +30,6 @@ class CurrentBuildFiles(StaticFiles):
         if path not in allowed and not assets:
             raise HTTPException(status_code=404)
         response = await super().get_response(path, scope)
-        if path in ("dist/index.html", "dist/sw.js"):
+        if path in ("dist/index.html", "dist/sw.js", "dist/push-sw.js"):
             response.headers["Cache-Control"] = "no-cache"
         return response

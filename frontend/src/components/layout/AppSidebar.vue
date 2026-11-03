@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import {
   BrainCircuit, PanelLeftClose, Plus, FileText,
   Inbox, Star, Archive, Layers, Radar, ScanEye, GalleryHorizontalEnd,
-  FolderInput, KeyRound, Keyboard, LogOut, Tag,
+  FolderInput, KeyRound, Keyboard, LogOut, Tag, Bell,
 } from 'lucide-vue-next'
 import { useItemsStore, type TriageView } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
@@ -198,7 +198,7 @@ function selectCategory(catName: string) {
 
     <!-- Bottom Utility Row -->
     <div class="shrink-0 border-t border-hairline p-2 text-xs">
-      <div class="grid grid-cols-4 gap-1">
+      <div class="grid grid-cols-5 gap-1">
         <button
           class="flex flex-col items-center justify-center gap-1 rounded-lg py-2 text-muted-foreground hover:bg-accent hover:text-foreground transition cursor-pointer"
           title="匯入書籤 (I)"
@@ -222,6 +222,14 @@ function selectCategory(catName: string) {
         >
           <Keyboard class="size-4" />
           <span class="text-2xs font-medium">鍵盤</span>
+        </button>
+        <button
+          class="flex flex-col items-center justify-center gap-1 rounded-lg py-2 text-muted-foreground hover:bg-accent hover:text-foreground transition cursor-pointer"
+          title="這台裝置的推播通知"
+          @click="ui.showPushModal = true; ui.sidebarMobileOpen = false"
+        >
+          <Bell class="size-4" />
+          <span class="text-2xs font-medium">通知</span>
         </button>
         <button
           class="flex flex-col items-center justify-center gap-1 rounded-lg py-2 text-muted-foreground hover:bg-red-500/10 hover:text-red-500 transition cursor-pointer"

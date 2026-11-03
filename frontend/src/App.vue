@@ -18,6 +18,7 @@ import SessionDialog from '@/components/modals/SessionDialog.vue'
 import WatchDialog from '@/components/modals/WatchDialog.vue'
 import ImportDialog from '@/components/modals/ImportDialog.vue'
 import DeckDialog from '@/components/modals/DeckDialog.vue'
+import PushDialog from '@/components/modals/PushDialog.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { useMutations } from '@/composables/useMutations'
 
@@ -264,6 +265,7 @@ onUnmounted(() => window.removeEventListener('omnikeep-auth-required', onAuthReq
     <WatchDialog />
     <ImportDialog />
     <DeckDialog />
+    <PushDialog />
   </div>
 
   <Toaster />

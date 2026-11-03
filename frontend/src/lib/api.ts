@@ -601,6 +601,46 @@ export function recordSwipe(itemId: number | string, action: SwipeAction): Promi
   return logBehaviorEvent({ event_type: action, item_id: String(itemId) }) as Promise<{ success: boolean; event_type: SwipeAction; duplicate?: boolean }>
 }
 
+/* ---------------- Web Push ---------------- */
+
+export interface PushConfig {
+  configured: boolean
+  public_key: string
+  subscriptions: number
+}
+
+/** PushSubscription.toJSON() */
+export interface PushSubscriptionPayload {
+  endpoint?: string
+  keys?: Record<string, string>
+}
+
+export interface PushDelivery {
+  success: boolean
+  sent: number
+  removed: number
+  failed: number
+}
+
+export function getPushConfig(): Promise<PushConfig> {
+  return request('/api/push/config')
+}
+
+export function subscribePush(subscription: PushSubscriptionPayload): Promise<{ success: boolean }> {
+  return request('/api/push/subscribe', {
+    method: 'POST',
+    body: JSON.stringify({ endpoint: subscription.endpoint, keys: subscription.keys }),
+  })
+}
+
+export function unsubscribePush(endpoint: string): Promise<{ success: boolean; removed: boolean }> {
+  return request('/api/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) })
+}
+
+export function sendTestPush(): Promise<PushDelivery> {
+  return request('/api/push/test', { method: 'POST' })
+}
+
 /* ---------------- Bookmark Importer ---------------- */
 
 export interface BookmarkImportResult {

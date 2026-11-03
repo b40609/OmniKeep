@@ -22,6 +22,8 @@ export default defineConfig({
         // routes (e.g. "/") fall back to the SPA shell.
         navigateFallbackDenylist: [/\.html$/],
         cleanupOutdatedCaches: true,
+        // Push/notificationclick handlers (public/push-sw.js), resolved next to sw.js.
+        importScripts: ['push-sw.js'],
         runtimeCaching: [
           { urlPattern: /\/static\/dist\/assets\/.*/, handler: 'CacheFirst',
             options: { cacheName: 'omnikeep-assets-v2', expiration: { maxEntries: 80 } } },

@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_ALLOWED_USER_IDS_RAW: str = Field(default="", validation_alias="TELEGRAM_ALLOWED_USER_IDS")
 
+    # PWA Web Push (VAPID, RFC 8292). Generate once with scripts/generate_vapid_keys.py;
+    # replacing the pair invalidates every existing browser subscription.
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    # Contact for push services: mailto: address or https URL (Apple rejects anything else).
+    VAPID_SUBJECT: str = ""
+
     # Radar Engine Configuration
     RADAR_ENABLED: bool = False
     RADAR_INTERVAL_SECONDS: int = 10800

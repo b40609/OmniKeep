@@ -390,6 +390,19 @@ def init_db():
         )
     """)
 
+    # 22. PWA Web Push subscriptions (one row per browser/device endpoint)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            endpoint TEXT PRIMARY KEY,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            user_agent TEXT NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL,
+            last_success_at DATETIME,
+            last_error TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -2044,6 +2057,43 @@ def get_swipe_deck(limit: int = 10) -> List[Dict[str, Any]]:
     conn.close()
     from app.watch.taste import rank_deck
     return rank_deck(rows)[:limit]
+
+
+# ── Web Push Subscriptions DAO ────────────────────────────────────
+
+def upsert_push_subscription(endpoint: str, p256dh: str, auth: str, user_agent: str = "") -> None:
+    """A browser re-subscribing (new keys) replaces its row; delivery history restarts."""
+    now = datetime.now(timezone.utc).isoformat()
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("""
+            INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(endpoint) DO UPDATE SET
+                p256dh = excluded.p256dh, auth = excluded.auth, user_agent = excluded.user_agent,
+                created_at = excluded.created_at, last_success_at = NULL, last_error = NULL
+        """, (endpoint, p256dh, auth, user_agent[:300], now))
+
+
+def delete_push_subscription(endpoint: str) -> bool:
+    with closing(get_db_connection()) as conn, conn:
+        return conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,)).rowcount > 0
+
+
+def list_push_subscriptions() -> List[Dict[str, Any]]:
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute("SELECT * FROM push_subscriptions ORDER BY created_at").fetchall()
+    return [dict(r) for r in rows]
+
+
+def record_push_result(endpoint: str, error: Optional[str] = None) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with closing(get_db_connection()) as conn, conn:
+        if error is None:
+            conn.execute("UPDATE push_subscriptions SET last_success_at = ?, last_error = NULL WHERE endpoint = ?",
+                         (now, endpoint))
+        else:
+            conn.execute("UPDATE push_subscriptions SET last_error = ? WHERE endpoint = ?",
+                         (f"{now} {error}"[:300], endpoint))
 
 
 def seed_demo_items() -> List[Dict[str, Any]]:

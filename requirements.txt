@@ -16,3 +16,6 @@ feedparser>=6.0
 numpy>=1.26
 httpcore>=1.0,<2
 sqlite-vec>=0.1.9
+py-vapid>=1.9.6,<2
+http-ece>=1.2.1,<2
+cryptography>=46

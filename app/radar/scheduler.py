@@ -1,5 +1,6 @@
 import asyncio
 import html
+import logging
 from contextlib import closing
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -20,6 +21,9 @@ from app.radar.recommender import score_item_detailed, rank_items_with_explorati
 from app.radar.clustering import cluster_item_to_event
 from app.radar.digest import generate_radar_digest
 from app.pipeline import run_pipeline
+from app.push import send_push
+
+logger = logging.getLogger("omnikeep.radar")
 
 def is_source_due(source: Dict[str, Any], force: bool = False) -> bool:
     if force:
@@ -184,6 +188,39 @@ async def _push_digest_to_telegram(digest_info: Dict[str, Any], ranked_items: Li
         print(f"[Radar:DigestPush] Telegram push failed: {e}")
 
 
+async def _push_autostar_to_web(items: List[Dict[str, Any]]) -> None:
+    """PWA twin of _push_autostar_notices; independent of whether Telegram is set up."""
+    starred = [it for it in items if it.get("auto_starred")]
+    if not starred:
+        return
+    try:
+        lines = "\n".join(f"⭐ {it.get('title_l1', '')[:60]}" for it in starred[:5])
+        await send_push("🤖 雷達自動收藏", lines, tag="radar-autostar")
+    except Exception:
+        logger.exception("Web Push for auto-starred items failed")
+
+
+async def _push_digest_to_web(digest_info: Dict[str, Any], ranked_items: List[Dict[str, Any]]) -> None:
+    """PWA twin of _push_digest_to_telegram; independent of whether Telegram is set up."""
+    if not digest_info or not digest_info.get("success"):
+        return
+    try:
+        titles = "\n".join(f"• {it.get('title_l1', '')[:60]}" for it in ranked_items[:5])
+        await send_push(f"📰 {digest_info.get('title', '雷達摘要')}", titles, tag="radar-digest")
+    except Exception:
+        logger.exception("Web Push for radar digest failed")
+
+
+async def _announce_autostar(items: List[Dict[str, Any]]) -> None:
+    await _push_autostar_notices(items)
+    await _push_autostar_to_web(items)
+
+
+async def _announce_digest(digest_info: Dict[str, Any], ranked_items: List[Dict[str, Any]]) -> None:
+    await _push_digest_to_telegram(digest_info, ranked_items)
+    await _push_digest_to_web(digest_info, ranked_items)
+
+
 async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict[str, Any]:
     """
     Executes a radar scan across all active sources.
@@ -265,21 +302,21 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
         if auto_digest and len(ranked_items) >= 2 and local_hour == target_hour:
             item_ids = [it["id"] for it in ranked_items]
             digest_info = await generate_radar_digest(item_ids, digest_type="daily")
-            await _push_digest_to_telegram(digest_info, ranked_items)
+            await _announce_digest(digest_info, ranked_items)
     elif notification_mode == "vip_alert":
         vip_threshold = float(cfg.get("vip_threshold", 4.0))
         vip_items = [it for it in ranked_items if float(it.get("radar_score", 0.0)) >= vip_threshold]
         if vip_items:
-            await _push_autostar_notices(vip_items)
+            await _announce_autostar(vip_items)
     elif notification_mode == "legacy" or cfg.get("auto_digest_push") or cfg.get("auto_star_push"):
         if auto_digest and len(ranked_items) >= 2 and cfg.get("auto_digest_push"):
             item_ids = [it["id"] for it in ranked_items]
             local_hour = datetime.now().astimezone().hour
             dtype = "evening" if 17 <= local_hour <= 23 else "morning"
             digest_info = await generate_radar_digest(item_ids, digest_type=dtype)
-            await _push_digest_to_telegram(digest_info, ranked_items)
+            await _announce_digest(digest_info, ranked_items)
         if cfg.get("auto_star_push"):
-            await _push_autostar_notices(ranked_items)
+            await _announce_autostar(ranked_items)
     else:
         # Default 'silent': zero Telegram messages!
         pass
