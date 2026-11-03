@@ -47,7 +47,7 @@ async def search_semantic(
     limit: int = Query(10, ge=1, le=50)
 ):
     from app.vector import search_hybrid
-    return search_hybrid(q, limit=limit)
+    return await search_hybrid(q, limit=limit)
 
 @router.get("", response_model=List[Dict[str, Any]])
 async def list_items(

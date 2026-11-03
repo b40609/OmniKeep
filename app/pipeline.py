@@ -316,10 +316,10 @@ URL：{url}
             print(f"[Pipeline] Failed to save HTML snapshot for {item_id}: {e}")
 
     try:
-        from app.vector import generate_embedding, store_item_embedding
+        from app.vector import generate_embedding_with_model, store_item_embedding
         embed_text = f"{title_l1} {summary_l1} {' '.join(tech_tags)}"
-        vec = await generate_embedding(embed_text)
-        store_item_embedding(item_id, vec)
+        vec, embed_model = await generate_embedding_with_model(embed_text)
+        store_item_embedding(item_id, vec, model=embed_model)
     except Exception as e:
         print(f"[Pipeline] Failed to store vector embedding for {item_id}: {e}")
 
