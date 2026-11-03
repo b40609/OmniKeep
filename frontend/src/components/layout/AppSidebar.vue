@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import {
   BrainCircuit, PanelLeftClose, Plus, FileText,
-  Inbox, Star, Archive, Layers, Radar, ScanEye,
+  Inbox, Star, Archive, Layers, Radar, ScanEye, GalleryHorizontalEnd,
   FolderInput, KeyRound, Keyboard, LogOut, Tag,
 } from 'lucide-vue-next'
 import { useItemsStore, type TriageView } from '@/stores/items'
@@ -130,6 +130,14 @@ function selectCategory(catName: string) {
             <Radar class="size-4 text-violet-500" />
             <span>訂閱雷達排程</span>
             <kbd class="ml-auto font-mono text-3xs text-subtle-foreground">R</kbd>
+          </button>
+          <button
+            class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground transition cursor-pointer"
+            @click="ui.showDeckModal = true; ui.sidebarMobileOpen = false"
+          >
+            <GalleryHorizontalEnd class="size-4 text-amber-500" />
+            <span>雷達滑卡</span>
+            <kbd class="ml-auto font-mono text-3xs text-subtle-foreground">D</kbd>
           </button>
           <button
             class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground transition cursor-pointer"

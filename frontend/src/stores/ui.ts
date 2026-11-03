@@ -27,6 +27,7 @@ export const useUiStore = defineStore('ui', () => {
   const showSessionModal = ref(false)
   const showWatchModal = ref(false)
   const showImportModal = ref(false)
+  const showDeckModal = ref(false)
 
   // Ingest
   const isIngesting = ref(false)
@@ -34,7 +35,7 @@ export const useUiStore = defineStore('ui', () => {
   return {
     sidebarOpen, sidebarMobileOpen,
     activeItem, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
-    showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal,
+    showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal, showDeckModal,
     isIngesting,
   }
 })

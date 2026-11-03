@@ -584,6 +584,23 @@ export function getBehaviorStats(days = 7): Promise<{ total_events: number; wind
   return request(`/api/behavior/stats?days=${days}`)
 }
 
+/** Same verbs as the Telegram /deck buttons: up/down/star are taste labels, snooze only re-queues. */
+export type SwipeAction = 'swipe_up' | 'swipe_down' | 'swipe_star' | 'snooze'
+
+export interface DeckItem extends Item {
+  reasons?: string[]
+  is_exploration?: boolean
+  deck_score?: number
+}
+
+export function getSwipeDeck(limit = 50): Promise<{ count: number; items: DeckItem[] }> {
+  return request(`/api/behavior/deck?limit=${limit}`)
+}
+
+export function recordSwipe(itemId: number | string, action: SwipeAction): Promise<{ success: boolean; event_type: SwipeAction; duplicate?: boolean }> {
+  return logBehaviorEvent({ event_type: action, item_id: String(itemId) }) as Promise<{ success: boolean; event_type: SwipeAction; duplicate?: boolean }>
+}
+
 /* ---------------- Bookmark Importer ---------------- */
 
 export interface BookmarkImportResult {
