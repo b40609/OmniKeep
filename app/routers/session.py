@@ -143,11 +143,25 @@ async def session_login(req: LoginRequest) -> Dict[str, Any]:
 
     return {"success": True, "platform": req.platform, "url": meta["login_url"]}
 
+# A reverse proxy on the same machine (Tailscale serve, cloudflared, ngrok...)
+# connects from loopback on behalf of a remote device. These are the headers
+# such proxies add; seeing any of them means the real client is not local.
+_PROXY_HEADERS = {"forwarded", "via", "x-real-ip", "cf-connecting-ip", "true-client-ip"}
+_PROXY_HEADER_PREFIXES = ("x-forwarded-", "tailscale-")
+
+
+def _came_through_proxy(request: Request) -> bool:
+    return any(
+        name in _PROXY_HEADERS or name.startswith(_PROXY_HEADER_PREFIXES)
+        for name in request.headers.keys()
+    )
+
+
 @router.get("/local-auth")
 async def get_local_auth(request: Request):
     """Zero-friction auto-auth for local users connecting via loopback (localhost)."""
     client_host = request.client.host if request.client else ""
     is_loopback = client_host in {"127.0.0.1", "::1", "localhost", "testclient"}
-    if not (is_loopback and settings.LOCAL_AUTO_LOGIN):
+    if not (is_loopback and settings.LOCAL_AUTO_LOGIN) or _came_through_proxy(request):
         return {"authenticated": False, "api_key": ""}
     return {"authenticated": True, "api_key": settings.API_KEY}

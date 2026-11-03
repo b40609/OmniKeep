@@ -42,6 +42,12 @@ async def lifespan(app: FastAPI):
         init_vector_db()
     except Exception as e:
         logger.warning(f"Could not initialize vector database: {e}")
+    if settings.LOCAL_AUTO_LOGIN:
+        logger.warning(
+            "LOCAL_AUTO_LOGIN is enabled: /api/session/local-auth hands the API key to "
+            "loopback clients. Requests with reverse-proxy headers are refused, but "
+            "disable it if any other process forwards traffic to this port."
+        )
     if not settings.BACKGROUND_SERVICES_ENABLED:
         yield
         return
