@@ -20,8 +20,10 @@ class CurrentBuildFiles(StaticFiles):
                 r'/static/dist/([^"\s<>]+\.js)', html))
         worker = root / "dist/sw.js"
         if worker.is_file():
-            allowed.update("dist/" + name for name in re.findall(
-                r'workbox-[\w-]+\.js', worker.read_text(encoding="utf-8")))
+            # generateSW loads its runtime as define(["./workbox-<hash>"]) and appends
+            # ".js" at run time, so the reference in sw.js has no extension.
+            allowed.update(f"dist/{name}.js" for name in re.findall(
+                r'workbox-[\w-]+', worker.read_text(encoding="utf-8")))
         assets = path.startswith("dist/assets/") and Path(path).suffix.lower() in {
             ".css", ".woff", ".woff2", ".ttf", ".png", ".jpg", ".svg", ".ico",
         }
