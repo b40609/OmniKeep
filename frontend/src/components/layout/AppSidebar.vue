@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import {
   BrainCircuit, PanelLeftClose, Plus, FileText,
   Inbox, Star, Archive, Layers, Radar, ScanEye, GalleryHorizontalEnd,
-  FolderInput, KeyRound, Keyboard, LogOut, Tag, Bell,
+  FolderInput, KeyRound, Keyboard, LogOut, Tag, Bell, Settings,
 } from 'lucide-vue-next'
 import { useItemsStore, type TriageView } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
@@ -199,7 +199,15 @@ function selectCategory(catName: string) {
 
     <!-- Bottom Utility Row -->
     <div class="shrink-0 border-t border-hairline p-2 text-xs">
-      <div class="grid grid-cols-5 gap-1">
+      <div class="grid grid-cols-3 gap-1">
+        <button
+          class="flex flex-col items-center justify-center gap-1 rounded-lg py-2 text-muted-foreground hover:bg-accent hover:text-foreground transition cursor-pointer"
+          title="AI 服務商、Bot 與備份設定"
+          @click="ui.openSettings()"
+        >
+          <Settings class="size-4" />
+          <span class="text-2xs font-medium">設定</span>
+        </button>
         <button
           class="flex flex-col items-center justify-center gap-1 rounded-lg py-2 text-muted-foreground hover:bg-accent hover:text-foreground transition cursor-pointer"
           title="匯入書籤 (I)"

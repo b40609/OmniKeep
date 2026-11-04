@@ -3,7 +3,8 @@ import json
 import logging
 import re
 from typing import Optional, Dict, Any
-from openai import AsyncOpenAI, RateLimitError
+from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
+from app import ai_status
 from app.providers.base import BaseLLMProvider
 from app.providers.rate_limiter import limiter
 from app.config import settings
@@ -34,6 +35,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 try:
                     response = await self.client.chat.completions.create(**kwargs)
                     limiter.on_success()
+                    ai_status.record_success("llm")
                     return response
                 except RateLimitError as e:
                     last_exc = e
@@ -44,12 +46,19 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                         pass
                     limiter.on_rate_limited(retry_after)
                     if attempt == len(waits) - 1:
+                        ai_status.record_failure("llm", 429, str(e))
                         break
                     wait = min(max(retry_after or preset_wait or 5.0, 2.0), 90.0)
                     logger.warning(
                         f"[Agnes] Rate limited — waiting {wait:.0f}s before retry "
                         f"{attempt + 1}/{len(waits) - 1}"
                     )
+                except APIStatusError as e:
+                    ai_status.record_failure("llm", e.status_code, str(e))
+                    raise
+                except APIConnectionError as e:
+                    ai_status.record_failure("llm", None, f"連不上 {self.base_url}（{type(e).__name__}）")
+                    raise
             # Backoff outside the slot so the other lane keeps working
             await asyncio.sleep(wait)
         raise last_exc

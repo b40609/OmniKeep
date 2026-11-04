@@ -1,14 +1,16 @@
 """Telegram owners are bound only through a one-time link from the signed-in web app."""
 import re
 import time
+from contextlib import closing
 
-from dotenv import dotenv_values
 from fastapi.testclient import TestClient
 import pytest
 
-from app.bot import telegram_bot, telegram_pairing
+from app import app_settings
+from app.bot import telegram_bot
 from app.bot.telegram_bot import TelegramBot
-from app.config import BASE_DIR, settings
+from app.config import settings
+from app.database import get_db_connection
 from app.main import app
 
 HEADERS = {"Authorization": f"Bearer {settings.API_KEY}"}
@@ -37,14 +39,16 @@ def _message(user_id, text, chat_type="private"):
                                         "from": {"id": user_id}, "text": text}}
 
 
+def _saved_owners():
+    """The binding as stored in the app's settings table (None when nothing was saved)."""
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT value FROM app_settings WHERE key = 'TELEGRAM_ALLOWED_USER_IDS'").fetchone()
+    return None if row is None else row["value"]
+
+
 @pytest.fixture
-def env_file(monkeypatch, isolated_runtime):
-    path = isolated_runtime / "deploy" / ".env"
-    path.parent.mkdir()
-    path.write_text("API_KEY=keep-me\nTELEGRAM_ALLOWED_USER_IDS=\n", encoding="utf-8")
-    monkeypatch.setattr(telegram_pairing, "_env_file", lambda: path)
+def no_owners(monkeypatch):
     monkeypatch.setattr(settings, "TELEGRAM_ALLOWED_USER_IDS_RAW", "")
-    return path
 
 
 @pytest.fixture
@@ -62,16 +66,16 @@ def _code():
     return res.json()["link"].split("start=", 1)[1]
 
 
-async def test_messaging_first_binds_nobody(bot, env_file):
+async def test_messaging_first_binds_nobody(bot, no_owners):
     await bot.handle_update(_message(STRANGER, "hello"))
     await bot.handle_update(_message(STRANGER, "/start"))
     assert settings.telegram_allowed_ids == []
-    assert dotenv_values(env_file)["TELEGRAM_ALLOWED_USER_IDS"] == ""
+    assert _saved_owners() is None
     assert len(bot.sent) == 2 and all("尚未綁定" in text for _, text in bot.sent)
-    assert str(STRANGER) in bot.sent[0][1]  # their ID, for setting it by hand
+    assert str(STRANGER) in bot.sent[0][1]  # their ID, so they can tell the owner
 
 
-async def test_pairing_link_binds_its_first_user_once(bot, env_file, monkeypatch, isolated_runtime):
+async def test_pairing_link_binds_its_first_user_once(bot, no_owners, monkeypatch, isolated_runtime):
     with TestClient(app) as client:
         pairing = client.post("/api/telegram/pairing", headers=HEADERS).json()
     assert pairing["link"].startswith("https://t.me/omnikeep_fixture_bot?start=")
@@ -84,16 +88,15 @@ async def test_pairing_link_binds_its_first_user_once(bot, env_file, monkeypatch
 
     assert settings.telegram_allowed_ids == [OWNER]
     assert "已綁定" in bot.sent[-1][1]
-    values = dotenv_values(env_file)
-    assert values["TELEGRAM_ALLOWED_USER_IDS"] == str(OWNER) and values["API_KEY"] == "keep-me"
-    assert not (isolated_runtime / ".env").exists()  # no stray relative .env
+    assert _saved_owners() == str(OWNER)  # saved in the app, survives a restart
+    assert not (isolated_runtime / ".env").exists()  # never written to a .env file
 
     await bot.handle_update(_message(STRANGER, f"/start {code}"))  # the same link, again
     assert settings.telegram_allowed_ids == [OWNER]
     assert "無效或已過期" in bot.sent[-1][1]
 
 
-async def test_wrong_expired_and_replaced_codes_bind_nobody(bot, env_file, monkeypatch):
+async def test_wrong_expired_and_replaced_codes_bind_nobody(bot, no_owners, monkeypatch):
     replaced = _code()
     current = _code()
     await bot.handle_update(_message(OWNER, "/start not-the-code"))
@@ -105,7 +108,7 @@ async def test_wrong_expired_and_replaced_codes_bind_nobody(bot, env_file, monke
     assert all("無效或已過期" in text for _, text in bot.sent)
 
 
-async def test_links_only_work_in_a_private_chat(bot, env_file):
+async def test_links_only_work_in_a_private_chat(bot, no_owners):
     code = _code()
     await bot.handle_update(_message(OWNER, f"/start@omnikeep_fixture_bot {code}", chat_type="group"))
     assert settings.telegram_allowed_ids == []
@@ -113,29 +116,25 @@ async def test_links_only_work_in_a_private_chat(bot, env_file):
     assert settings.telegram_allowed_ids == [OWNER]
 
 
-async def test_existing_owners_hear_about_a_new_binding(bot, env_file, monkeypatch):
+async def test_existing_owners_hear_about_a_new_binding(bot, no_owners, monkeypatch):
     monkeypatch.setattr(settings, "TELEGRAM_ALLOWED_USER_IDS_RAW", str(OWNER))
     await bot.handle_update(_message(FRIEND, f"/start {_code()}"))
     assert settings.telegram_allowed_ids == [OWNER, FRIEND]
-    assert dotenv_values(env_file)["TELEGRAM_ALLOWED_USER_IDS"] == f"{OWNER},{FRIEND}"
-    assert any(chat == OWNER and str(FRIEND) in text for chat, text in bot.sent)
+    assert _saved_owners() == f"{OWNER},{FRIEND}"
+    assert any(chat == OWNER and str(FRIEND) in text and "設定" in text for chat, text in bot.sent)
 
 
-async def test_binding_that_cannot_reach_env_says_so(bot, env_file, monkeypatch):
-    monkeypatch.setattr(telegram_pairing, "_env_file", lambda: None)
+async def test_binding_that_cannot_be_saved_says_so(bot, no_owners, monkeypatch):
+    def broken_save(*args, **kwargs):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(app_settings, "save", broken_save)
     await bot.handle_update(_message(OWNER, f"/start {_code()}"))
-    assert settings.telegram_allowed_ids == [OWNER]
-    assert "無法寫入 .env" in bot.sent[-1][1]
+    assert settings.telegram_allowed_ids == [OWNER]  # still allowed until the next restart
+    assert "沒有存進資料庫" in bot.sent[-1][1]
 
 
-def test_env_file_is_the_absolute_one_the_settings_read(monkeypatch):
-    assert telegram_pairing._env_file() is None  # tests never touch a real .env
-    monkeypatch.setitem(settings.model_config, "env_file", str(BASE_DIR / ".env"))
-    assert telegram_pairing._env_file() == (BASE_DIR / ".env").resolve()
-    assert telegram_pairing._env_file().is_absolute()
-
-
-def test_status_and_pairing_api(bot, env_file, monkeypatch):
+def test_status_and_pairing_api(bot, no_owners, monkeypatch):
     with TestClient(app) as client:
         assert client.post("/api/telegram/pairing").status_code == 401
         assert client.get("/api/telegram/status", headers=HEADERS).json() == {

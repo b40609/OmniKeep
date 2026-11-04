@@ -16,10 +16,19 @@ async def _generate_content(client, **kwargs):
     thread so a slow Gemini request (YouTube analysis can take tens of
     seconds) can no longer freeze every other request in the process.
     """
-    aio = getattr(client, "aio", None)
-    if aio is not None:
-        return await aio.models.generate_content(**kwargs)
-    return await asyncio.to_thread(client.models.generate_content, **kwargs)
+    from app import ai_status
+    try:
+        aio = getattr(client, "aio", None)
+        if aio is not None:
+            response = await aio.models.generate_content(**kwargs)
+        else:
+            response = await asyncio.to_thread(client.models.generate_content, **kwargs)
+    except Exception as exc:
+        code = getattr(exc, "code", None)
+        ai_status.record_failure("gemini", code if isinstance(code, int) else None, f"{type(exc).__name__}: {exc}")
+        raise
+    ai_status.record_success("gemini")
+    return response
 
 
 class GeminiProvider(BaseLLMProvider):

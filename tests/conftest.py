@@ -75,3 +75,7 @@ def isolated_runtime(monkeypatch, request):
     monkeypatch.setattr(socket.socket, "connect_ex", blocked_connect_ex)
     database.init_db()
     yield root
+    # Values saved through the settings page are applied onto the shared `settings`
+    # object; undo them before monkeypatch restores its own originals.
+    from app.app_settings import restore_baseline
+    restore_baseline()

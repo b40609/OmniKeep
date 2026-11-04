@@ -21,3 +21,9 @@ def get_gemini_provider() -> GeminiProvider:
     if _gemini_provider is None:
         _gemini_provider = GeminiProvider()
     return _gemini_provider
+
+def reset_providers() -> None:
+    """Forget cached providers so the next call uses the keys and models saved just now."""
+    global _primary_provider, _gemini_provider
+    _primary_provider = None
+    _gemini_provider = None

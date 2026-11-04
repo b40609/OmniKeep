@@ -132,13 +132,15 @@ async function request<T>(
   }
   if (!res.ok) {
     let detail = `HTTP ${res.status}`
+    let fieldErrors: Record<string, string> | undefined
     try {
       const body = await res.json()
       detail = body.detail || body.error || detail
+      fieldErrors = body.errors
     } catch {
       /* non-json error body */
     }
-    throw new Error(detail)
+    throw Object.assign(new Error(detail), { fieldErrors })
   }
   const body = res.status === 204 ? undefined : await read(res)
   ensureCurrentSession()
@@ -201,6 +203,92 @@ export function getTelegramStatus(): Promise<TelegramStatus> {
 
 export function createTelegramPairing(): Promise<TelegramPairing> {
   return request<TelegramPairing>('/api/telegram/pairing', { method: 'POST' })
+}
+
+/* ---------------- App settings (replaces editing .env) ---------------- */
+
+export type SettingKind = 'text' | 'url' | 'secret' | 'int' | 'float' | 'bool' | 'choice' | 'ids'
+/** app = saved in the app; env = from .env / environment; default = built-in. */
+export type SettingSource = 'app' | 'env' | 'default'
+export type SettingValue = string | number | boolean | string[]
+
+export interface SettingField {
+  key: string
+  label: string
+  kind: SettingKind
+  help: string
+  source: SettingSource
+  env_available: boolean
+  choices?: { value: string; label: string }[]
+  min?: number
+  max?: number
+  /** Non-secret fields only: the value in effect. */
+  value?: SettingValue
+  /** Non-secret fields only: what .env says, when it says something. */
+  env_value?: SettingValue
+  /** Secret fields only: never the value itself. */
+  configured?: boolean
+  hint?: string
+  undecryptable?: boolean
+}
+
+export interface SettingsGroup {
+  id: string
+  label: string
+  fields: SettingField[]
+}
+
+export interface SettingsSnapshot {
+  groups: SettingsGroup[]
+  secret_key: { source: 'env' | 'file'; path: string | null; exists: boolean; changed: boolean; undecryptable: string[] }
+  env_importable: string[]
+  bootstrap: { key: string; value: string | number | boolean }[]
+  changed?: string[]
+  imported?: string[]
+}
+
+export interface ConnectionCheck {
+  ok: boolean
+  status: number | null
+  message: string
+  detail: string
+}
+
+export type CheckService = 'llm' | 'embeddings' | 'gemini' | 'telegram' | 'line' | 'github'
+
+export interface ServiceOutcome {
+  ok: boolean
+  at: string
+  status: number | null
+  message: string
+}
+
+export interface ServiceStatus {
+  services: Partial<Record<'llm' | 'embeddings' | 'gemini', ServiceOutcome>>
+  needs_setup: boolean
+  undecryptable: string[]
+}
+
+export function getSettings(): Promise<SettingsSnapshot> {
+  return request<SettingsSnapshot>('/api/settings')
+}
+
+/** `values` sets (a secret set to '' means "no key"); `reset` goes back to .env / default. */
+export function saveSettings(values: Record<string, SettingValue>, reset: string[] = []): Promise<SettingsSnapshot> {
+  return request<SettingsSnapshot>('/api/settings', { method: 'PUT', body: JSON.stringify({ values, reset }) })
+}
+
+/** Tests typed (unsaved) values; blank fields use what is in effect. Saves nothing. */
+export function checkConnection(service: CheckService, values: Record<string, SettingValue> = {}): Promise<ConnectionCheck> {
+  return request<ConnectionCheck>(`/api/settings/check/${service}`, { method: 'POST', body: JSON.stringify({ values }) })
+}
+
+export function importEnvSettings(): Promise<SettingsSnapshot> {
+  return request<SettingsSnapshot>('/api/settings/import-env', { method: 'POST' })
+}
+
+export function getServiceStatus(): Promise<ServiceStatus> {
+  return request<ServiceStatus>('/api/settings/status')
 }
 
 export interface ExportFile {

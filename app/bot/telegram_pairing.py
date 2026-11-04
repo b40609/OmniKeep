@@ -5,15 +5,14 @@ The signed-in web app asks for a code and shows https://t.me/<bot>?start=<code>
 sends "/start <code>" to the bot, which binds the sender. Codes live in the
 database (so a separately run bot process sees them), only as a hash, expire
 after ten minutes and work once. Nobody is ever bound just for messaging first.
+Bound owners are saved as the app setting TELEGRAM_ALLOWED_USER_IDS
+(app/app_settings.py), never written to .env.
 """
 import hashlib
 import logging
 import secrets
 import time
-from pathlib import Path
 from typing import Optional, Tuple
-
-import dotenv
 
 from app.config import settings
 from app.database import consume_telegram_pairing, get_telegram_pairing_expiry, set_telegram_pairing
@@ -42,25 +41,17 @@ def pending_pairing_expiry() -> Optional[float]:
     return get_telegram_pairing_expiry(time.time())
 
 
-def _env_file() -> Optional[Path]:
-    """The .env the settings were loaded from, as an absolute path (None while testing)."""
-    env_file = settings.model_config.get("env_file")
-    return Path(env_file).resolve() if env_file else None
-
-
 def bind_telegram_user(user_id: int) -> bool:
-    """Allow user_id from now on; True when that also reached .env and survives a restart."""
+    """Allow user_id from now on; True when that was also saved and survives a restart."""
     ids = settings.telegram_allowed_ids
     if user_id not in ids:
         ids = [*ids, user_id]
     value = ",".join(str(i) for i in ids)
-    settings.TELEGRAM_ALLOWED_USER_IDS_RAW = value
-    env_file = _env_file()
-    if env_file is None:
-        return False
     try:
-        dotenv.set_key(str(env_file), "TELEGRAM_ALLOWED_USER_IDS", value, quote_mode="never")
+        from app.app_settings import save
+        save({"TELEGRAM_ALLOWED_USER_IDS": value}, action="pair")  # also applies it
         return True
     except Exception as exc:
-        logger.warning("Could not persist TELEGRAM_ALLOWED_USER_IDS to %s (%s)", env_file, type(exc).__name__)
+        logger.warning("Could not save the Telegram binding (%s)", type(exc).__name__)
+        settings.TELEGRAM_ALLOWED_USER_IDS_RAW = value  # still allowed until a restart
         return False

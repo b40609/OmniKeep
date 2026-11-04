@@ -422,6 +422,26 @@ def init_db():
         )
     """)
 
+    # 24. Settings saved in the app (app/app_settings.py); they override .env.
+    #     Credentials are encrypted (is_secret = 1) with a key kept outside this database.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            is_secret INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    # 25. Which setting changed and when; never the value.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS app_settings_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT NOT NULL,
+            action TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -430,6 +450,14 @@ def init_db():
         init_vector_db()
     except Exception:
         pass
+
+    try:
+        from app.app_settings import apply_overrides
+        apply_overrides()
+    except Exception as exc:  # a settings problem must not keep the service from starting
+        import logging
+        logging.getLogger("omnikeep.database").error(
+            "Could not apply settings saved in the app (%s); using .env values", type(exc).__name__)
 
 # ── Categories DAO ──────────────────────────────────────────────
 

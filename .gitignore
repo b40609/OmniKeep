@@ -10,6 +10,8 @@ venv/
 *.db-wal
 *.db-shm
 *.worker.lock
+# Master key that decrypts credentials saved in the app (app/secret_box.py)
+*.secret.key
 .DS_Store
 dist/
 build/

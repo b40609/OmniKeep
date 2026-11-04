@@ -5,8 +5,12 @@ import { Send } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { buttonVariants } from '@/components/ui/button'
 import { createTelegramPairing, getTelegramStatus, type TelegramPairing, type TelegramStatus } from '@/lib/api'
+import { useUiStore } from '@/stores/ui'
 
 /** Binds a Telegram account as an owner through a one-time t.me link (no .env editing). */
+defineProps<{ inSettings?: boolean }>()
+const emit = defineEmits<{ (e: 'refreshed', boundIds: number[]): void }>()
+const ui = useUiStore()
 const status = ref<TelegramStatus | null>(null)
 const pairing = ref<TelegramPairing | null>(null)
 const busy = ref(false)
@@ -21,6 +25,7 @@ async function refresh() {
   try {
     status.value = await getTelegramStatus()
     if (pairing.value && !status.value.pairing_expires_at) pairing.value = null // used or expired
+    emit('refreshed', status.value.bound_user_ids)
   } catch (e) {
     errorText.value = e instanceof Error ? e.message : String(e)
   }
@@ -49,12 +54,15 @@ defineExpose({ refresh })
 
 <template>
   <section class="space-y-2 border-t border-border pt-3 text-sm">
-    <h3 class="flex items-center gap-2 font-medium"><Send class="size-4" /> Telegram</h3>
+    <h3 class="flex items-center gap-2 font-medium"><Send class="size-4" /> {{ inSettings ? '綁定 Telegram 帳號' : 'Telegram' }}</h3>
     <p v-if="errorText" class="text-danger">無法讀取 Telegram 狀態：{{ errorText }}</p>
     <p v-else-if="!status" class="text-muted-foreground">檢查中…</p>
-    <p v-else-if="!status.configured" class="text-muted-foreground">
-      伺服器沒有設定 <code>TELEGRAM_BOT_TOKEN</code>，Telegram Bot 未啟用。
-    </p>
+    <template v-else-if="!status.configured">
+      <p class="text-muted-foreground">
+        {{ inSettings ? '先在上面填入 Bot Token 並儲存，才能產生配對連結。' : '還沒設定 Telegram Bot Token，Telegram Bot 未啟用。' }}
+      </p>
+      <Button v-if="!inSettings" variant="secondary" @click="ui.openSettings('telegram')">前往設定</Button>
+    </template>
     <template v-else>
       <p class="text-muted-foreground">
         {{ status.bound_user_ids.length ? `已綁定的帳號：${status.bound_user_ids.join('、')}` : '還沒有綁定任何 Telegram 帳號。' }}

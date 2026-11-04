@@ -14,6 +14,7 @@ env
 *.db-wal
 *.db-shm
 *.worker.lock
+*.secret.key
 backups
 scratch
 .zcode

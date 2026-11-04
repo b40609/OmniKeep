@@ -21,6 +21,8 @@ import WatchDialog from '@/components/modals/WatchDialog.vue'
 import ImportDialog from '@/components/modals/ImportDialog.vue'
 import DeckDialog from '@/components/modals/DeckDialog.vue'
 import PushDialog from '@/components/modals/PushDialog.vue'
+import SettingsDialog from '@/components/modals/SettingsDialog.vue'
+import ServiceStatusBanner from '@/components/layout/ServiceStatusBanner.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { useMutations } from '@/composables/useMutations'
 
@@ -260,6 +262,7 @@ onUnmounted(() => {
     <!-- Main Workspace (Top Header + Master Stream + Reader) -->
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
       <AppHeader ref="headerRef" />
+      <ServiceStatusBanner />
 
       <!-- Master–detail workbench body -->
       <div class="relative flex min-h-0 flex-1 overflow-hidden">
@@ -286,6 +289,7 @@ onUnmounted(() => {
     <ImportDialog />
     <DeckDialog />
     <PushDialog />
+    <SettingsDialog />
   </div>
 
   <Toaster />

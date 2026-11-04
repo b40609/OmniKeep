@@ -16,6 +16,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 import numpy as np
 
+from app import ai_status
 from app.config import settings
 from app.database import get_db_connection, get_item_by_id
 
@@ -175,12 +176,16 @@ async def generate_embedding_with_model(text: str) -> Tuple[List[float], str]:
                 if resp.status_code == 200:
                     data = resp.json()
                     vec = data["data"][0]["embedding"]
+                    ai_status.record_success("embeddings")
                     return list(vec[:dim]), settings.EMBEDDING_MODEL
+                body = (getattr(resp, "text", "") or "")[:200]
+                ai_status.record_failure("embeddings", resp.status_code, body)
                 logger.warning(
                     "[Vector] Embedding request to %s returned HTTP %s, using local projection: %s",
-                    api_url, resp.status_code, (getattr(resp, "text", "") or "")[:200],
+                    api_url, resp.status_code, body,
                 )
         except Exception as e:
+            ai_status.record_failure("embeddings", None, f"{type(e).__name__}: {e}")
             logger.warning(f"[Vector] Embedding request to {api_url} failed ({e}), using local projection.")
 
     return _deterministic_local_embedding(clean_text, dim), LOCAL_EMBEDDING_MODEL

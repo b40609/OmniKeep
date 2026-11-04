@@ -25,13 +25,25 @@ class AdaptiveRateLimiter:
         self._interval = self._min_interval
         self._lock = asyncio.Lock()
         self._next_slot = 0.0
-        self._sem = asyncio.Semaphore(max(1, max_concurrency))
+        self._concurrency = max(1, max_concurrency)
+        self._sem = asyncio.Semaphore(self._concurrency)
         self._success_streak = 0
+
+    def reconfigure(self, min_interval: float, max_concurrency: int) -> None:
+        """Apply new pacing from the settings page; requests already running keep their slot."""
+        self._min_interval = max(0.05, min_interval)
+        self._max_interval = max(self._min_interval, self._max_interval)
+        self._interval = self._min_interval
+        self._success_streak = 0
+        if max(1, max_concurrency) != self._concurrency:
+            self._concurrency = max(1, max_concurrency)
+            self._sem = asyncio.Semaphore(self._concurrency)
 
     @asynccontextmanager
     async def slot(self):
         """Acquire a concurrency slot and a pacing gap before one LLM request."""
-        await self._sem.acquire()
+        sem = self._sem  # release the semaphore we took, even if reconfigure() swaps it
+        await sem.acquire()
         try:
             async with self._lock:
                 now = time.monotonic()
@@ -41,7 +53,7 @@ class AdaptiveRateLimiter:
                 await asyncio.sleep(wait)
             yield
         finally:
-            self._sem.release()
+            sem.release()
 
     @property
     def interval(self) -> float:

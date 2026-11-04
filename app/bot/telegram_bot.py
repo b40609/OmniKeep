@@ -237,7 +237,7 @@ class TelegramBot:
             await self.send_message(chat_id, "⛔ 只能在與 Bot 的私人對話中配對。")
             return
         if not redeem_pairing_code(code):
-            await self.send_message(chat_id, "⛔ <b>配對連結無效或已過期</b>。請在 OmniKeep 網頁的「通知」重新產生。")
+            await self.send_message(chat_id, "⛔ <b>配對連結無效或已過期</b>。請在 OmniKeep 網頁的「設定 → Telegram」重新產生。")
             return
         earlier_owners = [owner for owner in settings.telegram_allowed_ids if owner != user_id]
         persisted = bind_telegram_user(user_id)
@@ -245,14 +245,13 @@ class TelegramBot:
         await self.send_message(
             chat_id,
             f"🎉 <b>已綁定為 OmniKeep 擁有者</b>（<code>{user_id}</code>）。傳 /help 看看能做什麼。"
-            + ("" if persisted else "\n\n⚠️ 無法寫入 .env，重新啟動後需要再配對一次，"
-               "或把這個 ID 填入 TELEGRAM_ALLOWED_USER_IDS。"),
+            + ("" if persisted else "\n\n⚠️ 綁定沒有存進資料庫，重新啟動後需要再配對一次。"),
         )
         for owner in earlier_owners:
             await self.send_message(
                 owner,
                 f"🔐 Telegram 帳號 <code>{user_id}</code> 剛透過配對連結取得 OmniKeep 存取權。"
-                f"如果不是你操作的，請從 .env 的 TELEGRAM_ALLOWED_USER_IDS 移除它並重新啟動。",
+                f"如果不是你操作的，請到 OmniKeep 網頁的「設定 → Telegram」移除它。",
             )
 
     async def send_message(
@@ -383,8 +382,8 @@ class TelegramBot:
             if not settings.telegram_allowed_ids:
                 msg = (
                     f"⚠️ <b>OmniKeep Bot 尚未綁定擁有者</b>\n\n"
-                    f"請在 OmniKeep 網頁開啟「通知」，按「產生 Telegram 配對連結」，再用這個帳號開啟連結。\n"
-                    f"或把你的 User ID <code>{user_id}</code> 填入 .env 的 TELEGRAM_ALLOWED_USER_IDS 後重新啟動。"
+                    f"請在 OmniKeep 網頁開啟「設定 → Telegram」，按「產生 Telegram 配對連結」，再用這個帳號開啟連結。\n"
+                    f"你的 User ID 是 <code>{user_id}</code>。"
                 )
             else:
                 msg = f"⛔ <b>未授權的存取</b>。你的 User ID (<code>{user_id}</code>) 不在允許名單中。"

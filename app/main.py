@@ -12,28 +12,16 @@ from app.database import init_db
 from app.routers import (
     items_router, categories_router, ingest_router, line_router,
     radar_router, session_router, watch_router, behavior_router, rules_router, push_router,
-    telegram_router,
+    telegram_router, settings_router,
 )
 from app.mcp_server import mcp
 from app.radar.scheduler import radar_scheduler
 from app.queue.worker import task_worker
 from app.security import verify_api_key
+from app import services
+from app.services import supervise_telegram_polling  # noqa: F401  (kept importable from here)
 
 logger = logging.getLogger("omnikeep.main")
-
-
-async def supervise_telegram_polling(bot):
-    """Restart a crashed/returned poller while the web service remains alive."""
-    while True:
-        try:
-            await bot.run_polling()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Telegram polling exited unexpectedly; restarting")
-        else:
-            logger.error("Telegram polling stopped unexpectedly; restarting")
-        await asyncio.sleep(3)
 
 
 @asynccontextmanager
@@ -55,12 +43,10 @@ async def lifespan(app: FastAPI):
         return
     from app.background import follow_up_pool
     from app.backup import backup_loop
-    from app.bot.telegram_bot import get_telegram_bot
     from app.parsers.cookie_manager import sweep_cookie_exports
     # Cookie exports left by a crash, and the all-sites export older versions kept in TEMP.
     sweep_cookie_exports()
     tasks = []
-    bot = None
     worker_started = False
     radar_started = False
     try:
@@ -71,14 +57,14 @@ async def lifespan(app: FastAPI):
         # settings wakes it, so switching the radar on or off needs no restart.
         radar_scheduler.start()
         radar_started = True
-        if settings.BACKUP_SINK != "off":
-            tasks.append(asyncio.create_task(backup_loop()))
-        bot = get_telegram_bot() if settings.TELEGRAM_BOT_TOKEN else None
-        if bot:
-            tasks.append(asyncio.create_task(supervise_telegram_polling(bot)))
+        # Always running too: each tick reads BACKUP_SINK, which the settings page can change.
+        tasks.append(asyncio.create_task(backup_loop()))
+        # Telegram polling lives in app.services so a token saved in the app restarts it.
+        services.start_telegram()
         yield
     finally:
         # Stop polling/producers before draining consumers and closing bot HTTP.
+        await services.stop_telegram_polling()
         for task in tasks:
             task.cancel()
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -96,8 +82,7 @@ async def lifespan(app: FastAPI):
                 try:
                     await follow_up_pool.stop()
                 finally:
-                    if bot:
-                        await bot.close()
+                    await services.shutdown()
 
 app = FastAPI(
     title="OmniKeep",
@@ -130,6 +115,7 @@ app.include_router(behavior_router)
 app.include_router(rules_router)
 app.include_router(push_router)
 app.include_router(telegram_router)
+app.include_router(settings_router)
 
 # Mount Remote MCP Server (SSE Transport)
 app.mount("/mcp", mcp.sse_app(mount_path="/mcp"))

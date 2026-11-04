@@ -160,15 +160,11 @@ npm ci
 npm run build
 cd ..
 ```
-上述工具只在 `.env` 尚未存在時建立檔案，不會覆寫既有設定；前端建置產物 `static/dist/` 不納入 Git。**首次使用只需要 `API_KEY`，不必先申請 LLM 金鑰。**要啟用 AI 摘要時，再編輯 `.env`，例如：
+上述工具只在 `.env` 尚未存在時建立檔案，不會覆寫既有設定；前端建置產物 `static/dist/` 不納入 Git。**首次使用只需要 `API_KEY`，不必先申請 LLM 金鑰。**要啟用 AI 摘要時，登入後開啟側欄底部的「設定」，在「AI 服務商」填入 API 位址、金鑰與模型，按「測試」確認後儲存即可，立即生效、不必重新啟動。Telegram、LINE、GitHub Token 與備份也都在這裡設定。
 
-```env
-# 主要 LLM (支援 OpenAI、DeepSeek、Ollama 等)
-PRIMARY_LLM_PROVIDER=openai_compatible
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_API_KEY=your_api_key_here
-PRIMARY_MODEL=gpt-4o-mini
-```
+- App 內輸入的金鑰會加密後才存進資料庫，之後只顯示末四碼；解密用的主金鑰是資料庫旁的 `omnikeep.secret.key`（不會進入備份，搬機時要一起帶走；遺失只需重新輸入金鑰）。
+- 優先順序：App 內設定 > `.env` > 預設值。已經寫在 `.env` 的值仍然有效，可在「設定 › 系統」一鍵匯入 App。
+- `HOST`、`PORT`、`DATABASE_PATH`、`API_KEY`、`LOCAL_AUTO_LOGIN` 在服務啟動前就要用到或負責保護登入，仍只能寫在 `.env`。
 
 > [!TIP]
 > 已有 `.env` 的使用者可用獨立的金鑰輪替腳本更新存取金鑰；這會使舊金鑰失效，請同步更新所有客戶端：
@@ -240,23 +236,26 @@ npm run build     # 編譯生產環境產物 (包含型別檢查與 PWA Service 
 
 ## ⚙️ 環境變數說明
 
+標示「App」的設定也能在網頁的「設定」頁修改；App 內儲存的值優先於 `.env`。
+
 | 變數名稱 | 預設值 | 說明 |
 | :--- | :--- | :--- |
 | `API_KEY` | *(無)* | 核心存取主金鑰（長度 >= 32 字元），保護 Web、API 與 MCP |
 | `BIND_ADDRESS` | `127.0.0.1`（新安裝範例） | Docker 主機監聽位址；要允許區網存取需明確設定 |
 | `LOCAL_STT` | `false` | Docker 建置時加入本機語音轉錄，見 [選用功能](docs/optional_features.md) |
 | `LOCAL_AUTO_LOGIN` | `false`（新安裝範例） | 是否允許從 loopback 自動取得存取金鑰；公開部署建議關閉 |
-| `PRIMARY_LLM_PROVIDER` | `openai_compatible` | 主要推理 Provider 類型 (`openai_compatible`) |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 相容端點 Base URL |
-| `OPENAI_API_KEY` | *(無)* | 對應端點的 API Key |
-| `PRIMARY_MODEL` | `gpt-4o-mini` | 主要萃取與摘要所使用的模型名稱 |
-| `GEMINI_API_KEYS` | *(無)* | Gemini API 金鑰清單（支援多組 Key 以逗號分隔輪詢） |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | 用於 YouTube 原生多模態串流解析的模型 |
+| `PRIMARY_LLM_PROVIDER` | `openai_compatible` | App｜主要推理 Provider 類型（`openai_compatible` 或 `gemini`） |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | App｜OpenAI 相容端點 Base URL |
+| `OPENAI_API_KEY` | *(無)* | App｜對應端點的 API Key |
+| `PRIMARY_MODEL` | `gpt-4o-mini` | App｜主要萃取與摘要所使用的模型名稱 |
+| `GEMINI_API_KEYS` | *(無)* | App｜Gemini API 金鑰清單（支援多組 Key 以逗號分隔輪詢） |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | App｜用於 YouTube 原生多模態串流解析的模型 |
 | `DATABASE_PATH` | `omnikeep.db` | 本地 SQLite 資料庫路徑（自動開啟 WAL 模式） |
+| `OMNIKEEP_SECRET_KEY` | *(無)* | 選填。加密 App 內金鑰的主金鑰；不設時自動產生在資料庫旁的 `omnikeep.secret.key`（也可用 `OMNIKEEP_SECRET_KEY_FILE` 改位置） |
 | `RADAR_ENABLED` | *(已停用)* | 背景巡檢改在介面的「雷達 › 排程與推播」開關並設定週期，新安裝預設關閉。只在升級舊資料庫時讀取一次，沿用原本實際的開關狀態 |
-| `BACKUP_SINK` | `local` | 備份方案：`local`（本機輪替）、`rclone`（雲端同步）、`git`、`off` |
-| `TELEGRAM_BOT_TOKEN` | *(無)* | Telegram Ingestion Bot Token（選填） |
-| `TELEGRAM_ALLOWED_USER_IDS` | *(無)* | 授權使用 Bot 的 Telegram 用戶數值 ID。可在網頁「通知」用一次性配對連結綁定，會自動寫入這裡 |
+| `BACKUP_SINK` | `local` | App｜備份方案：`local`（本機輪替）、`rclone`（雲端同步）、`git`、`off` |
+| `TELEGRAM_BOT_TOKEN` | *(無)* | App｜Telegram Ingestion Bot Token（選填） |
+| `TELEGRAM_ALLOWED_USER_IDS` | *(無)* | App｜授權使用 Bot 的 Telegram 用戶數值 ID。在「設定 › Telegram」用一次性配對連結綁定，存進資料庫 |
 
 ---
 

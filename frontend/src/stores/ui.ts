@@ -31,6 +31,16 @@ export const useUiStore = defineStore('ui', () => {
   const showImportModal = ref(false)
   const showDeckModal = ref(false)
   const showPushModal = ref(false)
+  const showSettingsModal = ref(false)
+  const settingsTab = ref('ai')
+  /** Bumped after settings are saved, so the service-status banner re-checks. */
+  const settingsVersion = ref(0)
+
+  function openSettings(tab = 'ai') {
+    settingsTab.value = tab
+    showSettingsModal.value = true
+    sidebarMobileOpen.value = false
+  }
 
   // Ingest
   const isIngesting = ref(false)
@@ -39,6 +49,7 @@ export const useUiStore = defineStore('ui', () => {
     sidebarOpen, sidebarMobileOpen,
     activeItem, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
     showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal, showDeckModal, showPushModal,
+    showSettingsModal, settingsTab, settingsVersion, openSettings,
     watchTab,
     isIngesting,
   }
