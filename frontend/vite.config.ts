@@ -57,7 +57,10 @@ export default defineConfig({
   },
   build: {
     outDir: '../static/dist',
-    emptyOutDir: false,
+    // Outside the Vite root, so Vite would leave files from older builds behind; the
+    // '*.svg' precache glob then lists one the server no longer serves, and a single
+    // precache 404 stops the service worker from installing.
+    emptyOutDir: true,
     target: 'es2022',
   },
 })

@@ -48,3 +48,14 @@ def test_current_build_serves_every_runtime_its_worker_loads():
     with _serve(REPO_STATIC) as client:
         for name in runtimes:
             assert client.get(f"/static/dist/{name}.js").status_code == 200, name
+
+
+@pytest.mark.skipif(not (REPO_STATIC / "dist/sw.js").is_file(), reason="frontend not built")
+def test_current_build_serves_every_file_its_worker_precaches():
+    # One 404 in the precache list and the service worker never installs.
+    worker = (REPO_STATIC / "dist/sw.js").read_text(encoding="utf-8")
+    urls = set(re.findall(r'url:"([^"]+)"', worker))
+    assert "index.html" in urls
+    with _serve(REPO_STATIC) as client:
+        for url in sorted(urls):
+            assert client.get(f"/static/dist/{url}").status_code == 200, url
