@@ -261,13 +261,23 @@ export interface IngestResult {
   detail?: string
 }
 
-export function ingest(content: string, opts: { category?: string | null; async?: boolean } = {}): Promise<IngestResult> {
+export interface IngestOptions {
+  category?: string | null
+  async?: boolean
+  /** What the user's browser showed for the page (bookmarklet); the server uses it as a hint. */
+  pageTitle?: string
+  pageDescription?: string
+}
+
+export function ingest(content: string, opts: IngestOptions = {}): Promise<IngestResult> {
   return request<IngestResult>('/api/ingest', {
     method: 'POST',
     body: JSON.stringify({
       content,
       category: opts.category ?? null,
       async_mode: opts.async ?? false,
+      ...(opts.pageTitle ? { page_title: opts.pageTitle } : {}),
+      ...(opts.pageDescription ? { page_description: opts.pageDescription } : {}),
     }),
   })
 }

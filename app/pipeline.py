@@ -109,13 +109,15 @@ async def _spawn_child_entity_background(source_parent_id: str, cit_id: str, tar
         print(f"[Entity Fan-out] Background spawn failed for {target_url}: {e}")
 
 async def run_pipeline(content_input: str, manual_category: Optional[str] = None,
-                       is_sub_task: bool = False, origin: str = "manual") -> Dict[str, Any]:
+                       is_sub_task: bool = False, origin: str = "manual",
+                       page_title: str = "", page_description: str = "") -> Dict[str, Any]:
     # 1. Fetch available categories
     cat_rows = get_all_categories()
     category_names = [c["name"] for c in cat_rows]
     cat_list_str = ", ".join(category_names)
     clean_input = content_input.strip()
     raw_html = ""
+    fallback_summary = "已儲存內容，無詳細摘要。"
 
     # 2. Route by input type (Pure URL / Mobile Share Snippet vs Text Note)
     detected_url = extract_target_url(clean_input)
@@ -218,13 +220,18 @@ URL：{url}
             content_raw = page_data.get("content_raw", "")
             cover_image = page_data.get("cover_image", "")
             author = page_data.get("author", "")
-            default_title = page_data.get("title", "未命名項目")
+            # The bookmarklet sends what the user's browser shows. Prefer it: the server's
+            # own fetch may only reach a login wall ("未知標題").
+            default_title = page_title or page_data.get("title", "未命名項目")
+            fallback_summary = page_description or fallback_summary
             raw_html = page_data.get("raw_html") or (page_data.get("meta") or {}).get("raw_html") or ""
+            browser_view = "".join(f"\n瀏覽器看到的{label}：{value}"
+                                   for label, value in (("標題", page_title), ("描述", page_description)) if value)
 
             primary = get_primary_provider()
             prompt = f"""請深度分析以下網頁/文章內容：
 網址：{url}
-原始標題：{page_data.get('title', '')}
+原始標題：{page_data.get('title', '')}{browser_view}
 
 候選分類清單：[{cat_list_str}]
 
@@ -274,7 +281,7 @@ URL：{url}
         category_name = "Inbox"
 
     title_l1 = ai_result.get("title_l1") or default_title
-    summary_l1 = ai_result.get("summary_l1") or "已儲存內容，無詳細摘要。"
+    summary_l1 = ai_result.get("summary_l1") or fallback_summary
     tech_tags = ai_result.get("tech_tags", [])
     if isinstance(tech_tags, str):
         tech_tags = [t.strip() for t in tech_tags.split(",") if t.strip()]

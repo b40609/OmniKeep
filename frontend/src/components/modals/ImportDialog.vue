@@ -31,6 +31,7 @@ import Badge from '@/components/ui/badge/Badge.vue'
 import { useUiStore } from '@/stores/ui'
 import { useItemsStore } from '@/stores/items'
 import * as api from '@/lib/api'
+import { bookmarkletHref as bookmarkletHrefFor } from '@/lib/bookmarklet'
 import { toast } from 'vue-sonner'
 
 const ui = useUiStore()
@@ -43,10 +44,9 @@ const exportStarredOnly = ref(false)
 const isExporting = ref(false)
 const copiedBookmarklet = ref(false)
 
-const bookmarkletHref = computed(() => {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8000'
-  return `javascript:(function(){const u=encodeURIComponent(window.location.href);const t=encodeURIComponent(document.querySelector('title')?.textContent||document.querySelector("meta[property='og:title']")?.getAttribute('content')||'');const d=encodeURIComponent(document.querySelector("meta[name='description']")?.getAttribute('content')||document.querySelector("meta[property='og:description']")?.getAttribute('content')||'');window.open('${origin}/?url='+u+'&title='+t+'&description='+d+'&auto_close=1','_blank','width=520,height=620');})();`
-})
+const bookmarkletHref = computed(() =>
+  bookmarkletHrefFor(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8000'),
+)
 
 async function copyBookmarkletCode() {
   await navigator.clipboard.writeText(bookmarkletHref.value)

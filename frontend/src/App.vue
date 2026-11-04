@@ -7,6 +7,7 @@ import { useItemsStore } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
 import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, checkLocalAuth, type SessionBridgeSnapshot } from '@/lib/api'
 import { linkedPanel, OPEN_LINK_MESSAGE } from '@/lib/push'
+import { readClipRequest } from '@/lib/bookmarklet'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ItemList from '@/components/items/ItemList.vue'
@@ -93,15 +94,13 @@ async function login(explicitKey?: string, isAuto = false): Promise<boolean> {
 
 
 async function checkUrlParamIngest() {
-  const params = new URLSearchParams(window.location.search)
-  const incomingUrl = params.get('url')
-  if (incomingUrl) {
-    const autoClose = params.get('auto_close') === '1' || params.has('auto_close')
+  const clip = readClipRequest(window.location.search)
+  if (clip) {
     window.history.replaceState({}, document.title, window.location.pathname)
     const { quickIngest } = useMutations()
     toast.info('偵測到隨手收錄網址，正在啟動多模態解析…')
-    const ok = await quickIngest(incomingUrl)
-    if (autoClose) {
+    const ok = await quickIngest(clip.url, { pageTitle: clip.title, pageDescription: clip.description })
+    if (clip.autoClose) {
       if (ok) {
         toast.success('收錄完成！視窗即將自動關閉…', { duration: 1200 })
         setTimeout(() => {
