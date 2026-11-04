@@ -357,8 +357,10 @@ class RadarScheduler:
         if self._is_running:
             return
         self._is_running = True
-        self._stop_event.clear()
-        self._wake_event.clear()
+        # Fresh events for the loop starting us: an asyncio.Event stays bound to the
+        # first event loop that waited on it, and a restarted scheduler may run in another.
+        self._stop_event = asyncio.Event()
+        self._wake_event = asyncio.Event()
         self._task = asyncio.create_task(self._loop(initial_delay=initial_delay))
         logger.info(f"[Radar:Scheduler] Background scheduler loop started.")
 
