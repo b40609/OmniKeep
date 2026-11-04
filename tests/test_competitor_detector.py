@@ -5,9 +5,21 @@ from app.bot.telegram_bot import TelegramBot
 from app.database import save_item, save_citation, get_sub_entities_for_parent
 
 @pytest.mark.asyncio
-async def test_resolve_taiwan_counterpart():
+async def test_resolve_taiwan_counterpart(monkeypatch):
+    # GitHub search is stubbed: this test once passed only by reaching the real
+    # api.github.com through the Windows Proactor loop.
+    queries = []
+
+    async def fake_search(query, limit=5):
+        queries.append(query)
+        return [{"full_name": "f2etw/jobs", "name": "jobs", "html_url": "https://github.com/f2etw/jobs",
+                 "description": "", "stars": 1234, "language": "", "topics": []}]
+
+    monkeypatch.setattr("app.research.tool_resolver.search_github_repositories", fake_search)
+
     # Should resolve for regional keyword like 润学
     res = await resolve_taiwan_counterpart("润学指南", "把Github上的润学指南拿到墙内卖")
+    assert queries == ["f2etw/jobs"]
     assert res is not None
     assert "f2etw" in res["name"] or "developer-roadmap" in res["name"]
     assert "http" in res["canonical_url"]
