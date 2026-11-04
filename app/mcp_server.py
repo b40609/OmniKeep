@@ -21,6 +21,7 @@ from app.database import (
     get_all_categories,
     get_db_connection
 )
+from app.logging_setup import configure_logging
 from app.pipeline import run_pipeline
 from app.providers import get_primary_provider
 
@@ -503,6 +504,7 @@ def main():
     parser = argparse.ArgumentParser(description="OmniKeep MCP Server")
     parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio", help="MCP transport mode")
     args = parser.parse_args()
+    configure_logging()  # stderr; stdout belongs to the stdio transport
 
     if args.transport == "sse":
         import uvicorn
