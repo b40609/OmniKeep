@@ -12,7 +12,10 @@ class CurrentBuildFiles(StaticFiles):
         path = path.replace("\\", "/")
         root = Path(self.directory)
         allowed = {"manifest.json", "dist/index.html", "dist/sw.js", "dist/push-sw.js",
-                   "dist/favicon.svg", "dist/icons.svg"}
+                   "dist/favicon.svg", "dist/icons.svg", "dist/favicon.ico",
+                   # PWA icons from frontend/public (npm run generate-pwa-assets)
+                   "dist/pwa-64x64.png", "dist/pwa-192x192.png", "dist/pwa-512x512.png",
+                   "dist/maskable-icon-512x512.png", "dist/apple-touch-icon-180x180.png"}
         index = root / "dist/index.html"
         if index.is_file():
             html = index.read_text(encoding="utf-8")

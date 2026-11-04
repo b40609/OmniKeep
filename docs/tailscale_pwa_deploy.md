@@ -98,11 +98,11 @@ curl https://<主機名>.<tailnet 名>.ts.net/api/session/local-auth
 - **scope**：Service Worker 檔案在 `/static/dist/sw.js`，以 scope `/` 註冊（`frontend/src/main.ts`）。伺服器回應帶 `Service-Worker-Allowed: /`（`app/main.py:136-146`），跟網域名稱無關。
 - **確認方式**：在筆電的 Chrome 或 Edge 開 ts.net 網址，DevTools → Application → Service Workers 應看到 `/static/dist/sw.js` 為 activated。
 - **manifest**：`static/manifest.json` 的 `start_url`、`scope` 都是 `/`，`display` 是 `standalone`，都是相對於來源的路徑，換成 ts.net 網域不需要修改。
+- **圖示**：manifest 圖示與 iOS 的 `apple-touch-icon` 都來自 repo 內的 `frontend/public/`，建置後由 `/static/dist/` 提供，不依賴外部網路。改圖時編輯 `frontend/public/favicon.svg`，再執行 `npm run generate-pwa-assets`。
 - **離線行為**：`/api/*` 設為 NetworkOnly（`frontend/vite.config.ts`），私人資料不會留在快取。離線時只開得出外殼，看不到資料，這是刻意的設計。
 
 已知缺口：
 
-- `static/manifest.json` 的圖示指向外部 icons8 網址，也還沒有 `apple-touch-icon`，主畫面圖示可能缺失或依賴外部網路。這會在 PWA 打底的第 4 項修正。
 - 不同網址是不同來源，`http://localhost:5000` 與 `https://….ts.net` 的登入狀態、主題設定不共用。
 - Service Worker 安裝與推播已在本機 headless Chrome（`http://127.0.0.1`）實測；ts.net 網域與 iPhone、iPad 實機還沒有驗證。實際設定後請照第 5、6、8 節操作，確認可以安裝、登入、收到推播。
 
