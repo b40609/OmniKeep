@@ -7,9 +7,11 @@ import Button from '@/components/ui/button/Button.vue'
 import { getPushConfig, sendTestPush, subscribePush, unsubscribePush } from '@/lib/api'
 import { pushEnvironment, sameKey, urlBase64ToUint8Array } from '@/lib/push'
 import { useUiStore } from '@/stores/ui'
+import TelegramPairing from './TelegramPairing.vue'
 
-/** Per-device Web Push opt-in. Telegram notifications are untouched. */
+/** Per-device Web Push opt-in, plus binding the Telegram account notifications also go to. */
 const ui = useUiStore()
+const telegram = ref<InstanceType<typeof TelegramPairing> | null>(null)
 
 type State = 'loading' | 'unsupported' | 'needs-install' | 'no-sw' | 'unconfigured' | 'denied' | 'off' | 'on' | 'error'
 const state = ref<State>('loading')
@@ -101,7 +103,10 @@ async function test() {
 watch(
   () => ui.showPushModal,
   (open) => {
-    if (open) refresh()
+    if (open) {
+      refresh()
+      telegram.value?.refresh()
+    }
   },
 )
 </script>
@@ -152,6 +157,8 @@ watch(
           </div>
         </template>
       </div>
+
+      <TelegramPairing ref="telegram" />
     </DialogContent>
   </Dialog>
 </template>

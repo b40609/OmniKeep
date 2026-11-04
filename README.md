@@ -248,7 +248,7 @@ npm run build     # 編譯生產環境產物 (包含型別檢查與 PWA Service 
 | `RADAR_ENABLED` | *(已停用)* | 背景巡檢改在介面的「雷達 › 排程與推播」開關並設定週期，新安裝預設關閉。只在升級舊資料庫時讀取一次，沿用原本實際的開關狀態 |
 | `BACKUP_SINK` | `local` | 備份方案：`local`（本機輪替）、`rclone`（雲端同步）、`git`、`off` |
 | `TELEGRAM_BOT_TOKEN` | *(無)* | Telegram Ingestion Bot Token（選填） |
-| `TELEGRAM_ALLOWED_USER_IDS` | *(無)* | 授權使用 Bot 的 Telegram 用戶數值 ID（選填） |
+| `TELEGRAM_ALLOWED_USER_IDS` | *(無)* | 授權使用 Bot 的 Telegram 用戶數值 ID。可在網頁「通知」用一次性配對連結綁定，會自動寫入這裡 |
 
 ---
 

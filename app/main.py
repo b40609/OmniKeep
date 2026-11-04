@@ -11,7 +11,8 @@ from app.config import settings
 from app.database import init_db
 from app.routers import (
     items_router, categories_router, ingest_router, line_router,
-    radar_router, session_router, watch_router, behavior_router, rules_router, push_router
+    radar_router, session_router, watch_router, behavior_router, rules_router, push_router,
+    telegram_router,
 )
 from app.mcp_server import mcp
 from app.radar.scheduler import radar_scheduler
@@ -128,6 +129,7 @@ app.include_router(watch_router)
 app.include_router(behavior_router)
 app.include_router(rules_router)
 app.include_router(push_router)
+app.include_router(telegram_router)
 
 # Mount Remote MCP Server (SSE Transport)
 app.mount("/mcp", mcp.sse_app(mount_path="/mcp"))

@@ -180,6 +180,29 @@ export function getStats(): Promise<Stats> {
   return request<Stats>('/api/items/stats')
 }
 
+/* ---------------- Telegram owner binding ---------------- */
+
+export interface TelegramStatus {
+  configured: boolean
+  bound_user_ids: number[]
+  /** Epoch seconds while an unused pairing link is still valid. */
+  pairing_expires_at: number | null
+}
+
+export interface TelegramPairing {
+  /** https://t.me/<bot>?start=<one-time code> */
+  link: string
+  expires_at: number
+}
+
+export function getTelegramStatus(): Promise<TelegramStatus> {
+  return request<TelegramStatus>('/api/telegram/status')
+}
+
+export function createTelegramPairing(): Promise<TelegramPairing> {
+  return request<TelegramPairing>('/api/telegram/pairing', { method: 'POST' })
+}
+
 export interface ExportFile {
   blob: Blob
   filename: string

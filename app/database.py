@@ -413,6 +413,15 @@ def init_db():
         )
     """)
 
+    # 23. Telegram one-time pairing code: at most one pending, and only its hash is kept
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_pairing (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            code_hash TEXT,
+            expires_at REAL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -2104,6 +2113,33 @@ def record_push_result(endpoint: str, error: Optional[str] = None) -> None:
         else:
             conn.execute("UPDATE push_subscriptions SET last_error = ? WHERE endpoint = ?",
                          (f"{now} {error}"[:300], endpoint))
+
+
+# ── Telegram Pairing DAO ──────────────────────────────────────────
+
+def set_telegram_pairing(code_hash: str, expires_at: float) -> None:
+    """Store a new pending code; it replaces any earlier one."""
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("""
+            INSERT INTO telegram_pairing (id, code_hash, expires_at) VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET code_hash = excluded.code_hash, expires_at = excluded.expires_at
+        """, (code_hash, expires_at))
+
+
+def consume_telegram_pairing(code_hash: str, now: float) -> bool:
+    """True for exactly one caller presenting the pending, unexpired code; it is then gone."""
+    with closing(get_db_connection()) as conn, conn:
+        return conn.execute("""
+            UPDATE telegram_pairing SET code_hash = NULL, expires_at = NULL
+            WHERE id = 1 AND code_hash = ? AND expires_at > ?
+        """, (code_hash, now)).rowcount == 1
+
+
+def get_telegram_pairing_expiry(now: float) -> Optional[float]:
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT expires_at FROM telegram_pairing WHERE id = 1 AND expires_at > ?",
+                           (now,)).fetchone()
+    return row["expires_at"] if row else None
 
 
 def seed_demo_items() -> List[Dict[str, Any]]:
