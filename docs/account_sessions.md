@@ -78,5 +78,8 @@ curl http://localhost:5000/health
 
 ## 🔒 隱私聲明
 
-- Session cookie 只存在於**你自己的機器**（automation profile / cookies.txt / 暫存檔）。
+- Session cookie 只存在於**你自己的機器**（automation profile / cookies.txt）。
+- 解析某個網址時，只取出**那個網站**的 cookie（例如 `fb.watch` 算 facebook.com），其他網站的登入狀態不會被帶上，也不會寫進任何檔案。
+- yt-dlp 需要檔案時，cookie 寫進一個只有你（與系統管理員）能開的暫存資料夾，下載完就刪除；當機留下的會在下次啟動或下次匯出時清掉。你的 `cookies.txt` 不會直接交給 yt-dlp，所以不會被它改寫。
+- 舊版曾把所有網站的 cookie 明文留在 `%TEMP%\omnikeep-cookies\session.cookies`，新版啟動時會自動刪除。
 - OmniKeep 不含任何遙測；cookie 不會被傳送到 OmniKeep 以外的任何伺服器（解析目標網站本身除外）。

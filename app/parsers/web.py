@@ -5,7 +5,7 @@ from urllib.parse import urlparse, urljoin
 import httpx
 import trafilatura
 from bs4 import BeautifulSoup
-from app.parsers.cookie_manager import get_cookie_jar, inject_playwright_cookies
+from app.parsers.cookie_manager import inject_playwright_cookies, site_cookies
 from app.network import public_http_client, validate_url
 
 BROWSER_HEADERS = {
@@ -65,7 +65,7 @@ async def fetch_page_with_playwright(url: str) -> Optional[str]:
                 async def reject_socket(ws):
                     await ws.close()
                 await ctx.route_web_socket("**/*", reject_socket)
-                await inject_playwright_cookies(ctx)
+                await inject_playwright_cookies(ctx, url)
                 page = await ctx.new_page()
                 await page.goto(url, timeout=20000, wait_until="domcontentloaded")
                 await asyncio.sleep(1.5)  # brief grace period for DOM hydration
@@ -86,7 +86,7 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
     validate_url(url)
     html_text = ""
     used_session = False
-    jar = get_cookie_jar()
+    jar = site_cookies(url)  # only facebook.com's cookies
 
     # 1. Try authenticated request using bridged session cookies
     if jar:
@@ -187,7 +187,7 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
         return await parse_facebook_page(url)
 
     html = ""
-    jar = get_cookie_jar()
+    jar = site_cookies(url)  # only this site's cookies, also across redirects
     try:
         async with public_http_client(headers=BROWSER_HEADERS, cookies=jar, timeout=20.0, follow_redirects=True) as client:
             resp = await client.get(url)

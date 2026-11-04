@@ -14,7 +14,7 @@ from app.parsers.media_network import PublicYoutubeDL
 
 from app.providers import get_primary_provider, get_gemini_provider
 from app.parsers.web import parse_facebook_page
-from app.parsers.cookie_manager import get_ytdlp_cookie_opts
+from app.parsers.cookie_manager import ytdlp_cookie_opts
 from app.config import settings
 
 logger = logging.getLogger("omnikeep.reel")
@@ -316,33 +316,34 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
 
     try:
         # 1. Download short reel stream via yt-dlp with browser cookie bridge
-        cookie_opts = get_ytdlp_cookie_opts()
-        ydl_opts = {
-            'format': 'b[ext=mp4]/best',
-            'outtmpl': video_path,
-            'quiet': True,
-            'overwrites': True,
-            'socket_timeout': 15,
-            'hls_prefer_native': True,
-            'external_downloader': {'default': 'native'},
-            'external_downloader_args': {'ffmpeg_i': ['-protocol_whitelist', 'file,pipe']},
-            'allowed_extractors': ['facebook.*', 'instagram.*'],
-            **cookie_opts
-        }
+        #    (only this site's cookies, in a temp file deleted when the block ends)
+        with ytdlp_cookie_opts(url) as cookie_opts:
+            ydl_opts = {
+                'format': 'b[ext=mp4]/best',
+                'outtmpl': video_path,
+                'quiet': True,
+                'overwrites': True,
+                'socket_timeout': 15,
+                'hls_prefer_native': True,
+                'external_downloader': {'default': 'native'},
+                'external_downloader_args': {'ffmpeg_i': ['-protocol_whitelist', 'file,pipe']},
+                'allowed_extractors': ['facebook.*', 'instagram.*'],
+                **cookie_opts
+            }
 
-        def _download():
-            try:
-                with PublicYoutubeDL(ydl_opts) as ydl:
-                    return ydl.extract_info(url, download=True)
-            except Exception as e:
-                if "cookiesfrombrowser" in ydl_opts or "cookiefile" in ydl_opts:
-                    logger.info(f"[Reel Analyzer] Cookie extraction notice ({e}), retrying without cookies...")
-                    fallback_opts = {k: v for k, v in ydl_opts.items() if k not in ("cookiesfrombrowser", "cookiefile")}
-                    with PublicYoutubeDL(fallback_opts) as ydl_fb:
-                        return ydl_fb.extract_info(url, download=True)
-                raise
+            def _download():
+                try:
+                    with PublicYoutubeDL(ydl_opts) as ydl:
+                        return ydl.extract_info(url, download=True)
+                except Exception as e:
+                    if "cookiesfrombrowser" in ydl_opts or "cookiefile" in ydl_opts:
+                        logger.info(f"[Reel Analyzer] Cookie extraction notice ({e}), retrying without cookies...")
+                        fallback_opts = {k: v for k, v in ydl_opts.items() if k not in ("cookiesfrombrowser", "cookiefile")}
+                        with PublicYoutubeDL(fallback_opts) as ydl_fb:
+                            return ydl_fb.extract_info(url, download=True)
+                    raise
 
-        info = await _run_thread(_download)
+            info = await _run_thread(_download)
         raw_title = info.get("title") or ""
         uploader = info.get("uploader") or ""
         description = info.get("description") or ""

@@ -6,7 +6,7 @@ import http.cookiejar
 from app.config import settings
 from app.parsers.cookie_manager import (
     get_cookie_jar,
-    get_ytdlp_cookie_opts,
+    ytdlp_cookie_opts,
     get_httpx_cookies,
     inject_playwright_cookies,
 )
@@ -20,8 +20,8 @@ def test_settings_cookie_configuration():
     assert Path(settings.BROWSER_COOKIE_FILE).is_absolute()
 
 def test_ytdlp_cookie_options():
-    opts = get_ytdlp_cookie_opts()
-    assert opts == {}  # No browser session or cookie file in the isolated runtime.
+    with ytdlp_cookie_opts("https://www.instagram.com/reel/x") as opts:
+        assert opts == {}  # No browser session or cookie file in the isolated runtime.
 
 def test_cookie_file_loading_and_conversion():
     cookie_content = """# Netscape HTTP Cookie File
@@ -40,14 +40,17 @@ def test_cookie_file_loading_and_conversion():
         assert len(jar) == 2
 
         # Check httpx cookies
-        httpx_cookies = get_httpx_cookies()
+        httpx_cookies = get_httpx_cookies("https://www.facebook.com/reel/1")
         assert httpx_cookies is not None
         assert "c_user" in httpx_cookies
         assert httpx_cookies.get("c_user") == "100099887766"
+        assert get_httpx_cookies("https://example.org/") is None  # other sites get nothing
 
-        # Check yt-dlp cookiefile opt
-        opts = get_ytdlp_cookie_opts()
-        assert opts.get("cookiefile") == temp_path
+        # yt-dlp gets a scoped copy, never the user's file (it rewrites its cookiefile on exit)
+        with ytdlp_cookie_opts("https://www.facebook.com/reel/1") as opts:
+            assert opts["cookiefile"] != temp_path
+            assert "c_user" in Path(opts["cookiefile"]).read_text(encoding="utf-8")
+        assert not Path(opts["cookiefile"]).exists()
 
     finally:
         settings.BROWSER_COOKIE_FILE = original_file

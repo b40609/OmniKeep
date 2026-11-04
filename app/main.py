@@ -55,6 +55,9 @@ async def lifespan(app: FastAPI):
     from app.background import follow_up_pool
     from app.backup import backup_loop
     from app.bot.telegram_bot import get_telegram_bot
+    from app.parsers.cookie_manager import sweep_cookie_exports
+    # Cookie exports left by a crash, and the all-sites export older versions kept in TEMP.
+    sweep_cookie_exports()
     tasks = []
     bot = None
     worker_started = False
