@@ -385,8 +385,8 @@ def _restrict_to_current_user(folder: Path) -> None:
 
 def _private_dir() -> Path:
     """A fresh folder only the current user (and administrators) can open. mkdtemp makes
-    it 0700 on POSIX, and newer Pythons on Windows give it a user-only ACL too; older
-    ones (the project supports 3.10+) inherit TEMP's, so inheritance is cut explicitly."""
+    it 0700 on POSIX, and newer Pythons on Windows give it a user-only ACL too; early
+    3.12 releases inherit TEMP's, so inheritance is cut explicitly."""
     folder = Path(tempfile.mkdtemp(prefix=_EXPORT_PREFIX))
     if os.name == "nt":
         try:

@@ -5,7 +5,7 @@
 **Your Self-Hosted Multimodal Knowledge Hub & Autonomous Signal Radar.**<br>
 **專屬於每位知識工作者的自託管多模態情報中樞與主動第二大腦。**
 
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Vue 3](https://img.shields.io/badge/Vue.js-3.5%2B-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
@@ -129,7 +129,7 @@ docker compose up -d --build
 ### 方式 B：本地環境運行 (Python + Node.js)
 
 #### 1. 安裝環境與依賴
-- **後端環境**：Python 3.10+
+- **後端環境**：Python 3.12+
 - **前端建置**：Node.js 20.19+ 或 22.12+（Python 本地部署也必須建置一次）
 
 ```bash
