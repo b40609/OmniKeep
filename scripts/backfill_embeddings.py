@@ -20,9 +20,12 @@ if str(BASE_DIR) not in sys.path:
 import httpx
 import numpy as np
 
+from app.app_settings import apply_overrides
 from app.config import settings
 from app.database import get_db_connection
 from app.vector import load_vec_extension
+
+apply_overrides()  # the Ollama address and model saved in the app win over .env
 
 DIM = int(settings.EMBEDDING_DIM)
 MODEL_NAME = settings.EMBEDDING_MODEL

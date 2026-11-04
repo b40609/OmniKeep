@@ -58,6 +58,7 @@ def audit_embeddings() -> Dict[str, Any]:
         "target_model": target, "dim": dim, "items": len(items), "rows": len(rows), "vec_rows": vec_rows,
         "labels": Counter(), "actual": Counter(),
         "mislabeled_local": [], "stale": [], "dim_mismatch": [], "orphans": [], "missing": [],
+        "indexed": [],  # every vector that belongs to an existing item (for a full rebuild)
     }
     indexed = set()
     for row in rows:
@@ -68,6 +69,7 @@ def audit_embeddings() -> Dict[str, Any]:
         if item is None:
             report["orphans"].append(item_id)
             continue
+        report["indexed"].append(item_id)
         if row["dim"] != dim:
             report["dim_mismatch"].append(item_id)
             report["stale"].append(item_id)

@@ -5,10 +5,16 @@
   python scripts/rebuild_embeddings.py --reembed --yes          re-embed rows not made by the current model
   python scripts/rebuild_embeddings.py --reembed --include-missing --yes
                                                                 also embed analysed items that have no vector
+  python scripts/rebuild_embeddings.py --reembed --all --yes    re-embed every vector with the current model
 
-Uses the server's .env. Without --yes it only prints what it would change. With --yes it
-first saves BACKUP_DIR/omnikeep-prerebuild-<stamp>.zip (restore with scripts/restore_backup.py).
-OmniKeep may keep running meanwhile.
+--all is for labels that cannot be trusted: only local hashed vectors can be proven
+(recomputed), so a row made by OpenAI but labelled as the Ollama model looks current.
+With the local Ollama runner it costs nothing; with a cloud endpoint it is one paid
+call per item.
+
+Uses the server's .env plus the settings saved in the app. Without --yes it only prints
+what it would change. With --yes it first saves BACKUP_DIR/omnikeep-prerebuild-<stamp>.zip
+(restore with scripts/restore_backup.py). OmniKeep may keep running meanwhile.
 """
 import argparse
 import asyncio
@@ -17,19 +23,26 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.app_settings import apply_overrides  # noqa: E402
 from app.backup import snapshot_archive  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.reindex import audit_embeddings, reembed, relabel_proven_local  # noqa: E402
+from app.vector import ollama_embedding_enabled  # noqa: E402
 
 
 def _counts(counter) -> str:
     return ", ".join(f"{model} x{n}" for model, n in counter.most_common()) or "(none)"
 
 
+def _source() -> str:
+    if ollama_embedding_enabled():
+        return f"local Ollama at {settings.OLLAMA_BASE_URL}"
+    return "OPENAI_API_KEY set" if settings.OPENAI_API_KEY else "no OPENAI_API_KEY, so local vectors"
+
+
 def _print_report(report) -> None:
-    source = "OPENAI_API_KEY set" if settings.OPENAI_API_KEY else "no OPENAI_API_KEY, so local vectors"
     print(f"Database        {settings.DATABASE_PATH}")
-    print(f"Queries use     {report['target_model']} ({source}), dim {report['dim']}")
+    print(f"Queries use     {report['target_model']} ({_source()}), dim {report['dim']}")
     vec = f", vec_items {report['vec_rows']}" if report["vec_rows"] is not None else ""
     print(f"Index           {report['items']} items, {report['rows']} vectors{vec}")
     print(f"Labelled as     {_counts(report['labels'])}")
@@ -38,6 +51,7 @@ def _print_report(report) -> None:
     dims = f", {len(report['dim_mismatch'])} of them with another dim" if report["dim_mismatch"] else ""
     print(f"- not from {report['target_model']}, so queries cannot match them: {len(report['stale'])}{dims} (--reembed)")
     print(f"- analysed items without a vector: {len(report['missing'])} (--reembed --include-missing)")
+    print(f"- every vector of an existing item: {len(report['indexed'])} (--reembed --all)")
     print(f"- vectors of deleted items: {len(report['orphans'])} (harmless, left alone)")
 
 
@@ -46,16 +60,30 @@ def main(argv=None) -> int:
     parser.add_argument("--repair", action="store_true", help="relabel rows proven to be local vectors")
     parser.add_argument("--reembed", action="store_true", help="re-embed rows not made by the current model")
     parser.add_argument("--include-missing", action="store_true", help="with --reembed: also items without a vector")
+    parser.add_argument("--all", action="store_true",
+                        help="with --reembed: every existing vector, not only the provably stale ones")
     parser.add_argument("--yes", action="store_true", help="apply the changes (default: only show them)")
     args = parser.parse_args(argv)
+    if args.all and not args.reembed:
+        parser.error("--all only works together with --reembed")
 
+    apply_overrides()  # keys and addresses saved in the app's settings page win over .env
     report = audit_embeddings()
     _print_report(report)
     relabel = report["mislabeled_local"] if args.repair else []
-    embed = report["stale"] + (report["missing"] if args.include_missing else []) if args.reembed else []
+    embed = []
+    if args.reembed:
+        embed = list(report["indexed"] if args.all else report["stale"])
+        if args.include_missing:
+            embed += report["missing"]
     if not (args.repair or args.reembed):
         return 0
-    calls = f"{len(embed)} embedding API calls" if settings.OPENAI_API_KEY else "local, no API calls"
+    if ollama_embedding_enabled():
+        calls = "local Ollama, no API cost"
+    elif settings.OPENAI_API_KEY:
+        calls = f"{len(embed)} embedding API calls"
+    else:
+        calls = "local, no API calls"
     print(f"\nPlan: relabel {len(relabel)} rows; re-embed {len(embed)} items with {report['target_model']} ({calls}).")
     if not relabel and not embed:
         print("Nothing to change.")

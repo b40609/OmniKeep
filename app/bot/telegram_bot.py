@@ -1252,10 +1252,13 @@ class TelegramBot:
         self.running = False
 
 def run_bot():
+    # Run on its own, this process must also pick up the token and owners saved in the app.
+    from app.app_settings import apply_overrides
+    apply_overrides()
     if not settings.TELEGRAM_BOT_TOKEN:
         print("=" * 60)
         print("OmniKeep Telegram Bot")
-        print("請先於 .env 設定 TELEGRAM_BOT_TOKEN 才能啟動 Bot。")
+        print("請先在 OmniKeep 網頁「設定 › Telegram」填入 Bot Token（或在 .env 設定 TELEGRAM_BOT_TOKEN）。")
         print("教學請參閱 docs/telegram_bot.md")
         print("=" * 60)
         return

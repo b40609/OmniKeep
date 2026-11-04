@@ -745,6 +745,9 @@ def main():
         from app.config import settings
         uvicorn.run("app.main:app", host=settings.HOST, port=settings.PORT)
     else:
+        # A separate process from the web service: load the keys saved in the app too.
+        from app.app_settings import apply_overrides
+        apply_overrides()
         mcp.run(transport="stdio")
 
 if __name__ == "__main__":

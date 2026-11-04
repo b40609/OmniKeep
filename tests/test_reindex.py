@@ -141,6 +141,36 @@ def test_reembed_stops_and_keeps_rows_when_the_endpoint_is_down(index, monkeypat
     assert {name: get_item_embedding(item_id) for name, item_id in index.items()} == before
 
 
+def test_reembed_all_redoes_every_vector_whose_label_cannot_be_trusted(index, monkeypatch, capsys):
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "synthetic-key")
+    seen = _embeddings_api(monkeypatch)
+    assert index["remote"] not in reindex.audit_embeddings()["stale"]  # its label alone looks current
+
+    assert rebuild(["--reembed", "--all"]) == 0  # the plan first
+    assert "re-embed 4 items" in capsys.readouterr().out and seen == []
+
+    assert rebuild(["--reembed", "--all", "--yes"]) == 0
+    assert len(seen) == 4  # mislabeled, remote, local, short; never the deleted item's vector
+    report = reindex.audit_embeddings()
+    assert report["stale"] == [] and report["missing"] == [index["unindexed"]]  # --include-missing not given
+
+
+def test_all_needs_reembed():
+    with pytest.raises(SystemExit):
+        rebuild(["--all"])
+
+
+def test_rebuild_uses_the_key_saved_in_the_app(index, capsys):
+    from app import app_settings
+    app_settings.save({"OPENAI_API_KEY": "sk-saved-in-the-app-0000000000"})
+    app_settings.restore_baseline()  # a separate process starts from .env only
+    assert settings.OPENAI_API_KEY == ""
+
+    assert rebuild([]) == 0
+    out = capsys.readouterr().out
+    assert f"Queries use     {REMOTE} (OPENAI_API_KEY set)" in out
+
+
 def test_pipeline_indexes_the_item_as_stored_after_rules(monkeypatch):
     """New vectors are made from the same text the audit recomputes, so it can recognise them."""
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
