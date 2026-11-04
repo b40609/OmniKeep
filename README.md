@@ -124,7 +124,7 @@ docker compose up -d --build
 
 Docker 映像預設不含本機語音轉錄，也沒有 Chrome；要加入本機語音轉錄，在 `.env` 設定 `LOCAL_STT=true` 後重新建置。見 [選用功能](docs/optional_features.md)。
 
-**手機與捷徑**：手機以網頁方式連線可使用受保護的區網／VPN；PWA 安裝與離線快取通常需要 HTTPS。請參考 [iOS／Android 設定指南](docs/ios_shortcut.md)。倉庫保留的 `static/qr_*` 僅導向公開設定文件，並不是你的可用 Webhook；每位使用者須自行設定端點與 API Key，且應透過 `X-API-Key` 標頭傳送憑證。
+**手機與捷徑**：手機以網頁方式連線可使用受保護的區網／VPN；PWA 安裝與離線快取通常需要 HTTPS。請參考 [iOS／Android 設定指南](docs/ios_shortcut.md)。每位使用者須自行設定端點與 API Key，且應透過 `X-API-Key` 標頭傳送憑證。
 
 ---
 

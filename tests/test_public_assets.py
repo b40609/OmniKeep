@@ -1,15 +1,13 @@
 """Public source assets must not distribute the developer's old credentials."""
 
-import re
 from pathlib import Path
 
+STATIC = Path(__file__).resolve().parents[1] / "static"
 
-def test_archived_mobile_test_requires_user_supplied_key():
-    project = Path(__file__).resolve().parents[1]
-    html = (project / "static/mobile_test.html").read_text(encoding="utf-8")
-    assert 'id="api-key"' in html
-    assert "function apiKey()" in html
-    assert "?token=" not in html
-    assert not re.search(r"const\s+API_KEY\s*=", html)
-    assert not re.search(r"X-API-Key:\s*[a-zA-Z0-9_-]{8,}", html)
 
+def test_retired_pages_and_qr_codes_stay_removed():
+    # The pre-Vue UI, its service worker, the mobile test page and the QR codes that
+    # pointed at a personal webhook. The app serves only manifest.json and the current build.
+    retired = ["index-legacy.html", "sw.js", "mobile_test.html"]
+    assert [name for name in retired if (STATIC / name).exists()] == []
+    assert sorted(p.name for p in STATIC.glob("qr_*")) == []
