@@ -86,7 +86,7 @@ def get_local_whisper_model():
 
 def transcribe_local_whisper(audio_path: str, timeout: int = 60, max_duration_sec: Optional[int] = None) -> str:
     """Decodes audio via FFmpeg pipe to 16kHz float32 and transcribes locally in ~0.3s"""
-    global _force_cpu_stt
+    global _force_cpu_stt, _local_whisper_model
     model = get_local_whisper_model()
     if not model or not os.path.exists(audio_path):
         return ""
