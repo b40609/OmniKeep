@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import uuid
 import asyncio
@@ -15,6 +16,8 @@ from app.parsers import is_youtube_url, fetch_youtube_metadata, parse_web_page, 
 from app.parsers.reel import is_video_reel_url, parse_video_reel
 from app.providers import get_primary_provider, get_gemini_provider
 from app.config import settings
+
+logger = logging.getLogger("omnikeep.pipeline")
 
 ANALYSIS_SYSTEM_PROMPT = """你是一位頂尖的資深系統架構師與技術情報分析官。
 你的任務是將使用者提供的內容精準消化，輸出結構化的兩段式情報（L1 速覽 + L2 深度剖析）。
@@ -107,7 +110,7 @@ async def _spawn_child_entity_background(source_parent_id: str, cit_id: str, tar
                 "mention_context": mention_context
             })
     except Exception as e:
-        print(f"[Entity Fan-out] Background spawn failed for {target_url}: {e}")
+        logger.warning(f"[Entity Fan-out] Background spawn failed for {target_url}: {e}")
 
 async def run_pipeline(content_input: str, manual_category: Optional[str] = None,
                        is_sub_task: bool = False, origin: str = "manual",
@@ -308,7 +311,7 @@ URL：{url}
         from app.rules import apply_rules_to_item
         item_record = apply_rules_to_item(item_record)
     except Exception as e:
-        print(f"[Pipeline] Rules engine evaluation failed: {e}")
+        logger.warning(f"[Pipeline] Rules engine evaluation failed: {e}")
 
     item_id = save_item(item_record)
     item_record["id"] = item_id
@@ -321,7 +324,7 @@ URL：{url}
             from app.snapshot import save_html_snapshot
             save_html_snapshot(item_id, raw_html, url)
         except Exception as e:
-            print(f"[Pipeline] Failed to save HTML snapshot for {item_id}: {e}")
+            logger.warning(f"[Pipeline] Failed to save HTML snapshot for {item_id}: {e}")
 
     try:
         from app.vector import generate_embedding_with_model, item_embedding_text, store_item_embedding
@@ -330,7 +333,7 @@ URL：{url}
         vec, embed_model = await generate_embedding_with_model(embed_text)
         store_item_embedding(item_id, vec, model=embed_model)
     except Exception as e:
-        print(f"[Pipeline] Failed to store vector embedding for {item_id}: {e}")
+        logger.warning(f"[Pipeline] Failed to store vector embedding for {item_id}: {e}")
 
     # 3. Entity Fan-out & Citation Linking (Deduplication & Unpacking)
     sub_entities = ai_result.get("sub_entities", [])
@@ -375,6 +378,6 @@ URL：{url}
                         follow_up_pool.submit(lambda parent=item_id, citation=cit_id, name=raw_name, url=canon_url, why=reason:
                                               _spawn_child_entity_background(parent, citation, name, url, why))
                     except Exception as e:
-                        print(f"[Entity Fan-out] Error scheduling child spawn: {e}")
+                        logger.warning(f"[Entity Fan-out] Error scheduling child spawn: {e}")
 
     return item_record

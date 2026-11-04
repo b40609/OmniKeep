@@ -1,5 +1,5 @@
-"""App log records reach stderr (app/logging_setup.py), and radar, parsers and the cookie
-bridge log through it instead of print()."""
+"""App log records reach stderr (app/logging_setup.py), and app code logs through it
+instead of print()."""
 import ast
 import os
 import subprocess
@@ -24,10 +24,13 @@ def _calls(path, predicate):
     return [node for node in ast.walk(tree) if isinstance(node, ast.Call) and predicate(node)]
 
 
-def test_radar_parsers_and_cookie_bridge_do_not_print():
+def test_app_code_does_not_print():
+    # A print() reached from an MCP tool lands in the stdio protocol stream.
     is_print = lambda c: isinstance(c.func, ast.Name) and c.func.id == "print"  # noqa: E731
-    files = sorted((REPO / "app/radar").rglob("*.py")) + sorted((REPO / "app/parsers").rglob("*.py"))
-    found = [f"{f.relative_to(REPO)}:{c.lineno}" for f in files for c in _calls(f, is_print)]
+    found = [f"{f.relative_to(REPO).as_posix()}:{c.lineno}"
+             for f in sorted((REPO / "app").rglob("*.py")) for c in _calls(f, is_print)]
+    # run_bot() is the standalone Telegram bot's terminal banner, not a log.
+    found = [where for where in found if not where.startswith("app/bot/telegram_bot.py:")]
     assert found == []
 
 
