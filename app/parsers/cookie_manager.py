@@ -4,6 +4,7 @@ import time
 import tempfile
 import subprocess
 import http.cookiejar
+import importlib.util
 import ipaddress
 import threading
 from contextlib import contextmanager
@@ -30,6 +31,17 @@ _CDP_LAUNCH_PATHS = [
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
     os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
 ]
+
+# requirements.txt installs playwright on Windows only. Without it the bridge stays off
+# rather than launching a Chrome it cannot talk to.
+PLAYWRIGHT_MISSING = (
+    "這台電腦沒有安裝 playwright，無法使用自動化 Chrome 登入。"
+    "Windows 請重新執行 pip install -r requirements.txt；其他系統請改用 cookies.txt 匯入。"
+)
+
+
+def playwright_installed() -> bool:
+    return importlib.util.find_spec("playwright") is not None
 
 
 class SilentYDLLogger:
@@ -76,6 +88,8 @@ def _managed_cdp_browser() -> Optional[psutil.Process]:
 
 def _close_managed_browser(process: psutil.Process) -> bool:
     """Ask Chrome to flush its profile and exit before switching modes."""
+    if not playwright_installed():
+        return False
     from playwright.sync_api import sync_playwright
 
     try:
@@ -237,7 +251,7 @@ def _fetch_cdp_cookies() -> Optional[http.cookiejar.CookieJar]:
 def get_cookies_via_cdp(force_refresh: bool = False) -> Optional[http.cookiejar.CookieJar]:
     """Fetch live decrypted cookies over CDP; auto-launches the automation
     Chrome on first use. Returns None when unavailable."""
-    if not ensure_cdp_browser():
+    if not playwright_installed() or not ensure_cdp_browser():
         return None
     try:
         jar = _fetch_cdp_cookies()

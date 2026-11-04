@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # true adds on-device speech-to-text (docs/optional_features.md)
+        LOCAL_STT: ${LOCAL_STT:-false}
     image: omnikeep:latest
     container_name: omnikeep
     restart: unless-stopped

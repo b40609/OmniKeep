@@ -37,9 +37,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python requirements
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python requirements. LOCAL_STT=true adds on-device speech-to-text
+# (requirements-stt.txt, docs/optional_features.md); its model is cached under /data.
+ARG LOCAL_STT=false
+ENV HF_HOME=/data/huggingface
+COPY requirements.txt requirements-stt.txt ./
+RUN pip install --no-cache-dir -r requirements.txt \
+    && if [ "$LOCAL_STT" = "true" ]; then pip install --no-cache-dir -r requirements-stt.txt; fi
 
 # Copy static assets (manifest.json, icons, etc.)
 COPY static ./static

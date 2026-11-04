@@ -5,7 +5,7 @@ from urllib.parse import urlparse, urljoin
 import httpx
 import trafilatura
 from bs4 import BeautifulSoup
-from app.parsers.cookie_manager import inject_playwright_cookies, site_cookies
+from app.parsers.cookie_manager import inject_playwright_cookies, playwright_installed, site_cookies
 from app.network import public_http_client, validate_url
 
 BROWSER_HEADERS = {
@@ -37,6 +37,9 @@ async def fetch_page_with_playwright(url: str) -> Optional[str]:
     validate_url(url)
     from app.config import settings
     if not settings.ENABLE_BROWSER_FALLBACK:
+        return None
+    if not playwright_installed():
+        print("[Web Parser] ENABLE_BROWSER_FALLBACK is on but playwright is not installed; skipped.")
         return None
     try:
         from playwright.async_api import async_playwright

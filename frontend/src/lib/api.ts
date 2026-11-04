@@ -471,6 +471,7 @@ export interface SessionPlatformStatus {
 
 export interface SessionBridgeSnapshot {
   mode: 'cdp' | 'cookiefile' | 'none' | 'unknown'
+  playwright_installed?: boolean
   cdp_port?: number
   cdp_reachable?: boolean
   auto_launch?: boolean

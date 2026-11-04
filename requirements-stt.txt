@@ -1,0 +1,9 @@
+# Optional: on-device speech-to-text for Reels and Bilibili (docs/optional_features.md).
+#   pip install -r requirements.txt -r requirements-stt.txt
+# Kept out of requirements.txt: about 210 MB of native wheels, and onnxruntime has shipped
+# wheels for new Python releases months late (3.14: four months), which would break the base install.
+# faster-whisper 1.2.1 cannot open audio files with PyAV 19 (fixed upstream, not yet released);
+# OmniKeep decodes with ffmpeg and passes arrays (reel.py), so keep it that way rather than pass paths.
+faster-whisper>=1.0,<2
+# Imported directly to detect a CUDA GPU (app/parsers/reel.py).
+ctranslate2>=4,<5

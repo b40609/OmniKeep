@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 
 
@@ -56,7 +58,7 @@ def test_runtime_stage_imports_the_app_and_reports_the_version(isolated_runtime)
     assert runtime["workdir"] == PurePosixPath("/app")
     image = isolated_runtime / "image"
     for src, dest, is_dir in runtime["copies"]:
-        if src.name in ("static", "requirements.txt"):
+        if src.name == "static" or src.name.startswith("requirements"):
             continue  # not needed to import the app; static/dist is a build output
         target = image / dest.relative_to("/app")
         if is_dir:
@@ -73,3 +75,27 @@ def test_runtime_stage_imports_the_app_and_reports_the_version(isolated_runtime)
                              env={**os.environ, "BACKUP_DIR": str(isolated_runtime / "backups")},
                              capture_output=True, text=True, timeout=60)
     assert listing.returncode == 0 and "(none)" in listing.stdout, listing.stdout + listing.stderr
+
+
+@pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell to replay the RUN line")
+@pytest.mark.parametrize("local_stt, installs", [
+    (None, ["install --no-cache-dir -r requirements.txt"]),
+    ("true", ["install --no-cache-dir -r requirements.txt",
+              "install --no-cache-dir -r requirements-stt.txt"]),
+])
+def test_local_stt_build_arg_adds_only_the_speech_requirements(isolated_runtime, local_stt, installs):
+    """docker build --build-arg LOCAL_STT=true; the RUN line is replayed with a stub pip."""
+    lines = (REPO / "Dockerfile").read_text(encoding="utf-8").replace("\\\n", " ").splitlines()
+    default = next(line.split("=", 1)[1] for line in lines if line.startswith("ARG LOCAL_STT="))
+    run = next(line[len("RUN "):] for line in lines if line.startswith("RUN ") and "requirements-stt.txt" in line)
+    assert _holds(_stages()[-1], "/app/requirements-stt.txt")
+    bin_dir = isolated_runtime / "bin"
+    bin_dir.mkdir()
+    log = isolated_runtime / "pip.log"
+    stub = bin_dir / "pip"
+    stub.write_text(f'#!/bin/sh\necho "$*" >> "{log.as_posix()}"\n', newline="\n")
+    stub.chmod(0o755)
+    env = {**os.environ, "LOCAL_STT": local_stt or default,
+           "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    subprocess.run(["sh", "-c", run], env=env, check=True, timeout=30)
+    assert log.read_text().splitlines() == installs

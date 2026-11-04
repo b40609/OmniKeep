@@ -1,3 +1,5 @@
 -r requirements.txt
 pytest>=9,<10
 pytest-asyncio>=1.4,<2
+# Checks that every import is declared (tests/test_optional_dependencies.py).
+deptry>=0.25,<1

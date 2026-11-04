@@ -19,3 +19,6 @@ sqlite-vec>=0.1.9
 py-vapid>=1.9.6,<2
 http-ece>=1.2.1,<2
 cryptography>=46
+# Drives the dedicated Chrome behind the cookie bridge and one-click login (docs/account_sessions.md).
+# Windows only: that Chrome is found at its Windows install paths, and the Docker image has no Chrome.
+playwright>=1.48,<2 ; sys_platform == "win32"

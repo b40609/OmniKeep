@@ -3,6 +3,7 @@ import re
 import shutil
 import base64
 import asyncio
+import importlib.util
 import logging
 import subprocess
 import tempfile
@@ -56,6 +57,11 @@ def _preload_cuda_dlls() -> None:
 def get_local_whisper_model():
     """Lazily load local faster-whisper model (optimized for CUDA GPU / CPU multi-thread int8)"""
     global _local_whisper_model
+    if _local_whisper_model is None and importlib.util.find_spec("faster_whisper") is None:
+        # Optional (requirements-stt.txt): Reels fall back to cloud transcription.
+        logger.warning("[Local STT] faster-whisper is not installed; local transcription is off "
+                       "(pip install -r requirements-stt.txt)")
+        _local_whisper_model = False
     if _local_whisper_model is None:
         try:
             from faster_whisper import WhisperModel

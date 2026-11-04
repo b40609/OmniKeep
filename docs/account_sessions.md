@@ -37,6 +37,7 @@ OmniKeep 解析 Instagram Reels、Facebook 貼文、YouTube 會員影片等內�
 - **獨立 profile**：`%LOCALAPPDATA%\OmniKeep\chrome-cdp`，與日常瀏覽器完全隔離，互不干擾。
 - 為何不用你原本的 Chrome？Chrome 136+ 基於安全**封鎖預設 profile 的遠端除錯埠**，且 127+ 的 App-Bound Encryption 讓外部程式無法解密 cookie DB（yt-dlp #7271、#10927）。獨立 profile + CDP 是唯一穩定解。
 - 橋接只會 `connect_over_cdp` 讀取 cookie，斷開時**不會關閉**該 Chrome。
+- 需要 Python 套件 `playwright`。Windows 執行 `pip install -r requirements.txt` 時會自動安裝；其他系統與 Docker 不會安裝，會話面板會顯示提示，請改用 cookies.txt（見 [選用功能](optional_features.md)）。
 
 ### 相關設定（.env）
 

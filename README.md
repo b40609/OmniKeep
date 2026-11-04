@@ -46,8 +46,8 @@
 
 ### 2. 多模態深度消化管線 (Multimodal Cognitive Pipeline)
 - **YouTube 影音**：整合 Google Gemini 原生串流解析，主機零下載、零頻寬佔用，秒級提煉數十分鐘長影片結構。
-- **Bilibili 長影片**：雙軌語音抽取技術——首選官方 CC/AI 逐字稿 JSON（0.2 秒完成），回落 DASH 音訊分離串流搭配本機 `faster-whisper`（GPU CUDA / CPU 多執行緒自動切換）。
-- **社群短影音 (Reels / TikTok / Shorts)**：關鍵幀 OCR 視覺文字識別 + 本地語音轉錄雙軌融合成高密度情報。
+- **Bilibili 長影片**：雙軌語音抽取技術——首選官方 CC/AI 逐字稿 JSON（0.2 秒完成），回落 DASH 音訊分離串流搭配本機 `faster-whisper`（GPU CUDA / CPU 多執行緒自動切換；選用安裝，見 [選用功能](docs/optional_features.md)）。
+- **社群短影音 (Reels / TikTok / Shorts)**：關鍵幀 OCR 視覺文字識別 + 語音轉錄（本機或雲端）雙軌融合成高密度情報。
 - **長文閱讀與永久快照**：採用 trafilatura 深度清洗廣告干擾，自動生成 HTML Snapshot 永久留存，徹底免疫網頁失效與連結腐敗（Link-rot Proof）。
 
 ### 3. 兩段式分層認知 (Two-Stage Triage)
@@ -122,6 +122,8 @@ docker compose up -d --build
 
 **首次體驗（不需 AI 金鑰）**：登入後點選頂部「書籤匯入」，從瀏覽器匯出 HTML 書籤檔並選擇「秒速快速入庫」，接著使用搜尋列查找內容。選擇「排入 AI 深度解析佇列」或使用 AI 摘要前，才需要另外設定 AI Provider 金鑰並重啟服務。Docker 版資料與備份保存在 `omnikeep_data` volume，更新容器時請保留該 volume。
 
+Docker 映像預設不含本機語音轉錄，也沒有 Chrome；要加入本機語音轉錄，在 `.env` 設定 `LOCAL_STT=true` 後重新建置。見 [選用功能](docs/optional_features.md)。
+
 **手機與捷徑**：手機以網頁方式連線可使用受保護的區網／VPN；PWA 安裝與離線快取通常需要 HTTPS。請參考 [iOS／Android 設定指南](docs/ios_shortcut.md)。倉庫保留的 `static/qr_*` 僅導向公開設定文件，並不是你的可用 Webhook；每位使用者須自行設定端點與 API Key，且應透過 `X-API-Key` 標頭傳送憑證。
 
 ---
@@ -141,9 +143,14 @@ python -m venv .venv
 # Linux / macOS:
 source .venv/bin/activate
 
-# 安裝 Python 依賴
+# 安裝 Python 依賴（Windows 會一併安裝自動化 Chrome 登入用的 playwright）
 pip install -r requirements.txt
+
+# 選用：本機語音轉錄（Reels、Bilibili），安裝後約多 213 MB
+pip install -r requirements-stt.txt
 ```
+
+各選用功能的用途、大小與 GPU 設定見 [選用功能](docs/optional_features.md)。
 
 #### 2. 建立首次設定並建置工作台
 ```bash
@@ -237,6 +244,7 @@ npm run build     # 編譯生產環境產物 (包含型別檢查與 PWA Service 
 | :--- | :--- | :--- |
 | `API_KEY` | *(無)* | 核心存取主金鑰（長度 >= 32 字元），保護 Web、API 與 MCP |
 | `BIND_ADDRESS` | `127.0.0.1`（新安裝範例） | Docker 主機監聽位址；要允許區網存取需明確設定 |
+| `LOCAL_STT` | `false` | Docker 建置時加入本機語音轉錄，見 [選用功能](docs/optional_features.md) |
 | `LOCAL_AUTO_LOGIN` | `false`（新安裝範例） | 是否允許從 loopback 自動取得存取金鑰；公開部署建議關閉 |
 | `PRIMARY_LLM_PROVIDER` | `openai_compatible` | 主要推理 Provider 類型 (`openai_compatible`) |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 相容端點 Base URL |
