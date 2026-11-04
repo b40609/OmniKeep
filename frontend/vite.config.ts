@@ -1,12 +1,19 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// The repo-root VERSION file is the only place the version is written (the backend reads it too).
+const appVersion = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim()
+
 // Served under FastAPI at /static/dist/ — all asset URLs must carry that base.
 export default defineConfig({
   base: '/static/dist/',
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [
     vue(),
     tailwindcss(),

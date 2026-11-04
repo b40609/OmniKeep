@@ -21,7 +21,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app import backup, database as db, network
+from app import __version__, backup, database as db, network
 from app.background import FollowUpPool
 from app.config import settings
 from app.file_lock import FileLock
@@ -59,7 +59,7 @@ def test_all_private_routes_require_header(path):
 def test_auth_and_cors_fail_closed(monkeypatch):
     with TestClient(app) as client:
         assert client.get("/health").json() == {
-            "status": "healthy", "service": "OmniKeep", "version": "0.1.0"}
+            "status": "healthy", "service": "OmniKeep", "version": __version__}
         assert client.get("/api/watch/targets", headers=headers()).status_code == 200
         assert client.get("/api/watch/targets", headers={"X-API-Key": settings.API_KEY}).status_code == 200
         assert client.get("/api/watch/targets", params={"token": settings.API_KEY}).status_code == 401

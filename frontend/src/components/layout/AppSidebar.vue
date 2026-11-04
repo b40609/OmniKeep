@@ -14,6 +14,7 @@ const emit = defineEmits<{ (e: 'logout'): void }>()
 const items = useItemsStore()
 const ui = useUiStore()
 const radar = useRadarStore()
+const appVersion = __APP_VERSION__
 
 const views = computed(() => [
   { id: 'inbox' as TriageView, label: '收件匣', icon: Inbox, count: items.stats.inbox },
@@ -58,7 +59,7 @@ function selectCategory(catName: string) {
         </div>
         <div class="min-w-0 leading-tight">
           <p class="truncate text-sm font-bold tracking-tight text-foreground">OmniKeep</p>
-          <p class="text-2xs text-muted-foreground/70 font-medium">Knowledge Base • v2.4</p>
+          <p class="text-2xs text-muted-foreground/70 font-medium">Knowledge Base • v{{ appVersion }}</p>
         </div>
       </div>
       <button
