@@ -13,6 +13,8 @@ import sys
 import httpx
 import pytest
 
+pytestmark = pytest.mark.network_refusals_expected
+
 BLOCKED_MARKERS = ("disabled in unit tests",)
 EXTERNAL_IP = "192.0.2.1"  # RFC 5737 TEST-NET-1: documentation only, never routed
 EXTERNAL_HOST = "omnikeep-test.invalid"  # RFC 2606: never resolves

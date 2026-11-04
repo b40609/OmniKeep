@@ -220,9 +220,13 @@ async def test_threads_pipeline_routing():
 
     mock_provider = AsyncMock()
     mock_provider.generate_json.return_value = fake_ai_output
+    # Tool resolution (pipeline step 2.8) asks its own get_primary_provider.
+    no_tool_provider = AsyncMock()
+    no_tool_provider.generate_json.return_value = {"has_tool": False, "tool_name": "", "search_query": ""}
 
     with patch("app.pipeline.parse_threads_page", AsyncMock(return_value=fake_parsed)), \
          patch("app.pipeline.get_primary_provider", return_value=mock_provider), \
+         patch("app.research.tool_resolver.get_primary_provider", return_value=no_tool_provider), \
          patch("app.database.save_item", return_value="item-123"), \
          patch("app.pipeline.get_all_categories", return_value=[{"name": "AI"}, {"name": "Finance"}]):
 

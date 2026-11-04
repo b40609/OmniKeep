@@ -16,10 +16,15 @@ import pytest
 # loopback connect, and asyncio's self-pipe depends on it.
 NETWORK_BLOCKED = "External connections are disabled in unit tests"
 DNS_BLOCKED = "DNS lookups are disabled in unit tests"
+EXPECTS_REFUSALS = "network_refusals_expected"
 _guard_state = threading.local()
+# Refusals seen during the current test. Code under test often swallows the
+# OSError, so isolated_runtime fails the test instead: stub the client/provider.
+_refusals = []
 
 
 def _refuse(address):
+    _refusals.append(f"connect {address!r}")
     raise OSError(f"{NETWORK_BLOCKED}: {address!r}")
 
 
@@ -83,6 +88,7 @@ def _install_network_guard():
         _refuse(args[-1] if args else None)
 
     def no_dns(host):
+        _refusals.append(f"DNS {_host_text(host)!r}")
         raise socket.gaierror(socket.EAI_NONAME, f"{DNS_BLOCKED}: {_host_text(host)!r}")
 
     def getaddrinfo(host, *args, **kwargs):
@@ -171,6 +177,11 @@ os.environ.update({
 })
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", f"{EXPECTS_REFUSALS}: the test deliberately hits the network guard")
+
+
 @pytest.fixture(autouse=True)
 def isolated_runtime(monkeypatch, request):
     from app.config import settings
@@ -192,8 +203,14 @@ def isolated_runtime(monkeypatch, request):
     monkeypatch.setattr(cookie_manager.yt_dlp.cookies, "load_cookies", lambda *a, **k: None)
     # The network guard is installed once at import (see _install_network_guard).
     database.init_db()
+    _refusals.clear()
     yield root
     # Values saved through the settings page are applied onto the shared `settings`
     # object; undo them before monkeypatch restores its own originals.
     from app.app_settings import restore_baseline
     restore_baseline()
+    attempts, _refusals[:] = list(_refusals), []
+    if attempts and not request.node.get_closest_marker(EXPECTS_REFUSALS):
+        pytest.fail("test tried to reach the network (refused by the conftest guard): "
+                    + ", ".join(dict.fromkeys(attempts))
+                    + " — stub the provider/client instead", pytrace=False)

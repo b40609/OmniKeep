@@ -151,6 +151,7 @@ async def test_telegram_bot_fast_ingestion():
     bot = TelegramBot(token="123456:dummy-token-for-test")
     bot.is_authorized = MagicMock(return_value=True)
     bot.send_message = AsyncMock(return_value={"result": {"message_id": 1001}})
+    bot.send_api = AsyncMock(return_value={"ok": True})  # setMessageReaction etc. stay in-process
 
     chat_id = 888222
     # Ingest URL with mock on create_ingest_task to test fast non-blocking queueing
@@ -185,6 +186,7 @@ async def test_telegram_replayed_message_is_persisted_once_and_acknowledged_once
     bot = TelegramBot(token="123456:dummy-token-for-test")
     bot.is_authorized = MagicMock(return_value=True)
     bot.send_message = AsyncMock(return_value={"ok": True, "result": {"message_id": 130}})
+    bot.send_api = AsyncMock(return_value={"ok": True})  # setMessageReaction etc. stay in-process
     update = {"update_id": 700, "message": {
         "chat": {"id": 451}, "from": {"id": 451},
         "message_id": 55, "text": "https://example.org/replay-once",
@@ -208,6 +210,7 @@ async def test_telegram_receipt_failure_does_not_drop_intake():
         RuntimeError("temporary Telegram outage"),
         {"ok": True, "result": {"message_id": 131}},
     ])
+    bot.send_api = AsyncMock(return_value={"ok": True})  # setMessageReaction etc. stay in-process
     update = {"update_id": 701, "message": {
         "chat": {"id": 452}, "from": {"id": 452},
         "message_id": 56, "text": "https://example.org/receipt-failure",

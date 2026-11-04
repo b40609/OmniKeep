@@ -78,10 +78,25 @@ def test_daily_review_deck():
     assert res is not None
 
 
-def test_ask_brain_status_and_prompt():
+def test_ask_brain_status_and_prompt(monkeypatch):
     """Verify Ask Brain status check and citations prompt formatting."""
     init_db()
+    # Answer the Ollama /api/tags probe in-process; the real runner listens on
+    # 127.0.0.1:11434 on the host that runs these tests.
+    import httpx
+    real_client = httpx.Client
+    probed = []
+
+    def tags(request):
+        probed.append(str(request.url))
+        return httpx.Response(200, json={"models": [{"name": "qwen3:8b"}]})
+
+    monkeypatch.setattr(httpx, "Client",
+                        lambda **kw: real_client(transport=httpx.MockTransport(tags), **kw))
     status = get_brain_status()
+    assert probed == ["http://127.0.0.1:11434/api/tags"]
+    assert status["ollama_ready"] is True
+    assert status["available_models"] == ["qwen3:8b"]
     assert "configured_model" in status
     assert "embedding_model" in status
     assert "device_acceleration" in status
@@ -110,16 +125,20 @@ async def test_ask_brain_grounded_answer(monkeypatch):
     # Create test items in isolated DB
     item_id = _create_test_item("manual", "Transformer 注意力機制架構", is_read=0)
 
-    # In isolated unit tests with blocked socket, mock the LLM completion
-    async def mock_generate_text(self, prompt, system_prompt=None):
-        return "依據文獻 [1]，Transformer 核心採用自注意力機制（Self-Attention）運算。"
+    # Stub the cloud provider itself. Patching BaseLLMProvider.generate_text did
+    # nothing (OpenAICompatibleProvider overrides it), so this test used to call
+    # api.openai.com with a dummy key and pass on the retrieval-only fallback.
+    answer = "依據文獻 [1]，Transformer 核心採用自注意力機制（Self-Attention）運算。"
 
-    from app.providers import base
-    monkeypatch.setattr(base.BaseLLMProvider, "generate_text", mock_generate_text)
+    class FakeProvider:
+        async def generate_text(self, prompt, system_prompt=None):
+            return answer
+
+    monkeypatch.setattr("app.providers.get_primary_provider", lambda: FakeProvider())
 
     res = await ask_brain("Transformer 注意力機制", limit=3, force_cloud=True)
-    assert "answer" in res
-    assert len(res["answer"]) > 0
+    assert res["answer"] == answer
+    assert res["provider"] == "cloud_fallback"
     assert "citations" in res
     assert len(res["citations"]) > 0
     first_cite = res["citations"][0]

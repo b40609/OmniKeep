@@ -175,8 +175,14 @@ async def test_watch_proposals_api_and_decision():
 
     item_id = _mk_item(tags=["Python", "FastAPI"])
     item = get_item_by_id(item_id)
-    proposal = await relevance.maybe_propose_for_item(item)
+    # The balanced preset consents to a cloud judgment; make it explicitly
+    # unavailable so the local-match card is built without calling a provider.
+    offline = AsyncMock()
+    offline.generate_json.side_effect = ConnectionError("cloud provider stubbed offline")
+    with patch("app.watch.relevance.get_primary_provider", return_value=offline):
+        proposal = await relevance.maybe_propose_for_item(item)
     assert proposal is not None
+    offline.generate_json.assert_awaited_once()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test",
