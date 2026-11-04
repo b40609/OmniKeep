@@ -108,7 +108,12 @@ export function setApiKey(value: string) {
   apiKey = value
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** `read` turns a successful response into the result; file downloads pass their own. */
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  read: (res: Response) => Promise<unknown> = (res) => res.json(),
+): Promise<T> {
   if (!apiKey) throw new Error('請先登入')
   const version = authVersion
   function ensureCurrentSession() {
@@ -133,7 +138,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(detail)
   }
-  const body = res.status === 204 ? undefined : await res.json()
+  const body = res.status === 204 ? undefined : await read(res)
   ensureCurrentSession()
   return body as T
 }
@@ -171,6 +176,19 @@ export function deleteItem(id: number): Promise<void> {
 
 export function getStats(): Promise<Stats> {
   return request<Stats>('/api/items/stats')
+}
+
+export interface ExportFile {
+  blob: Blob
+  filename: string
+}
+
+export function exportItems(format: 'json' | 'markdown', starredOnly: boolean): Promise<ExportFile> {
+  const fallback = format === 'json' ? 'omnikeep_export.json' : 'omnikeep_markdown.zip'
+  return request<ExportFile>(`/api/items/export?format=${format}&starred_only=${starredOnly}`, undefined, async (res) => ({
+    blob: await res.blob(),
+    filename: res.headers.get('content-disposition')?.match(/filename="?([^";]+)"?/)?.[1] || fallback,
+  }))
 }
 
 export function seedDemoItems(): Promise<{ success: boolean; count: number; message: string }> {

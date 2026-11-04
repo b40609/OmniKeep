@@ -59,18 +59,7 @@ async function handleExport(format: 'json' | 'markdown') {
   isExporting.value = true
   const t = toast.loading(`正在打包 ${format.toUpperCase()} 備份…`)
   try {
-    const token = localStorage.getItem('omnikeep_api_key') || ''
-    const url = `/api/items/export?format=${format}&starred_only=${exportStarredOnly.value}`
-    const res = await fetch(url, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
-    const blob = await res.blob()
-    const disposition = res.headers.get('content-disposition') || ''
-    let filename = format === 'json' ? 'omnikeep_export.json' : 'omnikeep_markdown.zip'
-    const match = disposition.match(/filename="?([^";]+)"?/)
-    if (match && match[1]) filename = match[1]
-
+    const { blob, filename } = await api.exportItems(format, exportStarredOnly.value)
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = filename
