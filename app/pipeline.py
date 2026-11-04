@@ -28,8 +28,8 @@ from app.schemas.intelligence import generate_structured_intelligence
 
 logger = logging.getLogger("omnikeep.pipeline")
 
-ANALYSIS_SYSTEM_PROMPT = """你是一位客觀、專業的技術情報與全領域知識提煉官，兼具使用者的專屬 AI 參謀角色。
-你的任務是將輸入內容以「事實優先（Fact-first）」原則消化，輸出冷靜、高密度、直擊本質的結構化摘要（L1 核心提要 + L2 深度剖析）。
+_ANALYSIS_PROMPT_TEMPLATE = """你是一位客觀、專業的技術情報與全領域知識提煉官，兼具使用者的專屬 AI 參謀角色。
+<<BACKGROUND_ANCHOR>>你的任務是將輸入內容以「事實優先（Fact-first）」原則消化，輸出冷靜、高密度、直擊本質的結構化摘要（L1 核心提要 + L2 深度剖析）。
 
 嚴格規範：
 1. 一律使用繁體中文（台灣習慣用語）。絕對嚴禁使用任何 LaTeX 數學語法（嚴禁 $ 或 KaTeX 符號，數學與關係符號一律採純文字，如「!=」、「約」、「>=」）。
@@ -42,8 +42,8 @@ ANALYSIS_SYSTEM_PROMPT = """你是一位客觀、專業的技術情報與全領�
       - L2 deep_analysis：Markdown 格式，結構化條列：
         * ## 系統架構與關鍵技術規格（核心機制、架構參數、數據規模與技術邊界）。
         * 若涉及 AI 模型（LLM / VLM / 視覺模型 / 擴散模型 / 語音模型）：
-          強制增設「### 🖥️ 硬體需求與快速上手評估」：
-          - **顯存需求試算**：精確標註參數量級、FP16 顯存佔用（純文字如「約 6.0 GB」）、INT4/8-bit 量化佔用；分別標註 8 GB、16 GB、24 GB 顯存的運行結論（例如「✅ 16 GB 可全精度運行」或「⚠️ 8 GB 建議採 4-bit 量化」）。
+          強制增設「<<HARDWARE_HEADING>>」：
+          - **顯存需求試算**：精確標註參數量級、FP16 顯存佔用（純文字如「約 6.0 GB」）、INT4/8-bit 量化佔用；<<HARDWARE_VERDICT>>
           - **最小可執行驗證代碼（30秒上手）**：提供包含 pip 依賴與 3-5 行開箱即用的 Python / Transformers / Ollama 最小推理代碼段（指定 device_map="cuda"），複製即可跑通。
    B. 生活文化、迷因語錄與娛樂內容（幹話短劇、脫口秀、金句名言、美食旅遊、泛生活）：
       - L1 summary_l1：直陳其段子核心包袱、諷刺邏輯或生活精要，並串聯最具代表性的金句（80-120字）。
@@ -55,7 +55,7 @@ ANALYSIS_SYSTEM_PROMPT = """你是一位客觀、專業的技術情報與全領�
         * 提供台灣工程師出海、遠距或套利的務實替代路徑。
       - 若內容為工程架構、技術工具或量化商業策略：
         增設「### 💡 專屬決策評估與落地啟發」：
-        * 給出 1-2 點具體技術借鏡或落地改進建議；若附有使用者興趣設定檔，優先貼合其關注領域。
+        * <<BACKGROUND_ADVICE>>
 4. 針對純宣傳或低資訊量貼文（既無技術規格亦無實質台詞）：若文字極度殘缺，如實記錄發布者之主要主張，嚴禁無中生有捏造數據。
 5. 嚴格輸出合法 JSON 物件，格式如下：
 {
@@ -78,6 +78,45 @@ ANALYSIS_SYSTEM_PROMPT = """你是一位客觀、專業的技術情報與全領�
 - 若為多專案/多工具推薦或盤點彙總，is_composite 必須設為 true，並於 sub_entities 完整抽離所有項目與標準網址。
 - 若內容為單一主題或貼文提及特定開源專案/GitHub 倉庫，is_composite 設為 false，並於 sub_entities 記錄該專案名稱（若完全未提及任何開源專案或軟體工具，sub_entities 設為空陣列 []）。"""
 
+
+def hardware_heading() -> str:
+    """Heading of the AI-model hardware section; names the machine only if the owner entered it."""
+    hardware = (settings.LOCAL_HARDWARE or "").strip()
+    if hardware:
+        return f"### 🖥️ 本機硬體適配與快速上手評估（{hardware}）"
+    return "### 🖥️ 硬體需求與快速上手評估"
+
+
+def analysis_system_prompt() -> str:
+    """System prompt for item analysis, personalised from the in-app settings.
+
+    USER_BACKGROUND and LOCAL_HARDWARE are read on every call, so a value saved
+    in the app applies to the next analysis without a restart. Left empty, the
+    prompt stays neutral instead of assuming who the owner is.
+    """
+    background = (settings.USER_BACKGROUND or "").strip().rstrip("。.")
+    hardware = (settings.LOCAL_HARDWARE or "").strip()
+    if background:
+        anchor = f"使用者背景錨點：{background}。\n"
+        advice = "結合上述使用者背景，給出 1-2 點具體技術借鏡或落地改進建議。"
+    else:
+        anchor = ""
+        advice = "給出 1-2 點具體技術借鏡或落地改進建議；若附有使用者興趣設定檔，優先貼合其關注領域。"
+    if hardware:
+        verdict = f"明確標註在本機（{hardware}）上的運行結論（例如「✅ 可全精度運行」或「⚠️ 建議採 4-bit 量化」）。"
+    else:
+        verdict = ("分別標註 8 GB、16 GB、24 GB 顯存的運行結論"
+                   "（例如「✅ 16 GB 可全精度運行」或「⚠️ 8 GB 建議採 4-bit 量化」）。")
+    parts = {
+        "BACKGROUND_ANCHOR": anchor,
+        "BACKGROUND_ADVICE": advice,
+        "HARDWARE_HEADING": hardware_heading(),
+        "HARDWARE_VERDICT": verdict,
+    }
+    # One pass, so text the owner typed is never scanned for placeholders.
+    return re.sub(r"<<([A-Z_]+)>>", lambda m: parts[m.group(1)], _ANALYSIS_PROMPT_TEMPLATE)
+
+
 def interest_profile_block() -> str:
     """User-written free-text interest profile woven into LLM prompts.
 
@@ -97,9 +136,9 @@ def interest_profile_block() -> str:
         f"{profile[:2000]}\n=== 設定檔結束 ==="
     )
 
-async def _analyze_with_guardrails(provider, prompt: str, system_prompt: str = ANALYSIS_SYSTEM_PROMPT) -> Dict[str, Any]:
+async def _analyze_with_guardrails(provider, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
     """Execute LLM generation protected by strict Pydantic contract & reflection self-healing"""
-    return await generate_structured_intelligence(provider, prompt, system_prompt)
+    return await generate_structured_intelligence(provider, prompt, system_prompt or analysis_system_prompt())
 
 def is_pure_url(text: str) -> bool:
     clean = text.strip()
@@ -194,7 +233,7 @@ URL：{url}
 
 請依據規範輸出結構化 JSON：
 - 若影片畫面（如 Hugging Face Model Card 截圖、開源卡片、論文）或說明中有提及具體開源專案/AI 模型/工具/GitHub 倉庫（如萬物定位大模型 LocateAnything 等），請務必將 is_composite 設為對應值，並於 sub_entities 完整抽離所有專案/模型（支援 Hugging Face 或 GitHub 標準網址）！
-- 務必在 deep_analysis 中完整收錄其系統架構、規格參數、核心機制（如 Parallel Box Decoding 等），若涉及 AI 模型，強制附上「### 🖥️ 硬體需求與快速上手評估」包含顯存試算與 3 行最小可執行驗證代碼！
+- 務必在 deep_analysis 中完整收錄其系統架構、規格參數、核心機制（如 Parallel Box Decoding 等），若涉及 AI 模型，強制附上「{hardware_heading()}」包含顯存試算與 3 行最小可執行驗證代碼！
 - 嚴禁批判內容缺乏技術價值，請專注於內容本體的精華提煉。"""
             prompt += interest_profile_block()
             ai_result = await _analyze_with_guardrails(primary, prompt)

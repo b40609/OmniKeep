@@ -183,5 +183,6 @@ def get_brain_status() -> Dict[str, Any]:
         "available_models": models_available,
         "embedding_model": settings.EMBEDDING_MODEL,
         "sqlite_vec_available": is_sqlite_vec_available(),
-        "device_acceleration": "",
+        # What the owner entered under 設定 › 個人化 › 本機硬體; empty when not set.
+        "device_acceleration": (settings.LOCAL_HARDWARE or "").strip(),
     }

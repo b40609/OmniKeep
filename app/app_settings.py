@@ -70,6 +70,7 @@ class Spec:
 GROUPS: Tuple[Tuple[str, str], ...] = (
     ("ai", "AI 服務商"),
     ("brain", "Ask Brain"),
+    ("profile", "個人化"),
     ("telegram", "Telegram"),
     ("line", "LINE"),
     ("github", "GitHub"),
@@ -105,6 +106,13 @@ SPECS: Tuple[Spec, ...] = (
     Spec("BRAIN_BASE_URL", "brain", "Ollama 位址", "url", help="例如 http://127.0.0.1:11434"),
     Spec("BRAIN_MODEL", "brain", "本機模型", "text", help="要先在 Ollama 下載，例如 ollama pull qwen3:8b"),
     Spec("BRAIN_MAX_CITATIONS", "brain", "引用筆數上限", "int", minimum=1, maximum=20),
+
+    Spec("USER_BACKGROUND", "profile", "使用者背景", "text",
+         help="給 AI 分析參考的身分、專長與手上的專案，例如「資料工程師，在做個人記帳 App」。"
+              "工程與工具類內容會多一段結合背景的落地建議；留空就不加。"),
+    Spec("LOCAL_HARDWARE", "profile", "本機硬體", "text",
+         help="例如「Ryzen 7 / RTX 4070 12GB / 32GB RAM」。分析 AI 模型時會評估能否在這台機器上跑；"
+              "留空則只列出不同顯存大小的需求。"),
 
     Spec("TELEGRAM_BOT_TOKEN", "telegram", "Bot Token", "secret", hook="telegram",
          help="向 @BotFather 建立 Bot 後取得。儲存後 Bot 立即重新連線。"),

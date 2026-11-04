@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     BRAIN_API_KEY: str = ""
     BRAIN_MAX_CITATIONS: int = 5
     
+    # Personalisation for analysis prompts (entered in the app; empty keeps prompts neutral)
+    USER_BACKGROUND: str = ""
+    LOCAL_HARDWARE: str = ""
+
     # Storage (Always absolute path anchored to Hub root)
     DATABASE_PATH: str = str(BASE_DIR / "omnikeep.db")
 

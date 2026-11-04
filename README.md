@@ -250,6 +250,8 @@ npm run build     # 編譯生產環境產物 (包含型別檢查與 PWA Service 
 | `PRIMARY_MODEL` | `gpt-4o-mini` | App｜主要萃取與摘要所使用的模型名稱 |
 | `GEMINI_API_KEYS` | *(無)* | App｜Gemini API 金鑰清單（支援多組 Key 以逗號分隔輪詢） |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | App｜用於 YouTube 原生多模態串流解析的模型 |
+| `USER_BACKGROUND` | *(無)* | App｜使用者背景（身分、專長、手上的專案）；AI 分析會據此多寫一段落地建議，留空則維持中性 |
+| `LOCAL_HARDWARE` | *(無)* | App｜本機硬體（CPU／GPU／顯存）；分析 AI 模型時評估能否在這台機器上跑，Ask Brain 也會顯示 |
 | `DATABASE_PATH` | `omnikeep.db` | 本地 SQLite 資料庫路徑（自動開啟 WAL 模式） |
 | `OMNIKEEP_SECRET_KEY` | *(無)* | 選填。加密 App 內金鑰的主金鑰；不設時自動產生在資料庫旁的 `omnikeep.secret.key`（也可用 `OMNIKEEP_SECRET_KEY_FILE` 改位置） |
 | `RADAR_ENABLED` | *(已停用)* | 背景巡檢改在介面的「雷達 › 排程與推播」開關並設定週期，新安裝預設關閉。只在升級舊資料庫時讀取一次，沿用原本實際的開關狀態 |

@@ -52,8 +52,6 @@ watch(
         chatHistory.value.push({
           role: 'assistant',
           content: '你好！我是你的 **OmniKeep 知識大腦**。\n我優先用本機 Ollama 模型回答（連不上時改用雲端服務商），並以全庫項目的 **MRL 向量混合檢索 (RRF)** 找出相關收藏。\n你可以問我任何關於你的收藏、筆記或專題研究的深層問題，我會為你整理附帶引用文獻的精確解答。',
-          provider: 'local_ollama_gpu',
-          model: 'Ollama',
         })
       }
       void scrollToBottom()
@@ -165,11 +163,12 @@ function handleKeydown(e: KeyboardEvent) {
         <div class="flex items-center gap-2">
           <!-- Acceleration badge -->
           <div
+            v-if="brainStatus"
             class="hidden sm:flex items-center gap-1.5 rounded-lg border border-border bg-muted/60 px-2.5 py-1 text-2xs font-medium text-foreground"
-            :title="brainStatus?.ollama_ready ? '本機推論已就緒' : '本機引擎檢查中'"
+            :title="brainStatus.ollama_ready ? '本機推論已就緒' : '本機 Ollama 未連線，會改用雲端服務商'"
           >
-            <Cpu class="size-3 text-green-500" />
-            <span class="font-mono">Ollama</span>
+            <Cpu class="size-3" :class="brainStatus.ollama_ready ? 'text-green-500' : 'text-muted-foreground'" />
+            <span class="font-mono">{{ brainStatus.device_acceleration || brainStatus.configured_model }}</span>
           </div>
 
           <!-- Clear history -->
@@ -287,9 +286,9 @@ function handleKeydown(e: KeyboardEvent) {
 
               <!-- Meta Footer -->
               <div v-if="msg.provider" class="flex items-center gap-2 text-3xs text-muted-foreground pt-1 border-t border-border/40">
-                <span>模型: {{ msg.model || 'Qwen3.8-Flash-Next' }}</span>
+                <span>模型: {{ msg.model || '未知' }}</span>
                 <span>•</span>
-                <span>推論通道: {{ msg.provider === 'local_ollama_gpu' ? '本機 Ollama' : '雲端高可用備援' }}</span>
+                <span>推論通道: {{ msg.provider === 'local_ollama_gpu' ? (brainStatus?.device_acceleration ? `本機（${brainStatus.device_acceleration}）` : '本機 Ollama') : '雲端高可用備援' }}</span>
               </div>
             </div>
           </div>
