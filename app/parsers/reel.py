@@ -13,6 +13,7 @@ from app.network import validate_url
 from app.parsers.media_network import PublicYoutubeDL
 
 from app.providers import get_primary_provider, get_gemini_provider
+from app.providers.openai_compatible import extract_completion_content
 from app.parsers.web import parse_facebook_page
 from app.parsers.cookie_manager import get_ytdlp_cookie_opts
 from app.config import settings
@@ -21,6 +22,22 @@ logger = logging.getLogger("omnikeep.reel")
 
 _local_whisper_model = None
 _force_cpu_stt = False
+
+
+class ReelUnavailableError(RuntimeError):
+    """The reel could not be retrieved for video analysis."""
+
+
+def is_empty_reel_metadata(item: Dict[str, Any]) -> bool:
+    """Recognize legacy placeholder entries mistakenly saved as reel analyses."""
+    return (
+        is_video_reel_url(item.get("url") or "")
+        and (item.get("content_raw") or "").strip()
+        in (
+            "（Facebook 貼文未提供公開文字說明）",
+            "（Instagram 貼文未提供公開文字說明）",
+        )
+    )
 
 
 async def _run_thread(func):
@@ -115,46 +132,60 @@ def is_video_reel_url(url: str) -> bool:
     if host == "fb.watch" or host.endswith(".fb.watch"):
         return True
     domains = ("facebook.com", "instagram.com")
-    return any(host == domain or host.endswith("." + domain) for domain in domains) and (
+    if any(host == domain or host.endswith("." + domain) for domain in domains) and (
         path.startswith("/reel/") or path.startswith("/reels/") or path.startswith("/share/r/")
-    )
+    ):
+        return True
+    yt_domains = ("youtube.com", "youtu.be")
+    if any(host == domain or host.endswith("." + domain) for domain in yt_domains) and (
+        path.startswith("/shorts/")
+    ):
+        return True
+    return False
 
 
 def extract_scene_tile(video_path: str, tile_output_path: str, duration: float = 10.0) -> bool:
     """
-    Extract dynamic scene change frames and stitch into a single 3x3 Tile Storyboard.
-    Uses FFmpeg -hwaccel auto for GPU decoding acceleration and scale=640:-1 for high-res OCR.
-    Falls back to uniform interval sampling if no dramatic scene cuts are detected.
+    Extract time-distributed frames across the complete video timeline and stitch into a 3x4 Tile Storyboard.
+    Uses FFmpeg -hwaccel auto for GPU decoding acceleration and scale=540:-1 for crystal-clear OCR.
+    Guarantees 100% timeline coverage (early, mid, late frames) regardless of motion or scene cuts.
     """
-    # 1. Primary approach: FFmpeg dynamic scene cut gt(scene, 0.35) into 3x3 tile
-    cmd_scene = [
-        "ffmpeg", "-y", "-hwaccel", "auto", "-protocol_whitelist", "file,pipe", "-i", video_path,
-        "-vf", r"select=gt(scene\,0.35),scale=640:-1,tile=3x3",
+    safe_duration = max(3.0, float(duration))
+    # Offset by 0.3s (or 5% of duration) to bypass intro animations/transitions and capture steady text
+    start_offset = min(0.3, safe_duration * 0.05)
+    effective_duration = max(1.0, safe_duration - start_offset)
+    sample_fps = 12.0 / effective_duration
+
+    # 1. Primary: Time-distributed 3x4 Storyboard covering the entire timeline
+    cmd_grid = [
+        "ffmpeg", "-y", "-hwaccel", "auto", "-protocol_whitelist", "file,pipe",
+        "-ss", str(round(start_offset, 2)), "-i", video_path,
+        "-vf", f"fps={sample_fps:.3f},scale=540:-1,tile=3x4",
         "-frames:v", "1",
         tile_output_path
     ]
     try:
-        subprocess.run(cmd_scene, capture_output=True, timeout=30)
+        subprocess.run(cmd_grid, capture_output=True, timeout=30)
     except Exception as e:
-        logger.warning(f"[Reel SceneCut] FFmpeg scene detection failed: {e}")
+        logger.warning(f"[Reel Storyboard] FFmpeg grid sampling failed: {e}")
 
     if os.path.exists(tile_output_path) and os.path.getsize(tile_output_path) > 1024:
-        logger.info(f"[Reel SceneCut] Generated 3x3 scene storyboard: {os.path.getsize(tile_output_path)} bytes")
+        logger.info(f"[Reel Storyboard] Generated 3x4 timeline storyboard ({os.path.getsize(tile_output_path)} bytes, {sample_fps:.2f} fps)")
         return True
 
-    # 2. Fallback approach: Uniform fps sampling into 3x3 tile (for white-bg talking heads or subtle cuts)
-    logger.info("[Reel SceneCut] Few/no scene cuts detected, falling back to uniform interval 3x3 tile...")
-    sample_rate = "1" if duration <= 15 else "0.5"
-    cmd_uniform = [
+    # 2. Fallback: Standard 3x3 grid without start offset
+    logger.info("[Reel Storyboard] 3x4 grid failed, falling back to 3x3 uniform tile...")
+    fallback_fps = max(0.5, 9.0 / safe_duration)
+    cmd_fallback = [
         "ffmpeg", "-y", "-hwaccel", "auto", "-protocol_whitelist", "file,pipe", "-i", video_path,
-        "-vf", f"fps={sample_rate},scale=640:-1,tile=3x3",
+        "-vf", f"fps={fallback_fps:.3f},scale=540:-1,tile=3x3",
         "-frames:v", "1",
         tile_output_path
     ]
     try:
-        subprocess.run(cmd_uniform, capture_output=True, timeout=30)
+        subprocess.run(cmd_fallback, capture_output=True, timeout=30)
     except Exception as e:
-        logger.warning(f"[Reel SceneCut] Uniform tile fallback failed: {e}")
+        logger.warning(f"[Reel Storyboard] Fallback 3x3 tile failed: {e}")
 
     return os.path.exists(tile_output_path) and os.path.getsize(tile_output_path) > 1024
 
@@ -184,13 +215,14 @@ async def analyze_storyboard_vision(tile_path: str) -> str:
     if not os.path.exists(tile_path) or os.path.getsize(tile_path) < 1024:
         return ""
 
-    prompt = """請仔細觀察這張短影音畫面抽取出的時間軸/轉場九宮格畫面（Tile Storyboard）。
-畫面中可能展示開源專案卡片、投影片、終端機程式碼、架構圖或網址。
-請辨識並逐一條列出：
-1. 專案/工具名稱（例如 OpenHands, AnythingLLM, v0 等）
-2. 畫面中出現的 GitHub 網址、官網或作者名稱
-3. 核心功能、特色與視覺架構亮點
-輸出清晰高密度的純文字條列，不要客套套話。"""
+    prompt = """請仔細觀察這張短影音時間軸影格拼貼圖（Storyboard Tile）。
+畫面中展示了短影音不同時間點展示的開源專案、工具卡片、投影片或系統架構。
+請嚴格根據畫面內容，逐一完整條列出畫面上出現的所有專案/工具：
+1. 專案/工具序號與名稱（例如 No.01 Security Audit, No.06 AgentGuard 等）
+2. 畫面中標註的 GitHub 倉庫路徑或網址（例如 cloudflare/security-audit-skill, GoPlusSecurity/agentguard 等）
+3. GitHub Stars 數量（若有標示）
+4. 核心功能與防護/技術亮點說明
+請務必將畫面中出現的「每一個」卡片或工具完整列出，切勿遺漏任何一項！格式維持高密度結構化文字。"""
 
     with open(tile_path, "rb") as f:
         img_bytes = f.read()
@@ -211,7 +243,7 @@ async def analyze_storyboard_vision(tile_path: str) -> str:
                 }],
                 temperature=0.1
             )
-            return (res.choices[0].message.content or "").strip()
+            return extract_completion_content(res).strip()
         except Exception as e:
             logger.warning(f"[Reel Vision] Primary provider vision failed: {e}")
 
@@ -310,7 +342,7 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
     if not is_video_reel_url(url):
         raise ValueError("Unsupported reel host or path")
     temp_dir = tempfile.mkdtemp(prefix="omni_reel_")
-    video_path = os.path.join(temp_dir, "reel.mp4")
+    video_template = os.path.join(temp_dir, "reel.%(ext)s")
     tile_path = os.path.join(temp_dir, "storyboard_tile.jpg")
     audio_path = os.path.join(temp_dir, "audio.mp3")
 
@@ -318,15 +350,16 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
         # 1. Download short reel stream via yt-dlp with browser cookie bridge
         cookie_opts = get_ytdlp_cookie_opts()
         ydl_opts = {
-            'format': 'b[ext=mp4]/best',
-            'outtmpl': video_path,
+            'format': 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
+            'outtmpl': video_template,
             'quiet': True,
             'overwrites': True,
             'socket_timeout': 15,
             'hls_prefer_native': True,
             'external_downloader': {'default': 'native'},
             'external_downloader_args': {'ffmpeg_i': ['-protocol_whitelist', 'file,pipe']},
-            'allowed_extractors': ['facebook.*', 'instagram.*'],
+            # Facebook /share/r/ links require GenericIE to resolve their redirect; YouTube Shorts uses youtube extractor.
+            'allowed_extractors': ['facebook.*', 'instagram.*', 'youtube.*', 'generic'],
             **cookie_opts
         }
 
@@ -336,7 +369,7 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
                     return ydl.extract_info(url, download=True)
             except Exception as e:
                 if "cookiesfrombrowser" in ydl_opts or "cookiefile" in ydl_opts:
-                    logger.info(f"[Reel Analyzer] Cookie extraction notice ({e}), retrying without cookies...")
+                    logger.info(f"[Reel Analyzer] Download with session failed ({e}), retrying without session...")
                     fallback_opts = {k: v for k, v in ydl_opts.items() if k not in ("cookiesfrombrowser", "cookiefile")}
                     with PublicYoutubeDL(fallback_opts) as ydl_fb:
                         return ydl_fb.extract_info(url, download=True)
@@ -344,9 +377,17 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
 
         info = await _run_thread(_download)
         raw_title = info.get("title") or ""
-        uploader = info.get("uploader") or ""
+        uploader = info.get("uploader") or info.get("channel") or ""
         description = info.get("description") or ""
         duration = float(info.get("duration") or 10.0)
+
+        # Locate downloaded video file in temp_dir
+        downloaded_videos = [
+            os.path.join(temp_dir, f)
+            for f in os.listdir(temp_dir)
+            if f.startswith("reel.") and not f.endswith((".mp3", ".jpg"))
+        ]
+        video_path = downloaded_videos[0] if downloaded_videos else os.path.join(temp_dir, "reel.mp4")
 
         # Clean title
         cleaned_title = raw_title
@@ -407,8 +448,28 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
         }
 
     except Exception as e:
+        host = (urlsplit(url).hostname or "").lower()
         logger.warning(f"[Reel Analyzer] Video extraction failed ({e}), falling back to page metadata...")
-        return await parse_facebook_page(url)
+        if host == "instagram.com" or host.endswith(".instagram.com"):
+            from app.parsers.web import parse_instagram_page
+            page = await parse_instagram_page(url)
+        elif any(host == d or host.endswith("." + d) for d in ("youtube.com", "youtu.be")):
+            from app.parsers.youtube import fetch_youtube_metadata
+            meta = await fetch_youtube_metadata(url)
+            desc_val = meta.get("description", "")
+            page = {
+                "url": url,
+                "title": meta.get("title", "YouTube Shorts"),
+                "content_raw": f"# {meta.get('title')}\n\n頻道: {meta.get('author')}\n說明:\n{desc_val}\nURL: {url}",
+                "cover_image": meta.get("cover_image", ""),
+                "author": meta.get("author", ""),
+                "published_date": "",
+            }
+        else:
+            page = await parse_facebook_page(url)
+        if is_empty_reel_metadata(page):
+            raise ReelUnavailableError("無法取得短影音或貼文內容，請確認平台登入狀態後重新傳送連結。") from e
+        return page
 
     finally:
         try:

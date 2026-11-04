@@ -1,3 +1,4 @@
+import asyncio
 import itertools
 import threading
 import json
@@ -33,7 +34,8 @@ class GeminiProvider(BaseLLMProvider):
             contents.append(system_prompt + "\n\n")
         contents.append(prompt)
 
-        response = client.models.generate_content(
+        response = await asyncio.to_thread(
+            client.models.generate_content,
             model=self.model,
             contents=contents,
             config=gtypes.GenerateContentConfig(
@@ -53,7 +55,8 @@ class GeminiProvider(BaseLLMProvider):
         client = genai.Client(api_key=key)
         full_prompt = (system_prompt + "\n\n" if system_prompt else "") + prompt + "\n\nReturn ONLY a valid JSON object."
 
-        response = client.models.generate_content(
+        response = await asyncio.to_thread(
+            client.models.generate_content,
             model=self.model,
             contents=[full_prompt],
             config=gtypes.GenerateContentConfig(
@@ -78,7 +81,8 @@ class GeminiProvider(BaseLLMProvider):
 
         client = genai.Client(api_key=key)
         
-        response = client.models.generate_content(
+        response = await asyncio.to_thread(
+            client.models.generate_content,
             model=self.model,
             contents=[
                 gtypes.Part.from_uri(

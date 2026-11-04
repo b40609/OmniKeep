@@ -10,38 +10,69 @@ from app.database import (
     find_item_by_canonical_or_url,
     save_citation
 )
-from app.parsers import is_youtube_url, fetch_youtube_metadata, parse_web_page, is_bilibili_url, parse_bilibili_video
+from app.parsers import (
+    is_youtube_url,
+    is_youtube_shorts_url,
+    fetch_youtube_metadata,
+    parse_web_page,
+    is_bilibili_url,
+    parse_bilibili_video
+)
 from app.parsers.reel import is_video_reel_url, parse_video_reel
+from app.parsers.threads import is_threads_url, parse_threads_page
 from app.providers import get_primary_provider, get_gemini_provider
 from app.config import settings
+from app.schemas.intelligence import generate_structured_intelligence
 
-ANALYSIS_SYSTEM_PROMPT = """你是一位頂尖的資深系統架構師與技術情報分析官。
-你的任務是將使用者提供的內容精準消化，輸出結構化的兩段式情報（L1 速覽 + L2 深度剖析）。
+ANALYSIS_SYSTEM_PROMPT = """你是一位客觀、專業的技術情報與全領域知識提煉官，兼具使用者的專屬 AI 參謀角色。
+你的任務是將輸入內容以「事實優先（Fact-first）」原則消化，輸出冷靜、高密度、直擊本質的結構化摘要（L1 核心提要 + L2 深度剖析）。
 
-嚴格規則：
-1. 一律使用繁體中文（台灣習慣用語）。
-2. 極簡、高密度乾貨，絕對禁止廢話與無意義客套套話（如「值得注意的是」、「總結來說」）。
-3. 判斷該內容是否為「多專案/多工具/多庫盤點彙總」（例如：5大精選開源專案、10個必備工具、年度推薦庫列表、整合評測）。
-4. 嚴格輸出合法的 JSON 物件，格式如下：
+嚴格規範：
+1. 一律使用繁體中文（台灣習慣用語）。絕對嚴禁使用任何 LaTeX 數學語法（嚴禁 $ 或 KaTeX 符號，數學與關係符號一律採純文字，如「!=」、「約」、「>=」）。
+2. 絕對禁止廢話、客套話、自言自語與說教元敘事：
+   - 嚴禁「作者介紹了/分享了/指出」、「本篇主要在於」、「推廣某工具」等旁白廢話。
+   - 絕對禁止出現「此內容為純娛樂」、「缺乏實質工程細節」、「無技術負載」、「無法進行技術深析」等自言自語的說教與價值批判。使用者非常清楚內容性質，無需 AI 評判。
+3. 雙軌自適應提煉（依內容本體動態適配）：
+   A. 專業工程與架構內容（AI、代碼、開源工具、硬體、量化金融、技術架構）：
+      - L1 summary_l1：首句直陳該專案/系統是什麼、解決何種工程痛點；次句陳述核心機制、量化規格或適用情境（80-120字）。
+      - L2 deep_analysis：Markdown 格式，結構化條列：
+        * ## 系統架構與關鍵技術規格（核心機制、架構參數、數據規模與技術邊界）。
+        * 若涉及 AI 模型（LLM / VLM / 視覺模型 / 擴散模型 / 語音模型）：
+          強制增設「### 🖥️ 硬體需求與快速上手評估」：
+          - **顯存需求試算**：精確標註參數量級、FP16 顯存佔用（純文字如「約 6.0 GB」）、INT4/8-bit 量化佔用；分別標註 8 GB、16 GB、24 GB 顯存的運行結論（例如「✅ 16 GB 可全精度運行」或「⚠️ 8 GB 建議採 4-bit 量化」）。
+          - **最小可執行驗證代碼（30秒上手）**：提供包含 pip 依賴與 3-5 行開箱即用的 Python / Transformers / Ollama 最小推理代碼段（指定 device_map="cuda"），複製即可跑通。
+   B. 生活文化、迷因語錄與娛樂內容（幹話短劇、脫口秀、金句名言、美食旅遊、泛生活）：
+      - L1 summary_l1：直陳其段子核心包袱、諷刺邏輯或生活精要，並串聯最具代表性的金句（80-120字）。
+      - L2 deep_analysis：Markdown 格式，結構化整理「## 經典金句與台詞原話節錄」（務必完整收錄口播轉錄中的精彩原話）與「## 荒謬/反諷邏輯拆解」。
+   C. 個人化與在地決策延伸（在 deep_analysis 末尾增設專屬視角）：
+      - 若內容涉及特定地域生態（如中國特有生態/政策/潤學/牆內套利、歐美特有 H-1B/401K/GDPR）：
+        強制在 deep_analysis 增設「### 🇹🇼 台灣在地視角與延伸對照」：
+        * 分析客觀條件與痛點差異（如免簽優勢、資訊斷層落差、外匯法規）。
+        * 提供台灣工程師出海、遠距或套利的務實替代路徑。
+      - 若內容為工程架構、技術工具或量化商業策略：
+        增設「### 💡 專屬決策評估與落地啟發」：
+        * 給出 1-2 點具體技術借鏡或落地改進建議；若附有使用者興趣設定檔，優先貼合其關注領域。
+4. 針對純宣傳或低資訊量貼文（既無技術規格亦無實質台詞）：若文字極度殘缺，如實記錄發布者之主要主張，嚴禁無中生有捏造數據。
+5. 嚴格輸出合法 JSON 物件，格式如下：
 {
-  "category": "從分類清單中精選1個，若皆不符合請填 Inbox",
-  "title_l1": "簡潔有力、直擊本質的中文標題（25字以內）",
-  "summary_l1": "白話核心重點（1-2句話說清楚這個專案/文章在做什麼，解決什麼核心痛點）",
-  "tech_tags": ["新技術項1", "新技術項2", "專有名詞/核心依賴"],
-  "deep_analysis": "L2 深入技術剖析（Markdown 格式，條列架構設計、核心規格參數、落地步驟與潛在限制）",
+  "category": "從候選清單精選1個最適分類（若無合適填 Inbox）",
+  "title_l1": "直擊本質或名言主題的專業中文標題（25字以內，嚴禁使用「無法解析/無效內容/未公開」等敷衍命名）",
+  "summary_l1": "L1 核心提要（80-120字，依上述雙軌規範直陳本體，嚴禁說教）",
+  "tech_tags": ["核心標籤1", "核心標籤2", "核心標籤3"],
+  "deep_analysis": "L2 深度剖析（Markdown 格式，工程內容列架構規格，生活內容列金句原話與邏輯拆解）",
   "is_composite": false,
   "sub_entities": [
     {
-      "name": "專案或工具名稱（如 OpenHands）",
-      "canonical_url": "專案 GitHub 倉庫或官方網站網址（若文中提及或已知請填寫標準網址，未知填空字串）",
-      "reason": "文中對此專案的評價、亮點或核心功能（1句話）"
+      "name": "開源專案、AI 模型、工具、GitHub 倉庫或知識庫名稱（若無提及填空陣列 []）",
+      "canonical_url": "標準 GitHub 倉庫、Hugging Face 模型頁或官方網站網址（若未知填空字串）",
+      "reason": "文中對此專案/模型的核心評價或關鍵亮點（1句話）"
     }
   ]
 }
 
 注意事項：
-- 若內容只介紹單一專案、單篇新聞或單一概念，is_composite 請設為 false，且 sub_entities 設為空陣列 []。
-- 若內容為盤點文、多專案推薦影片或清單彙總，is_composite 必須設為 true，並於 sub_entities 完整抽離列出每一個提及的獨立專案/工具，不可遺漏。"""
+- 若為多專案/多工具推薦或盤點彙總，is_composite 必須設為 true，並於 sub_entities 完整抽離所有項目與標準網址。
+- 若內容為單一主題或貼文提及特定開源專案/GitHub 倉庫，is_composite 設為 false，並於 sub_entities 記錄該專案名稱（若完全未提及任何開源專案或軟體工具，sub_entities 設為空陣列 []）。"""
 
 def interest_profile_block() -> str:
     """User-written free-text interest profile woven into LLM prompts.
@@ -61,6 +92,10 @@ def interest_profile_block() -> str:
         "\n\n=== 使用者興趣設定檔（挑選、分類與取捨請參考） ===\n"
         f"{profile[:2000]}\n=== 設定檔結束 ==="
     )
+
+async def _analyze_with_guardrails(provider, prompt: str, system_prompt: str = ANALYSIS_SYSTEM_PROMPT) -> Dict[str, Any]:
+    """Execute LLM generation protected by strict Pydantic contract & reflection self-healing"""
+    return await generate_structured_intelligence(provider, prompt, system_prompt)
 
 def is_pure_url(text: str) -> bool:
     clean = text.strip()
@@ -117,16 +152,53 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     clean_input = content_input.strip()
     raw_html = ""
 
+    user_note = ""
+    if "#note=" in clean_input:
+        from urllib.parse import unquote
+        parts = clean_input.split("#note=", 1)
+        clean_input = parts[0]
+        user_note = unquote(parts[1]).strip()
+
     # 2. Route by input type (Pure URL / Mobile Share Snippet vs Text Note)
     detected_url = extract_target_url(clean_input)
     if detected_url:
         url = detected_url
         from app.network import validate_url
         validate_url(url)
-        if is_youtube_url(url):
+        if is_youtube_shorts_url(url) or is_video_reel_url(url):
+            # Short Video Reel (YouTube Shorts / Facebook / Instagram Reels with Vision OCR + Whisper STT)
+            source_type = "youtube" if is_youtube_url(url) else "reel"
+            reel_data = await parse_video_reel(url)
+            content_raw = reel_data.get("content_raw", "")
+            cover_image = reel_data.get("cover_image", "")
+            author = reel_data.get("author", "")
+            default_title = reel_data.get("title", "短影音情報")
+
+            primary = get_primary_provider()
+            prompt = f"""請深度分析以下短影音情報與畫面視覺 OCR 辨識結果：
+影片標題：{default_title}
+作者/發布者：{author}
+URL：{url}
+
+候選分類清單：[{cat_list_str}]
+
+=== 短影音內容與影格 OCR 辨識 ===
+{content_raw[:15000]}
+=== 內容結束 ===
+
+請依據規範輸出結構化 JSON：
+- 若影片畫面（如 Hugging Face Model Card 截圖、開源卡片、論文）或說明中有提及具體開源專案/AI 模型/工具/GitHub 倉庫（如萬物定位大模型 LocateAnything 等），請務必將 is_composite 設為對應值，並於 sub_entities 完整抽離所有專案/模型（支援 Hugging Face 或 GitHub 標準網址）！
+- 務必在 deep_analysis 中完整收錄其系統架構、規格參數、核心機制（如 Parallel Box Decoding 等），若涉及 AI 模型，強制附上「### 🖥️ 硬體需求與快速上手評估」包含顯存試算與 3 行最小可執行驗證代碼！
+- 嚴禁批判內容缺乏技術價值，請專注於內容本體的精華提煉。"""
+            prompt += interest_profile_block()
+            ai_result = await _analyze_with_guardrails(primary, prompt)
+
+        elif is_youtube_url(url):
             source_type = "youtube"
             meta = await fetch_youtube_metadata(url)
-            content_raw = f"# {meta['title']}\n\n頻道: {meta['author']}\nURL: {url}"
+            desc_text = meta.get("description", "").strip()
+            desc_part = f"\n\n## 影片說明欄\n{desc_text}" if desc_text else ""
+            content_raw = f"# {meta['title']}\n\n頻道: {meta['author']}\nURL: {url}{desc_part}"
             
             # If Gemini keys are configured, use native YouTube video analysis
             if settings.gemini_keys:
@@ -147,8 +219,12 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
 頻道：{meta['author']}
 URL：{url}
 
+影片說明：
+{desc_text[:5000] if desc_text else '(無說明欄)'}
+
 候選分類清單：[{cat_list_str}]"""
-                    ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
+                    prompt += interest_profile_block()
+                    ai_result = await _analyze_with_guardrails(primary, prompt)
             else:
                 primary = get_primary_provider()
                 prompt = f"""分析此 YouTube 影片資訊：
@@ -156,9 +232,12 @@ URL：{url}
 頻道：{meta['author']}
 URL：{url}
 
+影片說明：
+{desc_text[:5000] if desc_text else '(無說明欄)'}
+
 候選分類清單：[{cat_list_str}]"""
                 prompt += interest_profile_block()
-                ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
+                ai_result = await _analyze_with_guardrails(primary, prompt)
 
             cover_image = meta.get("cover_image", "")
             author = meta.get("author", "")
@@ -184,7 +263,7 @@ URL：{url}
 {content_raw[:12000]}
 """
             prompt += interest_profile_block()
-            ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
+            ai_result = await _analyze_with_guardrails(primary, prompt)
 
         elif is_video_reel_url(url):
             # Short Video Reel (Facebook / Instagram Reels with Vision OCR)
@@ -207,9 +286,39 @@ URL：{url}
 {content_raw[:15000]}
 === 內容結束 ===
 
-請依據規範輸出結構化 JSON。若影片畫面中有推薦多個專案/工具，請務必將 is_composite 設為 true，並於 sub_entities 完整抽離所有專案！"""
+請依據規範輸出結構化 JSON：
+- 若影片畫面中有推薦多個開源專案/工具，請務必將 is_composite 設為 true，並於 sub_entities 完整抽離所有專案！
+- 若影片為個人口播、生活短劇或迷因幹話語錄，請務必在 deep_analysis 中完整收錄其精華台詞原話！
+- 嚴禁評判內容缺乏技術價值，請專注於內容本體的精華提煉。"""
             prompt += interest_profile_block()
-            ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
+            ai_result = await _analyze_with_guardrails(primary, prompt)
+
+        elif is_threads_url(url):
+            # Meta Threads Post (Threads.net / Threads.com)
+            source_type = "threads"
+            threads_data = await parse_threads_page(url)
+            url = threads_data.get("url") or url
+            content_raw = threads_data.get("content_raw", "")
+            cover_image = threads_data.get("cover_image", "")
+            author = threads_data.get("author", "")
+            default_title = threads_data.get("title", "Threads 貼文")
+            raw_html = threads_data.get("raw_html", "")
+
+            primary = get_primary_provider()
+            prompt = f"""請深度分析以下 Threads 社群情報與討論內容：
+貼文網址：{url}
+發布作者：{author}
+貼文主題：{default_title}
+
+候選分類清單：[{cat_list_str}]
+
+=== 貼文完整內容與討論串 ===
+{content_raw[:12000]}
+=== 內容結束 ===
+
+請依據規範輸出結構化 JSON。若貼文中提及多個開源專案、工具庫、網站或架構，請務必將 is_composite 設為 true，並於 sub_entities 完整抽離所有專案！"""
+            prompt += interest_profile_block()
+            ai_result = await _analyze_with_guardrails(primary, prompt)
 
         else:
             # Standard Web Page / GitHub / Article
@@ -234,7 +343,7 @@ URL：{url}
 
 請依據規範輸出結構化 JSON。"""
             prompt += interest_profile_block()
-            ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
+            ai_result = await _analyze_with_guardrails(primary, prompt)
 
     else:
         # Free-form Text Snippet / Paragraph / Thought Note
@@ -266,7 +375,7 @@ URL：{url}
 
 請精準提煉這段內容的技術價值，依據規範輸出結構化 JSON。"""
         prompt += interest_profile_block()
-        ai_result = await primary.generate_json(prompt, ANALYSIS_SYSTEM_PROMPT)
+        ai_result = await _analyze_with_guardrails(primary, prompt)
 
     # Extract fields with safe defaults
     category_name = manual_category or ai_result.get("category", "Inbox")
@@ -280,6 +389,9 @@ URL：{url}
         tech_tags = [t.strip() for t in tech_tags.split(",") if t.strip()]
 
     deep_analysis = ai_result.get("deep_analysis", "")
+
+    if user_note and not content_raw.startswith("## 使用者隨手筆記"):
+        content_raw = f"## 使用者隨手筆記/備忘\n{user_note}\n\n" + content_raw
 
     item_record = {
         "url": url,
@@ -323,9 +435,21 @@ URL：{url}
     except Exception as e:
         print(f"[Pipeline] Failed to store vector embedding for {item_id}: {e}")
 
+    # 2.8 Mentioned Open-Source Tool Resolution (Automated Entity Linking for professional domain)
+    LIFE_ENTERTAINMENT_CATEGORIES = {"生活娛樂", "迷因語錄", "美食", "旅遊", "隔離區"}
+    has_github_mention = "github" in (content_raw + " " + default_title).lower() or "開源" in (content_raw + " " + default_title)
+    if not is_sub_task and "github.com" not in url and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
+        try:
+            from app.research.tool_resolver import resolve_mentioned_tools
+            resolved_subs = await resolve_mentioned_tools(content_raw, default_title, ai_result)
+            if resolved_subs:
+                ai_result["sub_entities"] = resolved_subs
+        except Exception as e:
+            print(f"[Pipeline] Tool resolution error: {e}")
+
     # 3. Entity Fan-out & Citation Linking (Deduplication & Unpacking)
     sub_entities = ai_result.get("sub_entities", [])
-    if isinstance(sub_entities, list) and sub_entities and not is_sub_task:
+    if isinstance(sub_entities, list) and sub_entities and not is_sub_task and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
         for sub in sub_entities:
             if not isinstance(sub, dict):
                 continue
@@ -359,13 +483,28 @@ URL：{url}
                     "target_name": raw_name,
                     "mention_context": reason
                 })
-                # If valid HTTP/HTTPS URL, spawn background ingestion
+                # If valid HTTP/HTTPS URL and not an unconfirmed candidate, spawn background ingestion
                 if canon_url and (canon_url.startswith("http://") or canon_url.startswith("https://")):
-                    try:
-                        from app.background import follow_up_pool
-                        follow_up_pool.submit(lambda parent=item_id, citation=cit_id, name=raw_name, url=canon_url, why=reason:
-                                              _spawn_child_entity_background(parent, citation, name, url, why))
-                    except Exception as e:
-                        print(f"[Entity Fan-out] Error scheduling child spawn: {e}")
+                    if sub.get("status") != "candidate":
+                        try:
+                            from app.background import follow_up_pool
+                            follow_up_pool.submit(lambda parent=item_id, citation=cit_id, name=raw_name, url=canon_url, why=reason:
+                                                  _spawn_child_entity_background(parent, citation, name, url, why))
+                        except Exception as e:
+                            print(f"[Entity Fan-out] Error scheduling child spawn: {e}")
+
+    # 4. In-Database Competitor & Superior Alternative Detection
+    if not is_sub_task and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
+        try:
+            from app.research.competitor_detector import detect_competitors_and_alternatives
+            await detect_competitors_and_alternatives(
+                item_id=item_id,
+                title=title_l1,
+                summary=summary_l1,
+                tech_tags=tech_tags,
+                category_name=category_name
+            )
+        except Exception as e:
+            print(f"[Pipeline] Competitor detection error: {e}")
 
     return item_record

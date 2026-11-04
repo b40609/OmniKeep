@@ -15,6 +15,8 @@ from app.database import (
     get_status_counts,
     get_citations_for_target,
     get_sub_entities_for_parent,
+    get_related_items,
+    get_item_knowledge_graph,
     seed_demo_items
 )
 
@@ -46,8 +48,8 @@ async def search_semantic(
     q: str = Query(..., description="Semantic search query"),
     limit: int = Query(10, ge=1, le=50)
 ):
-    from app.vector import search_hybrid
-    return search_hybrid(q, limit=limit)
+    from app.vector import search_hybrid_async
+    return await search_hybrid_async(q, limit=limit)
 
 @router.get("", response_model=List[Dict[str, Any]])
 async def list_items(
@@ -55,10 +57,11 @@ async def list_items(
     q: Optional[str] = Query(None, description="Full-text search query"),
     starred: Optional[bool] = Query(None, description="Filter starred items only"),
     read: Optional[bool] = Query(None, description="Filter read status (False for unread/Inbox, True for archived)"),
+    origin: Optional[str] = Query(None, description="Origin filter (manual | radar | all)"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ):
-    return get_items(category=category, query=q, is_starred=starred, is_read=read, limit=limit, offset=offset)
+    return get_items(category=category, query=q, is_starred=starred, is_read=read, origin=origin, limit=limit, offset=offset)
 
 @router.get("/export")
 async def export_items(
@@ -161,10 +164,16 @@ async def get_item(item_id: str):
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     
-    # Enrich with citations (which digests cited this item) & sub_entities (items/projects packed inside this digest)
+    # Enrich with citations, sub_entities, semantic related items & knowledge graph
     item["citations"] = get_citations_for_target(item_id)
     item["sub_entities"] = get_sub_entities_for_parent(item_id)
+    item["related_items"] = get_related_items(item_id, limit=4)
+    item["graph"] = get_item_knowledge_graph(item_id)
     return item
+
+@router.get("/{item_id}/graph")
+async def get_item_graph_endpoint(item_id: str):
+    return get_item_knowledge_graph(item_id)
 
 @router.patch("/{item_id}")
 async def update_item(item_id: str, payload: ItemUpdate):

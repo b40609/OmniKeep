@@ -1,4 +1,5 @@
 import re
+import asyncio
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse, parse_qs
 from app.network import public_http_client, validate_url
@@ -6,6 +7,12 @@ from app.network import public_http_client, validate_url
 def is_youtube_url(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
     return any(host == d or host.endswith("." + d) for d in ("youtube.com", "youtu.be"))
+
+def is_youtube_shorts_url(url: str) -> bool:
+    if not is_youtube_url(url):
+        return False
+    path = (urlparse(url).path or "").lower()
+    return path.startswith("/shorts/")
 
 def extract_video_id(url: str) -> Optional[str]:
     parsed = urlparse(url)
@@ -19,7 +26,8 @@ def extract_video_id(url: str) -> Optional[str]:
 
 async def fetch_youtube_metadata(url: str) -> Dict[str, Any]:
     """
-    Fetch oEmbed info for YouTube video (fast, official, no API key required).
+    Fetch comprehensive YouTube metadata with fast fallback to oEmbed.
+    Extracts title, author, description, tags, and thumbnail without heavy downloads.
     """
     validate_url(url)
     if not is_youtube_url(url):
@@ -33,8 +41,37 @@ async def fetch_youtube_metadata(url: str) -> Dict[str, Any]:
         "author": "",
         "cover_image": default_thumb,
         "video_id": video_id or "",
+        "description": "",
+        "duration": 0,
+        "tags": []
     }
 
+    # 1. Primary: yt-dlp fast metadata extraction (skip-download)
+    try:
+        from app.parsers.media_network import PublicYoutubeDL
+        ydl_opts = {
+            'skip_download': True,
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'socket_timeout': 8,
+        }
+        def _get_info():
+            with PublicYoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(url, download=False)
+        info = await asyncio.to_thread(_get_info)
+        if info:
+            data["title"] = info.get("title") or data["title"]
+            data["author"] = info.get("uploader") or info.get("channel") or data["author"]
+            data["cover_image"] = info.get("thumbnail") or data["cover_image"]
+            data["description"] = info.get("description") or ""
+            data["duration"] = int(info.get("duration") or 0)
+            data["tags"] = info.get("tags") or []
+            return data
+    except Exception:
+        pass
+
+    # 2. Fallback: Official oEmbed if yt-dlp fails
     try:
         async with public_http_client(timeout=8.0) as client:
             resp = await client.get(

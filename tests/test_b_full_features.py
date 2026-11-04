@@ -206,3 +206,126 @@ async def test_snapshot_and_semantic_search_api():
         assert len(results) >= 1
         assert any(r["id"] == item_id for r in results)
         assert "rrf_score" in results[0]
+
+
+@pytest.mark.asyncio
+async def test_dreampass_llm_model_and_radar_source_whitelist(monkeypatch):
+    from app.main import app
+    from app.radar.dreampass import run_dreampass_reflection
+
+    # 1. Verify settings.OPENAI_MODEL resolves to PRIMARY_MODEL without AttributeError
+    assert settings.OPENAI_MODEL == settings.PRIMARY_MODEL
+
+    captured_payload = {}
+
+    class DummyResp:
+        status_code = 200
+        def json(self):
+            return {
+                "choices": [{
+                    "message": {
+                        "content": '{"observations": ["LLM path works"], "suggested_profile": "AI Systems", "diff_summary": "+ AI Systems"}'
+                    }
+                }]
+            }
+
+    class DummyClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            pass
+        async def post(self, url, headers=None, json=None):
+            captured_payload["url"] = url
+            captured_payload["json"] = json
+            return DummyResp()
+
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+    monkeypatch.setattr("app.network.public_http_client", lambda timeout=30.0: DummyClient())
+
+    prop = await run_dreampass_reflection(days=7)
+    assert prop["suggested_profile"] == "AI Systems"
+    assert captured_payload["json"]["model"] == settings.PRIMARY_MODEL
+
+    # 2. Verify google_news and web_change source types are accepted by /api/radar/sources
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test",
+                           headers={"Authorization": f"Bearer {settings.API_KEY}"}) as client:
+        for stype, url in [
+            ("google_news", "https://news.google.com/rss/search?q=SQLite"),
+            ("web_change", "https://example.com/changelog"),
+        ]:
+            res = await client.post("/api/radar/sources", json={
+                "name": f"Test {stype}",
+                "source_type": stype,
+                "url": url,
+                "tier": 1,
+                "check_interval_minutes": 60
+            })
+            assert res.status_code == 200, res.text
+            assert res.json()["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_embedding_custom_base_url_and_gemini_async_offload(monkeypatch):
+    from app.vector import generate_embedding
+    from app.providers.gemini import GeminiProvider
+
+    # 1. Verify generate_embedding uses settings.OPENAI_BASE_URL and maps default model to text-embedding-3-small
+    captured = {}
+
+    class DummyEmbedResp:
+        status_code = 200
+        def json(self):
+            return {"data": [{"embedding": [0.25] * 256}]}
+
+    class DummyHttpClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            pass
+        async def post(self, url, headers=None, json=None):
+            if "/api/embed" in url:
+                raise RuntimeError("Ollama offline")
+            captured["url"] = url
+            captured["json"] = json
+            return DummyEmbedResp()
+
+    monkeypatch.setenv("OMNIKEEP_TESTING", "0")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-embed-key")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://custom-llm.example.com/v1/")
+    monkeypatch.setattr("app.network.public_http_client", lambda timeout=15.0: DummyHttpClient())
+
+    vec = await generate_embedding("semantic query test", is_query=True)
+    assert len(vec) == 256
+    assert vec[0] == 0.25
+    assert captured["url"] == "https://custom-llm.example.com/v1/embeddings"
+    assert captured["json"]["model"] == "text-embedding-3-small"
+
+    # 2. Verify GeminiProvider offloads synchronous generate_content via asyncio.to_thread
+    thread_calls = []
+    orig_to_thread = asyncio.to_thread
+
+    async def spy_to_thread(func, *args, **kwargs):
+        thread_calls.append(func)
+        return await orig_to_thread(func, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", spy_to_thread)
+
+    class DummyModels:
+        def generate_content(self, **kwargs):
+            class R:
+                text = '{"ok": true}'
+            return R()
+
+    class DummyGenaiClient:
+        def __init__(self, api_key):
+            self.models = DummyModels()
+
+    import google.genai as genai_mod
+    monkeypatch.setattr(genai_mod, "Client", DummyGenaiClient)
+
+    prov = GeminiProvider(api_keys=["test-gemini-key"], model="gemini-2.5-flash")
+    out_json = await prov.generate_json("test prompt")
+    assert out_json == {"ok": True}
+    assert len(thread_calls) == 1
+

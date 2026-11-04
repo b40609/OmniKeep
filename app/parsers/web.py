@@ -29,6 +29,11 @@ def is_facebook_url(url: str) -> bool:
     host = (parsed.hostname or "").lower()
     return any(host == domain or host.endswith("." + domain) for domain in ("facebook.com", "fb.watch", "fb.com"))
 
+def is_instagram_url(url: str) -> bool:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    return host == "instagram.com" or host.endswith(".instagram.com")
+
 async def fetch_page_with_playwright(url: str) -> Optional[str]:
     """
     Fallback headless rendering via system Chrome with injected cookies.
@@ -162,6 +167,98 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
         "published_date": "",
     }
 
+async def parse_instagram_page(url: str) -> Dict[str, Any]:
+    """
+    Extract Instagram post/reel information with automatic Chrome session injection:
+    1. Tries user-authenticated session (with Chrome cookies) to fetch full text if available.
+    2. Falls back to facebookexternalhit crawler User-Agent for OpenGraph metadata if unauthenticated.
+    """
+    validate_url(url)
+    html_text = ""
+    used_session = False
+    jar = get_cookie_jar()
+
+    # 1. Try authenticated request using bridged session cookies
+    if jar:
+        try:
+            async with public_http_client(headers=BROWSER_HEADERS, cookies=jar, timeout=20.0, follow_redirects=True) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200 and "login" not in str(resp.url).lower() and "checkpoint" not in str(resp.url).lower():
+                    html_text = resp.text
+                    used_session = True
+        except Exception as e:
+            print(f"[Instagram Parser] Session request notice: {e}")
+
+    # 2. Fallback to Facebook crawler UA for public OpenGraph metadata
+    if not html_text or 'meta property="og:title"' not in html_text:
+        try:
+            async with public_http_client(headers=FB_HEADERS, timeout=20.0, follow_redirects=True) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    html_text = resp.text
+        except Exception as e:
+            print(f"[Instagram Parser] Crawler fallback request error: {e}")
+            html_text = html_text or ""
+
+    soup = BeautifulSoup(html_text, "html.parser") if html_text else BeautifulSoup("", "html.parser")
+
+    og_title_tag = soup.find("meta", property="og:title")
+    raw_title = og_title_tag["content"].strip() if og_title_tag and og_title_tag.get("content") else ""
+
+    og_desc_tag = soup.find("meta", property="og:description") or soup.find("meta", attrs={"name": "description"})
+    raw_desc = og_desc_tag["content"].strip() if og_desc_tag and og_desc_tag.get("content") else ""
+
+    tw_title_tag = soup.find("meta", attrs={"name": "twitter:title"})
+    tw_title = tw_title_tag["content"].strip() if tw_title_tag and tw_title_tag.get("content") else ""
+
+    cover_image = extract_meta_image(soup, url)
+
+    # Extract author
+    author = ""
+    if tw_title:
+        m_tw = re.match(r"^(.*?)\s*(?:\(@[\w.]+\))?\s*•", tw_title)
+        if m_tw:
+            author = m_tw.group(1).strip()
+    if not author and raw_title:
+        parts = re.split(r"\s+(?:在|on)\s+Instagram:", raw_title, flags=re.I)
+        if len(parts) > 1:
+            author = parts[0].strip()
+
+    # Extract caption from quotes in og:title or og:description
+    caption = ""
+    m_title = re.search(r'Instagram:\s*["“](.*?)(?:["”]\s*$|$)', raw_title, re.DOTALL)
+    if m_title:
+        caption = m_title.group(1).strip()
+    if not caption and raw_desc:
+        m_desc = re.search(r':\s*["“](.*?)(?:["”]\s*\.?\s*$|$)', raw_desc, re.DOTALL)
+        if m_desc:
+            caption = m_desc.group(1).strip()
+    if not caption:
+        caption = raw_desc or raw_title
+
+    # Derive readable title
+    first_line = ""
+    if caption:
+        for line in caption.splitlines():
+            clean_line = line.strip()
+            if clean_line and not clean_line.startswith("#"):
+                first_line = clean_line
+                break
+    final_title = first_line or (tw_title or "Instagram 貼文")
+    if len(final_title) > 60:
+        final_title = final_title[:60].strip() + "..."
+
+    content_body = caption or "（Instagram 貼文未提供公開文字說明）"
+
+    return {
+        "url": url,
+        "title": final_title,
+        "content_raw": content_body,
+        "cover_image": cover_image,
+        "author": author or "Instagram",
+        "published_date": "",
+    }
+
 def extract_meta_image(soup: BeautifulSoup, base_url: str) -> str:
     # 1. og:image
     og = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "og:image"})
@@ -185,6 +282,11 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
     validate_url(url)
     if is_facebook_url(url):
         return await parse_facebook_page(url)
+    if is_instagram_url(url):
+        return await parse_instagram_page(url)
+    from app.parsers.threads import is_threads_url, parse_threads_page
+    if is_threads_url(url):
+        return await parse_threads_page(url)
 
     html = ""
     jar = get_cookie_jar()

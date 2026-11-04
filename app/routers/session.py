@@ -8,6 +8,7 @@ login window without touching the terminal.
 
 import asyncio
 import http.cookiejar
+import ipaddress
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -36,6 +37,14 @@ PLATFORM_DEFS: Dict[str, Dict[str, str]] = {
     "x": {"domain": "x.com", "login_url": "https://x.com/login"},
 }
 
+# Specific cookie names required to consider a platform actually authenticated
+PLATFORM_AUTH_COOKIES: Dict[str, set[str]] = {
+    "instagram": {"sessionid"},
+    "facebook": {"c_user"},
+    "x": {"auth_token"},
+    "google": {"SID", "SSID", "__Secure-1PSID"},
+}
+
 
 class LoginRequest(BaseModel):
     platform: str
@@ -55,13 +64,20 @@ def _load_cookie_file_jar() -> Optional[http.cookiejar.CookieJar]:
 
 
 def _platform_snapshot(jar: Optional[http.cookiejar.CookieJar]) -> List[Dict[str, Any]]:
-    """Per-platform connection summary derived from cookie domains."""
+    """Per-platform connection summary derived from authenticating cookie tokens."""
     result: List[Dict[str, Any]] = []
     for pid, meta in PLATFORM_DEFS.items():
         count = 0
+        is_connected = False
+        required_auth = PLATFORM_AUTH_COOKIES.get(pid, set())
         if jar:
-            count = sum(1 for c in jar if meta["domain"] in (c.domain or ""))
-        result.append({"id": pid, "connected": count > 0, "cookies": count})
+            matching = [c for c in jar if meta["domain"] in (c.domain or "")]
+            count = len(matching)
+            if required_auth:
+                is_connected = any(c.name in required_auth and bool(c.value) for c in matching)
+            else:
+                is_connected = count > 0
+        result.append({"id": pid, "connected": is_connected, "cookies": count})
     return result
 
 
@@ -143,11 +159,24 @@ async def session_login(req: LoginRequest) -> Dict[str, Any]:
 
     return {"success": True, "platform": req.platform, "url": meta["login_url"]}
 
+
+def _is_trusted_client(client_host: str) -> bool:
+    if not client_host:
+        return False
+    if client_host in {"127.0.0.1", "::1", "localhost", "testclient"}:
+        return True
+    try:
+        ip = ipaddress.ip_address(client_host)
+        return ip.is_loopback
+    except ValueError:
+        return False
+
+
 @router.get("/local-auth")
 async def get_local_auth(request: Request):
-    """Zero-friction auto-auth for local users connecting via loopback (localhost)."""
+    """Zero-friction auto-auth for local loopback & trusted private LAN users."""
     client_host = request.client.host if request.client else ""
-    is_loopback = client_host in {"127.0.0.1", "::1", "localhost", "testclient"}
-    if not (is_loopback and settings.LOCAL_AUTO_LOGIN):
+    is_trusted = _is_trusted_client(client_host)
+    if not (is_trusted and settings.LOCAL_AUTO_LOGIN):
         return {"authenticated": False, "api_key": ""}
     return {"authenticated": True, "api_key": settings.API_KEY}

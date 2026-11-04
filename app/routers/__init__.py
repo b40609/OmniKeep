@@ -7,3 +7,4 @@ from app.routers.session import router as session_router
 from app.routers.watch import router as watch_router
 from app.routers.behavior import router as behavior_router
 from app.routers.rules import router as rules_router
+from app.routers.brain import router as brain_router

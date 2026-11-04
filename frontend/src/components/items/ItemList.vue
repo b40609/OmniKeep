@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { VList } from 'virtua/vue'
-import { Inbox, Sparkles, FolderInput, Radio, Bookmark, Copy, Check } from 'lucide-vue-next'
+import { Inbox, Sparkles, FolderInput, Bookmark, Copy, Check } from 'lucide-vue-next'
 import * as api from '@/lib/api'
 import { toast } from 'vue-sonner'
 import ItemRow from './ItemRow.vue'
@@ -25,6 +25,28 @@ watch(
 )
 
 const activeId = computed(() => ui.activeItem?.id ?? -1)
+const firstUse = computed(() => !items.error && !items.searchQuery.trim() && items.currentCategory === '全部' && items.stats.total === 0 && ['inbox', 'all'].includes(items.triageView))
+const emptyState = computed(() => {
+  if (items.error) return { title: '無法載入收藏', body: items.error, action: '重新載入' }
+  if (items.searchQuery.trim()) return { title: '找不到符合的收藏', body: '試試其他關鍵字，或清除搜尋與分類條件。', action: '清除搜尋條件' }
+  if (items.currentCategory !== '全部') return { title: '這個分類沒有項目', body: '可以改看所有分類的收藏。', action: '顯示所有分類' }
+  if (firstUse.value) return { title: '收下值得再讀的內容', body: '在上方貼上網址或筆記，按「收錄」即可儲存。', action: '新增第一則筆記' }
+  if (items.triageView === 'inbox') return { title: '待讀項目已清空', body: '已封存的內容仍可在全部項目中找到。', action: '查看全部項目' }
+  if (items.triageView === 'starred') return { title: '還沒有星標收藏', body: '為想保留的項目加上星標，就能在這裡找到。', action: '查看全部項目' }
+  if (items.triageView === 'archived') return { title: '還沒有封存項目', body: '讀完後按「封存」，內容會保留在這裡。', action: '查看全部項目' }
+  return { title: '目前沒有收藏', body: '貼上網址或新增筆記，開始收錄內容。', action: '新增筆記' }
+})
+function recoverEmpty() {
+  if (items.error) return void items.loadItems()
+  if (firstUse.value || (!items.searchQuery.trim() && items.triageView === 'all' && items.currentCategory === '全部')) {
+    ui.showNoteModal = true
+    return
+  }
+  if (items.searchQuery.trim()) items.searchQuery = ''
+  else if (items.currentCategory === '全部') items.triageView = 'all'
+  items.currentCategory = '全部'
+  void items.loadItems()
+}
 
 /** Scroll a row into view — used by J/K keyboard navigation. */
 function scrollToIndex(index: number) {
@@ -39,10 +61,14 @@ const bookmarkletHref = computed(() => {
 
 const copied = ref(false)
 async function copyBookmarklet() {
-  await navigator.clipboard.writeText(bookmarkletHref.value)
-  copied.value = true
-  toast.success('已複製書籤小工具代碼至剪貼簿！')
-  setTimeout(() => (copied.value = false), 2000)
+  try {
+    await navigator.clipboard.writeText(bookmarkletHref.value)
+    copied.value = true
+    toast.success('已複製書籤小工具代碼')
+    setTimeout(() => (copied.value = false), 2000)
+  } catch {
+    toast.error('無法複製，請允許剪貼簿存取後重試。')
+  }
 }
 
 const isSeeding = ref(false)
@@ -51,7 +77,7 @@ async function handleSeedDemos() {
   const t = toast.loading('正在載入新手示範資料…')
   try {
     await api.seedDemoItems()
-    toast.success('已注入示範卡片', {
+    toast.success('已載入範例資料', {
       id: t,
       description: '示範 YouTube、B站與開源專案的呈現格式；內容為範例，未執行即時分析',
     })
@@ -69,13 +95,18 @@ defineExpose({ scrollToIndex })
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col backdrop-blur-2xl [&::-webkit-scrollbar]:bg-transparent">
+  <div class="@container flex min-h-0 flex-1 flex-col bg-card [&::-webkit-scrollbar]:bg-transparent" :aria-busy="items.loading">
     <!-- Stream meta toolbar -->
     <div class="flex h-9 shrink-0 items-center justify-between px-4 text-2xs text-subtle-foreground">
       <div>
         <span>{{ items.loading ? '載入中…' : `${items.items.length} 個收錄項目` }}</span>
         <span v-if="items.searchQuery" class="ml-2 font-medium text-primary">搜尋："{{ items.searchQuery }}"</span>
       </div>
+    </div>
+
+    <div v-if="items.error && items.items.length" class="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2 text-sm" role="alert">
+      <span>{{ items.error }}目前顯示上次載入的內容。</span>
+      <button class="min-h-11 px-2 font-medium underline underline-offset-4" @click="items.loadItems()">重試</button>
     </div>
 
     <!-- First-load skeletons -->
@@ -100,35 +131,37 @@ defineExpose({ scrollToIndex })
         <Inbox class="size-6" />
       </div>
       <div>
-        <p class="text-base font-semibold tracking-tight text-foreground">目前無任何收錄項目</p>
-        <p class="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
-          可於上方輸入列貼上網址或筆記快速納庫，亦可透過下方隨手存小工具或範例資料快速上手。
+        <p class="text-lg font-semibold text-foreground">{{ emptyState.title }}</p>
+        <p class="mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
+          {{ emptyState.body }}
         </p>
       </div>
+      <button class="min-h-11 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover" @click="recoverEmpty">{{ emptyState.action }}</button>
 
       <!-- 1-Click Browser Bookmarklet Ribbon -->
-      <div class="w-full max-w-md rounded-xl border border-primary/20 bg-primary/5 p-3.5 text-left text-xs shadow-xs">
+      <details v-if="firstUse" class="w-full max-w-md text-left text-sm">
+        <summary class="min-h-11 cursor-pointer py-3 text-center text-muted-foreground">其他收錄方式與範例</summary>
+      <div class="mt-3 border-t border-hairline pt-4 text-left text-xs">
         <div class="flex items-center justify-between gap-2 mb-2">
           <div class="flex items-center gap-1.5 font-semibold text-foreground">
             <Bookmark class="size-3.5 text-primary" />
             <span>瀏覽器隨手存小工具 (無需外掛)</span>
           </div>
-          <span class="rounded bg-primary/10 px-1.5 py-0.5 text-2xs font-mono font-medium text-primary">推薦</span>
         </div>
         <p class="text-2xs text-muted-foreground leading-relaxed mb-3">
-          拖曳下方按鈕至瀏覽器<b>「書籤列」</b>；平時瀏覽 YouTube、B站、Twitter 或文章時點擊即秒存並自動關閉！
+          使用電腦時，將下方連結拖到瀏覽器的書籤列。瀏覽文章或影片時點擊，即可收錄目前的網址。
         </p>
         <div class="flex items-center gap-2">
           <a
             :href="bookmarkletHref"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-primary bg-primary px-3 py-1.5 font-mono text-xs font-bold text-primary-foreground shadow-2xs hover:opacity-90 active:scale-95 cursor-grab active:cursor-grabbing select-none"
+            class="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary-hover cursor-grab active:cursor-grabbing select-none"
             title="請將我拖曳至瀏覽器書籤列"
             @click.prevent="toast.info('請直接將此按鈕拖曳到瀏覽器的「書籤列（Bookmarks Bar）」中！')"
           >
-            <span>🔖 存入 OmniKeep</span>
+            <span>存入 OmniKeep</span>
           </a>
           <button
-            class="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-2xs font-medium text-foreground transition hover:bg-accent active:scale-95 cursor-pointer shadow-2xs"
+            class="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-card px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent cursor-pointer"
             @click="copyBookmarklet"
           >
             <Check v-if="copied" class="size-3 text-success" />
@@ -141,7 +174,7 @@ defineExpose({ scrollToIndex })
       <!-- Actionable onboarding buttons -->
       <div class="flex flex-wrap items-center justify-center gap-2 pt-1">
         <button
-          class="flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary hover:text-primary-foreground active:scale-95 cursor-pointer shadow-2xs disabled:opacity-50"
+          class="flex min-h-11 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent cursor-pointer disabled:opacity-50"
           :disabled="isSeeding"
           @click="handleSeedDemos"
         >
@@ -149,20 +182,14 @@ defineExpose({ scrollToIndex })
           <span>{{ isSeeding ? '載入中…' : '載入範例資料（非即時分析）' }}</span>
         </button>
         <button
-          class="flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-foreground transition hover:bg-accent active:scale-95 cursor-pointer shadow-2xs"
+          class="flex min-h-11 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent cursor-pointer"
           @click="ui.showImportModal = true"
         >
           <FolderInput class="size-3.5 text-muted-foreground" />
           <span>匯入書籤 / 匯出</span>
         </button>
-        <button
-          class="flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-foreground transition hover:bg-accent active:scale-95 cursor-pointer shadow-2xs"
-          @click="ui.showRadarModal = true"
-        >
-          <Radio class="size-3.5 text-muted-foreground" />
-          <span>情報雷達巡檢</span>
-        </button>
       </div>
+      </details>
     </div>
 
     <!-- List mode: virtualized rows (ssrCount renders the first page even
@@ -171,7 +198,7 @@ defineExpose({ scrollToIndex })
       v-else-if="items.viewMode === 'list'"
       ref="vlist"
       :data="items.items"
-      :item-size="92"
+      :item-size="160"
       :ssr-count="12"
       class="min-h-0 flex-1"
       :buffer-size="8"
@@ -186,12 +213,12 @@ defineExpose({ scrollToIndex })
     </VList>
 
     <!-- Cards mode: responsive grid with FLIP enter/leave -->
-    <div v-else class="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+    <div v-else class="min-h-0 flex-1 overflow-y-auto bg-background p-4 sm:p-6 pb-20 md:pb-6">
       <div class="mx-auto max-w-[1600px]">
         <TransitionGroup
           name="cards"
           tag="div"
-          class="grid grid-cols-1 content-start gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3"
+          class="grid grid-cols-1 content-start gap-4 @min-[38rem]:grid-cols-2 @min-[64rem]:grid-cols-3"
         >
           <ItemCards v-for="item in items.items" :key="item.id" :item="item" />
         </TransitionGroup>
@@ -210,8 +237,6 @@ defineExpose({ scrollToIndex })
 }
 .cards-leave-active {
   transition: opacity 160ms ease, transform 160ms ease;
-  position: absolute;
-  width: calc(50% - 6px);
 }
 .cards-leave-to {
   opacity: 0;
@@ -219,5 +244,9 @@ defineExpose({ scrollToIndex })
 }
 .cards-move {
   transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cards-enter-active, .cards-leave-active, .cards-move { transition: none; }
+  .cards-enter-from, .cards-leave-to { transform: none; }
 }
 </style>

@@ -7,7 +7,7 @@ const ui = useUiStore()
 
 const groups: { title: string; items: [string, string][] }[] = [
   {
-    title: '巡航',
+    title: '瀏覽',
     items: [
       ['J / ↓', '下一個項目'],
       ['K / ↑', '上一個項目'],
@@ -16,7 +16,7 @@ const groups: { title: string; items: [string, string][] }[] = [
     ],
   },
   {
-    title: '分流',
+    title: '整理',
     items: [
       ['E', '封存 / 移回待讀'],
       ['S', '星標 / 取消星標'],
@@ -26,8 +26,12 @@ const groups: { title: string; items: [string, string][] }[] = [
   {
     title: '輸入',
     items: [
-      ['N', '聚焦快速擷取列'],
-      ['/', '聚焦全文搜尋'],
+      ['n', '聚焦快速收錄列'],
+      ['Shift+N', '新增筆記'],
+      ['Ctrl/Cmd+B', '展開 / 收合側邊欄'],
+      ['/', '聚焦搜尋'],
+      ['B', '對話大腦 (Ask Brain)'],
+      ['D', '每日回顧 Deck'],
       ['R', '訂閱雷達面板'],
       ['I', '書籤與外部匯入'],
       ['?', '本快捷鍵指南'],
@@ -42,8 +46,7 @@ const groups: { title: string; items: [string, string][] }[] = [
     <DialogContent class="max-w-md">
       <DialogHeader>
         <DialogTitle class="flex items-center gap-2">
-          鍵盤極速操控指南
-          <span class="rounded border border-border bg-muted px-1.5 py-px font-mono text-2xs text-muted-foreground">VIM / LINEAR</span>
+          鍵盤快捷鍵
         </DialogTitle>
       </DialogHeader>
 

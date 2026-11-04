@@ -8,6 +8,7 @@ import { useUiStore } from '@/stores/ui'
 import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, checkLocalAuth, type SessionBridgeSnapshot } from '@/lib/api'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
+import MobileBottomBar from '@/components/layout/MobileBottomBar.vue'
 import ItemList from '@/components/items/ItemList.vue'
 import ReaderPane from '@/components/reader/ReaderPane.vue'
 import NoteDialog from '@/components/modals/NoteDialog.vue'
@@ -17,9 +18,12 @@ import RadarDialog from '@/components/modals/RadarDialog.vue'
 import SessionDialog from '@/components/modals/SessionDialog.vue'
 import WatchDialog from '@/components/modals/WatchDialog.vue'
 import ImportDialog from '@/components/modals/ImportDialog.vue'
+import DailyDeckDialog from '@/components/modals/DailyDeckDialog.vue'
+import BrainDialog from '@/components/modals/BrainDialog.vue'
+import CommandPalette from '@/components/modals/CommandPalette.vue'
+import * as api from '@/lib/api'
 import { Toaster } from '@/components/ui/sonner'
 import { useMutations } from '@/composables/useMutations'
-
 
 initTheme()
 
@@ -43,7 +47,7 @@ function requireLogin(clearSaved = false) {
   ui.activeItem = null
   items.items = []
   items.categories = []
-  items.stats = { inbox: 0, starred: 0, archived: 0, total: 0 }
+  items.stats = { inbox: 0, starred: 0, archived: 0, radar: 0, total: 0 }
 }
 
 function handleLogout() {
@@ -75,7 +79,7 @@ async function login(explicitKey?: string, isAuto = false): Promise<boolean> {
   } catch (error) {
     if (!isAuto) {
       requireLogin(true)
-      loginError.value = error instanceof Error ? error.message : '登入失敗'
+      loginError.value = error instanceof Error ? error.message : '登入失敗，請確認存取金鑰'
     } else {
       requireLogin(false)
     }
@@ -85,7 +89,6 @@ async function login(explicitKey?: string, isAuto = false): Promise<boolean> {
   }
 }
 
-
 async function checkUrlParamIngest() {
   const params = new URLSearchParams(window.location.search)
   const incomingUrl = params.get('url')
@@ -93,7 +96,7 @@ async function checkUrlParamIngest() {
     const autoClose = params.get('auto_close') === '1' || params.has('auto_close')
     window.history.replaceState({}, document.title, window.location.pathname)
     const { quickIngest } = useMutations()
-    toast.info('偵測到隨手收錄網址，正在啟動多模態解析…')
+    toast.info('正在收錄這個網址…')
     const ok = await quickIngest(incomingUrl)
     if (autoClose) {
       if (ok) {
@@ -111,6 +114,19 @@ async function checkUrlParamIngest() {
 async function bootstrapAuth() {
   isCheckingAuth.value = true
   try {
+    // 0. Check URL query params (?key=... or ?api_key=...)
+    const params = new URLSearchParams(window.location.search)
+    const urlKey = params.get('key') || params.get('api_key')
+    if (urlKey) {
+      params.delete('key')
+      params.delete('api_key')
+      const cleanUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '')
+      window.history.replaceState({}, document.title, cleanUrl)
+      rememberKey.value = true
+      const ok = await login(urlKey, true)
+      if (ok) return
+    }
+
     // 1. Check local browser storage first
     const savedKey = localStorage.getItem(STORAGE_KEY)
     if (savedKey) {
@@ -119,7 +135,7 @@ async function bootstrapAuth() {
       if (ok) return
     }
 
-    // 2. Local loopback auto-auth (zero friction for localhost)
+    // 2. Local loopback & trusted private LAN auto-auth (zero friction)
     const local = await checkLocalAuth()
     if (local.authenticated && local.api_key) {
       rememberKey.value = true
@@ -187,17 +203,30 @@ function onAuthRequired() {
 
 onMounted(() => {
   window.addEventListener('omnikeep-auth-required', onAuthRequired)
+  window.addEventListener('open-item', async (e: any) => {
+    const itemId = e.detail?.itemId
+    if (itemId) {
+      const it = items.items.find((x: any) => String(x.id) === String(itemId))
+      if (it) {
+        ui.activeItem = it
+        ui.detailTab = 'analysis'
+      } else {
+        try {
+          const fetched = await api.getItem(Number(itemId))
+          if (fetched) {
+            ui.activeItem = fetched
+            ui.detailTab = 'analysis'
+          }
+        } catch {}
+      }
+    }
+  })
   bootstrapAuth()
 })
 onUnmounted(() => window.removeEventListener('omnikeep-auth-required', onAuthRequired))
 </script>
 
 <template>
-  <!-- Liquid glass backdrop: colorful aurora the panels blur against -->
-  <div class="aurora" aria-hidden="true">
-    <i /><i /><i /><i />
-  </div>
-
   <!-- Auth initializing spinner (avoids login modal flashing on localhost) -->
   <div v-if="isCheckingAuth" class="relative z-10 flex h-screen w-screen items-center justify-center">
     <div class="flex flex-col items-center gap-3">
@@ -206,10 +235,28 @@ onUnmounted(() => window.removeEventListener('omnikeep-auth-required', onAuthReq
     </div>
   </div>
 
-  <form v-else-if="!signedIn" class="relative z-10 mx-auto mt-24 flex max-w-sm flex-col gap-4 rounded-xl border bg-background p-8 text-foreground" @submit.prevent="login()">
-    <h1 class="text-xl font-semibold">登入 OmniKeep</h1>
-    <label for="api-key">存取金鑰</label>
-    <input id="api-key" v-model="credential" type="password" autocomplete="off" required class="rounded border bg-background p-3" />
+  <form v-else-if="!signedIn" class="relative z-10 mx-auto mt-24 flex max-w-sm flex-col gap-4 rounded-xl border bg-background p-8 text-foreground shadow-2xl" @submit.prevent="login()">
+    <div class="flex items-center justify-between">
+      <h1 class="text-xl font-semibold">登入 OmniKeep</h1>
+      <button
+        type="button"
+        title="嘗試同網段自動授權"
+        class="text-xs text-primary hover:underline"
+        @click="bootstrapAuth()"
+      >
+        自動辨識登入
+      </button>
+    </div>
+    <label for="api-key" class="text-xs font-medium text-muted-foreground">存取金鑰</label>
+    <input
+      id="api-key"
+      v-model="credential"
+      type="password"
+      autocomplete="off"
+      placeholder="貼上 API 金鑰或點擊自動辨識"
+      required
+      class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+    />
     
     <div class="flex items-center gap-2">
       <input
@@ -218,20 +265,20 @@ onUnmounted(() => window.removeEventListener('omnikeep-auth-required', onAuthReq
         type="checkbox"
         class="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer accent-primary"
       />
-      <label for="remember-key" class="text-sm cursor-pointer select-none">
+      <label for="remember-key" class="text-xs cursor-pointer select-none text-muted-foreground">
         記住金鑰（儲存於本機瀏覽器）
       </label>
     </div>
 
-    <p class="text-sm text-muted-foreground">
+    <p class="text-xs text-muted-foreground">
       {{ rememberKey ? '金鑰將保存於本機 localStorage，下次開啟自動登入。' : '金鑰僅保留於本頁記憶體，重新整理後需再次登入。' }}
     </p>
-    <p v-if="loginError" role="alert" class="text-sm text-red-500">{{ loginError }}</p>
-    <button type="submit" :disabled="loggingIn" class="rounded bg-primary p-3 text-primary-foreground font-medium transition disabled:opacity-50">
+    <p v-if="loginError" role="alert" class="text-xs text-red-500">{{ loginError }}</p>
+    <button type="submit" :disabled="loggingIn" class="rounded-lg bg-primary py-2.5 text-sm text-primary-foreground font-medium transition hover:opacity-90 disabled:opacity-50">
       {{ loggingIn ? '驗證中…' : '登入' }}
     </button>
   </form>
-  <div v-else class="relative z-10 flex h-screen w-screen overflow-hidden text-foreground">
+  <div v-else class="relative z-10 flex h-[100dvh] w-screen overflow-hidden text-foreground">
     <!-- Collapsible Modern Sidebar -->
     <AppSidebar @logout="handleLogout" />
 
@@ -262,6 +309,12 @@ onUnmounted(() => window.removeEventListener('omnikeep-auth-required', onAuthReq
     <SessionDialog />
     <WatchDialog />
     <ImportDialog />
+    <DailyDeckDialog />
+    <BrainDialog />
+    <CommandPalette />
+
+    <!-- iOS Single-Handed Bottom Bar (Mobile only) -->
+    <MobileBottomBar v-if="!ui.activeItem" />
   </div>
 
   <Toaster />

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
-from app.database import log_behavior_event, get_behavior_stats, get_swipe_deck, record_swipe, SWIPE_LABEL_EVENTS
+from app.database import log_behavior_event, get_behavior_stats, get_swipe_deck, get_daily_review_deck, record_swipe, SWIPE_LABEL_EVENTS
 
 router = APIRouter(prefix="/api/behavior", tags=["Behavior & Deck"])
 
@@ -44,9 +44,15 @@ async def record_event(req: BehaviorEvent):
 
 
 @router.get("/deck")
-async def deck(limit: int = Query(10, ge=1, le=50)):
-    """Un-acted radar items for swipe UIs (Telegram /deck and the future PWA deck)."""
-    items = get_swipe_deck(limit=limit)
+async def deck(
+    mode: str = Query("daily", description="deck mode: daily or radar"),
+    limit: int = Query(10, ge=1, le=50)
+):
+    """Daily review deck (curated unread + resurfaced) or radar swipe deck."""
+    if mode == "radar":
+        items = get_swipe_deck(limit=limit)
+    else:
+        items = get_daily_review_deck(limit=limit)
     return {"count": len(items), "items": items}
 
 

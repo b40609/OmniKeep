@@ -132,7 +132,7 @@ async def run_dreampass_reflection(days: int = 7) -> Dict[str, Any]:
             from app.network import public_http_client
             api_url = f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions"
             payload = {
-                "model": settings.OPENAI_MODEL,
+                "model": settings.PRIMARY_MODEL or settings.OPENAI_MODEL,
                 "messages": [
                     {"role": "system", "content": _DREAMPASS_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt}

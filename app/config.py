@@ -23,10 +23,19 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_API_KEY: str = ""
     PRIMARY_MODEL: str = "gpt-4o-mini"
+    OPENAI_MODEL_RAW: str = Field(default="", validation_alias="OPENAI_MODEL")
     
     # Gemini Configuration
     GEMINI_API_KEYS_RAW: str = Field(default="", validation_alias="GEMINI_API_KEYS")
     GEMINI_MODEL: str = "gemini-2.5-flash"
+
+    # Ask Brain (Second Brain Q&A with Grounded Citations)
+    # Local Strata / Qwen3.8-Flash-Next 125B MoE or Qwen3 via Ollama with cloud failover
+    BRAIN_PROVIDER: str = "ollama"
+    BRAIN_BASE_URL: str = "http://127.0.0.1:11434"
+    BRAIN_MODEL: str = "qwen3:8b"
+    BRAIN_API_KEY: str = ""
+    BRAIN_MAX_CITATIONS: int = 5
     
     # Storage (Always absolute path anchored to Hub root)
     DATABASE_PATH: str = str(BASE_DIR / "omnikeep.db")
@@ -63,7 +72,8 @@ class Settings(BaseSettings):
     # B-full: sqlite-vec, monolith snapshot & vector deduplication
     SNAPSHOT_DIR: str = str(BASE_DIR / "snapshots")
     EMBEDDING_DIM: int = 256
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_MODEL: str = "embeddinggemma-2"
+    OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
 
     # Multi-sink backup (self-hosters pick their own: local folder / rclone cloud / git repo)
     BACKUP_SINK: str = "local"          # local | rclone | git | off
@@ -108,6 +118,10 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+
+    @property
+    def OPENAI_MODEL(self) -> str:
+        return self.OPENAI_MODEL_RAW or self.PRIMARY_MODEL
 
     @property
     def gemini_keys(self) -> List[str]:

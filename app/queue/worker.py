@@ -6,6 +6,7 @@ from app.file_lock import FileLock
 from typing import Dict, Any, Optional, Set
 from app.database import (
     claim_next_task,
+    get_ingest_task,
     claim_completion_notification,
     finish_completion_notification,
     update_task_status,
@@ -16,6 +17,8 @@ from app.database import (
     get_db_connection
 )
 from app.pipeline import run_pipeline
+from app.parsers.reel import ReelUnavailableError, is_empty_reel_metadata
+from app.providers.openai_compatible import ProviderUnavailableError
 from app.bot.telegram_bot import (
     notify_task_heartbeat,
     notify_task_completed,
@@ -237,25 +240,45 @@ class TaskWorker:
         message_id = task.get("message_id")
         retry_count = int(task.get("retry_count") or 0)
 
+        def _get_current_message_id() -> Optional[int]:
+            nonlocal message_id
+            if not message_id and source == "telegram":
+                fresh = get_ingest_task(task_id)
+                if fresh and fresh.get("message_id") is not None:
+                    message_id = fresh.get("message_id")
+            return message_id
+
+        async def _notify_task_failed(err_msg: str):
+            mid = _get_current_message_id()
+            if source == "telegram" and chat_id and mid:
+                await notify_task_failed(int(chat_id), int(mid), err_msg)
+            elif source == "line" and chat_id:
+                await notify_line_failed(str(chat_id), err_msg)
+
         logger.info(f"[Queue Worker] Processing task {task_id} (source: {source}) -> {url[:60]}")
 
         # 1. Idempotency Cache Check: Instant return if URL or repo is already in second brain
         existing_item = find_item_by_canonical_or_url(url)
-        if existing_item:
+        if existing_item and not is_empty_reel_metadata(existing_item):
             logger.info(f"[Queue Worker] Idempotency Hit: URL already indexed as item {existing_item.get('id')}")
             update_task_status(task_id, status="completed", item_id=existing_item.get("id"))
             await self._trigger_completion_notification(task_id, existing_item)
             return
+        if existing_item:
+            # Keep the existing URL so a successful retry updates the same item.
+            url = existing_item.get("url") or url
+            logger.info(f"[Queue Worker] Retrying empty reel item {existing_item.get('id')}")
 
         # 2. Telegram Heartbeat notification if user is in heartbeat mode
-        if source == "telegram" and chat_id and message_id:
+        mid = _get_current_message_id()
+        if source == "telegram" and chat_id and mid:
             mode = get_user_setting(chat_id)
             if mode == "heartbeat":
                 try:
                     await notify_task_heartbeat(
                         int(chat_id),
-                        int(message_id),
-                        "⚡ <b>正在下載並進行視聽雙軌情報解析 (L1/L2)...</b>"
+                        int(mid),
+                        "<b>正在進行多模態情報解析...</b>"
                     )
                 except Exception as e:
                     logger.warning(f"[Queue Worker] Telegram heartbeat error: {e}")
@@ -270,6 +293,12 @@ class TaskWorker:
             logger.info(f"[Queue Worker] Task {task_id} completed successfully (item_id: {item.get('id')})")
         except Exception as exc:
             logger.error(f"[Queue Worker] Task {task_id} failed on attempt {retry_count + 1}: {exc}")
+
+            if isinstance(exc, (ProviderUnavailableError, ReelUnavailableError)):
+                # A network access block is deterministic; avoid repeated paid API requests.
+                update_task_status(task_id, status="failed", error_message=str(exc))
+                await _notify_task_failed(str(exc))
+                return
 
             if _is_rate_limit_error(exc):
                 # 429 = account-wide quota; retry patiently with global backoff.
@@ -289,11 +318,12 @@ class TaskWorker:
                         f"[Queue Worker] Rate limited. Worker cooling down {int(backoff)}s; "
                         f"task {task_id} re-queued (attempt {retry_count + 1}/{_MAX_RATE_LIMIT_RETRIES})"
                     )
-                    if source == "telegram" and chat_id and message_id:
+                    mid = _get_current_message_id()
+                    if source == "telegram" and chat_id and mid:
                         try:
                             await notify_task_heartbeat(
-                                int(chat_id), int(message_id),
-                                f"⚠️ <b>AI 額度限流中</b>\n\n任務已排入延遲重試（第 {retry_count + 1} 次），約 {int(backoff)} 秒後自動繼續，無需重發。",
+                                int(chat_id), int(mid),
+                                f"<b>API 限流暫緩中</b>\n\n任務已排入延遲重試（第 {retry_count + 1} 次），約 {int(backoff)} 秒後自動繼續，無需重發。",
                             )
                         except Exception as e:
                             logger.warning(f"[Queue Worker] Telegram heartbeat error: {e}")
@@ -304,10 +334,7 @@ class TaskWorker:
                     "可升級 LLM 供應商方案，或於 .env 加入 GEMINI_API_KEYS 作為備援後重新轉發此訊息。"
                 )
                 update_task_status(task_id, status="failed", error_message=friendly)
-                if source == "telegram" and chat_id and message_id:
-                    await notify_task_failed(int(chat_id), int(message_id), friendly)
-                elif source == "line" and chat_id:
-                    await notify_line_failed(str(chat_id), friendly)
+                await _notify_task_failed(friendly)
                 return
 
             # Non-rate-limit error: reset backoff so a later 429 starts gentle.
@@ -326,10 +353,7 @@ class TaskWorker:
                 logger.info(f"[Queue Worker] Task {task_id} re-enqueued for retry (retry_count: {retry_count + 1})")
             else:
                 update_task_status(task_id, status="failed", error_message=str(exc))
-                if source == "telegram" and chat_id and message_id:
-                    await notify_task_failed(int(chat_id), int(message_id), str(exc))
-                elif source == "line" and chat_id:
-                    await notify_line_failed(str(chat_id), str(exc))
+                await _notify_task_failed(str(exc))
 
         else:
             # Delivery is independent of ingestion, retries and LLM quota state.

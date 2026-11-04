@@ -75,7 +75,7 @@ export function useMutations() {
     const next = item.is_read ? 0 : 1
     void optimisticPatch(item, { is_read: next }, {
       undoMsg: '',
-      doneMsg: next ? '已封存' : '已移回 Inbox',
+      doneMsg: next ? '已封存' : '已移回待讀',
       undo: () => void optimisticPatch(item, { is_read: item.is_read ? 0 : 1 }, { undoMsg: '', doneMsg: '已復原' }),
     })
     track(next ? 'archive' : 'unarchive', item)
@@ -127,7 +127,7 @@ export function useMutations() {
   /** Quick ingest from the omnibox. */
   async function quickIngest(content: string): Promise<boolean> {
     ui.isIngesting = true
-    const t = toast.loading('內容解析與結構化中…')
+    const t = toast.loading('正在收錄並整理摘要…')
     try {
       const data = await api.ingest(content)
       if (data.success) {

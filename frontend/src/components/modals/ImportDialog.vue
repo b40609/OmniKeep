@@ -458,7 +458,7 @@ function closeDialog() {
                     <span>排入 AI 深度解析佇列</span>
                   </div>
                   <div class="text-2xs text-muted-foreground leading-tight mt-0.5">
-                    寫入 SQLite 佇列，由後台 Worker 異步抓取全文、產生 L1/L2 摘要與向量嵌入。
+                    匯入後會在背景取得全文並整理摘要，可繼續瀏覽其他收藏。
                   </div>
                 </div>
               </label>
@@ -488,7 +488,7 @@ function closeDialog() {
             </div>
             <p class="text-muted-foreground leading-relaxed">
               只需將下方按鈕<b>「拖曳至瀏覽器書籤列」</b>（Chrome、Edge、Safari、Firefox 皆支援）。
-              未來在閱讀任何文章、推文或觀看影片時，點擊書籤即可一鍵將當前網頁送入 OmniKeep 背景深度解構！
+              閱讀文章、貼文或觀看影片時，點擊書籤即可將目前網址送到 OmniKeep 收錄。
             </p>
             <div class="flex flex-wrap items-center gap-3 pt-1">
               <a

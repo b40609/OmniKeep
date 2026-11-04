@@ -146,8 +146,8 @@ async def _push_autostar_notices(items: List[Dict[str, Any]]) -> None:
         lines = []
         for it in starred[:5]:
             reasons = "；".join(str(r) for r in (it.get("reasons") or [])[:2])
-            lines.append(f"⭐ <b>{html.escape(it.get('title_l1', '')[:60])}</b>\n{html.escape(reasons)}")
-        text = "🤖 <b>雷達自動收藏</b>\n\n" + "\n\n".join(lines)
+            lines.append(f"<b>{html.escape(it.get('title_l1', '')[:60])}</b>\n{html.escape(reasons)}")
+        text = "<b>雷達精選推薦</b>\n\n" + "\n\n".join(lines)
         for chat_id in settings.telegram_allowed_ids:
             await bot.send_message(chat_id, text)
     except Exception as e:
@@ -175,8 +175,8 @@ async def _push_digest_to_telegram(digest_info: Dict[str, Any], ranked_items: Li
             return
         titles = "\n".join(f"• {html.escape(it.get('title_l1', '')[:60])}" for it in ranked_items[:5])
         text = (
-            f"📰 <b>{html.escape(digest_info.get('title', '雷達摘要'))}</b>\n\n{titles}\n\n"
-            f"<i>完整摘要在工作台；滑卡請用 /deck。</i>"
+            f"<b>{html.escape(digest_info.get('title', '雷達摘要'))}</b>\n\n{titles}\n\n"
+            f"<i>完整戰報請至工作台查閱；卡片審閱請輸入 /deck。</i>"
         )
         for chat_id in settings.telegram_allowed_ids:
             await bot.send_message(chat_id, text)

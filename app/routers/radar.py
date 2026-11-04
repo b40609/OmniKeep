@@ -146,7 +146,7 @@ async def list_sources():
 @router.post("/sources")
 async def create_or_update_source(req: SourceCreateRequest):
     """Add a new YouTube channel, GitHub repository/trending, or RSS feed."""
-    valid_types = ["youtube", "github", "rss"]
+    valid_types = ["youtube", "github", "rss", "google_news", "web_change"]
     if req.source_type.lower() not in valid_types:
         raise HTTPException(status_code=400, detail=f"source_type must be one of {valid_types}")
 

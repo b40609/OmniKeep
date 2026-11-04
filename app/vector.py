@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import re
 import struct
 from contextlib import closing
@@ -111,25 +112,54 @@ def _deterministic_local_embedding(text: str, dim: int = 256) -> List[float]:
     return vec.tolist()
 
 
-async def generate_embedding(text: str) -> List[float]:
-    """Generates an embedding vector for the text using OpenAI or local projection."""
+def generate_embedding_sync(text: str, is_query: bool = False) -> List[float]:
+    """Generates an embedding vector for the text using local embeddinggemma-2 or OpenAI."""
     dim = int(settings.EMBEDDING_DIM)
     clean_text = (text or "").strip()[:8000]
     if not clean_text:
         return [0.0] * dim
 
-    api_key = settings.OPENAI_API_KEY
-    if api_key and not getattr(settings, "OMNIKEEP_TESTING", False):
+    is_testing = getattr(settings, "OMNIKEEP_TESTING", False) or os.environ.get("OMNIKEEP_TESTING") == "1"
+
+    # 1. Local Runner (Ollama / local-server with embeddinggemma-2)
+    ollama_url = getattr(settings, "OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    model_name = settings.EMBEDDING_MODEL
+    prompt_input = f"task: search result | query: {clean_text}" if is_query else clean_text
+
+    if not is_testing:
         try:
             import httpx
-            from app.network import public_http_client
-            async with public_http_client(timeout=15.0) as client:
-                resp = await client.post(
-                    "https://api.openai.com/v1/embeddings",
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.post(
+                    f"{ollama_url}/api/embed",
+                    json={"model": model_name, "input": prompt_input}
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    embs = data.get("embeddings", [])
+                    if embs and len(embs[0]) >= dim:
+                        v = np.array(embs[0][:dim], dtype=np.float32)
+                        norm = np.linalg.norm(v)
+                        if norm > 1e-9:
+                            v /= norm
+                        return v.tolist()
+        except Exception as e:
+            logger.debug(f"[Vector] Local embedding failed ({e}), checking fallback...")
+
+    # 2. Cloud OpenAI-Compatible API fallback
+    api_key = settings.OPENAI_API_KEY
+    if api_key and not is_testing:
+        try:
+            import httpx
+            base_url = (settings.OPENAI_BASE_URL or "https://api.openai.com/v1").rstrip("/")
+            openai_model = "text-embedding-3-small" if model_name == "embeddinggemma-2" else model_name
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.post(
+                    f"{base_url}/embeddings",
                     headers={"Authorization": f"Bearer {api_key}"},
                     json={
                         "input": clean_text,
-                        "model": settings.EMBEDDING_MODEL,
+                        "model": openai_model,
                         "dimensions": dim
                     }
                 )
@@ -138,7 +168,69 @@ async def generate_embedding(text: str) -> List[float]:
                     vec = data["data"][0]["embedding"]
                     return vec[:dim]
         except Exception as e:
-            logger.warning(f"[Vector] OpenAI embedding failed ({e}), using local projection.")
+            logger.warning(f"[Vector] OpenAI embedding failed ({e}).")
+
+    # 3. Deterministic fallback when external embedding providers are unavailable or in test mode
+    return _deterministic_local_embedding(clean_text, dim)
+
+
+async def generate_embedding(text: str, is_query: bool = False) -> List[float]:
+    """Asynchronous wrapper for generating an embedding vector."""
+    dim = int(settings.EMBEDDING_DIM)
+    clean_text = (text or "").strip()[:8000]
+    if not clean_text:
+        return [0.0] * dim
+
+    is_testing = getattr(settings, "OMNIKEEP_TESTING", False) or os.environ.get("OMNIKEEP_TESTING") == "1"
+
+    ollama_url = getattr(settings, "OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    model_name = settings.EMBEDDING_MODEL
+    prompt_input = f"task: search result | query: {clean_text}" if is_query else clean_text
+
+    if not is_testing:
+        try:
+            import httpx
+            from app.network import public_http_client
+            async with public_http_client(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{ollama_url}/api/embed",
+                    json={"model": model_name, "input": prompt_input}
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    embs = data.get("embeddings", [])
+                    if embs and len(embs[0]) >= dim:
+                        v = np.array(embs[0][:dim], dtype=np.float32)
+                        norm = np.linalg.norm(v)
+                        if norm > 1e-9:
+                            v /= norm
+                        return v.tolist()
+        except Exception as e:
+            logger.debug(f"[Vector] Local async embedding failed ({e}), checking fallback...")
+
+    api_key = settings.OPENAI_API_KEY
+    if api_key and not is_testing:
+        try:
+            import httpx
+            from app.network import public_http_client
+            base_url = (settings.OPENAI_BASE_URL or "https://api.openai.com/v1").rstrip("/")
+            openai_model = "text-embedding-3-small" if model_name == "embeddinggemma-2" else model_name
+            async with public_http_client(timeout=15.0) as client:
+                resp = await client.post(
+                    f"{base_url}/embeddings",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "input": clean_text,
+                        "model": openai_model,
+                        "dimensions": dim
+                    }
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    vec = data["data"][0]["embedding"]
+                    return vec[:dim]
+        except Exception as e:
+            logger.warning(f"[Vector] OpenAI embedding failed ({e}).")
 
     return _deterministic_local_embedding(clean_text, dim)
 
@@ -250,8 +342,11 @@ def search_similar_items(
                 results = []
 
         if not used_vec or not results:
-            # Fallback: numpy scan over item_embeddings
-            cursor = conn.execute("SELECT item_id, embedding, dim FROM item_embeddings")
+            # Fallback: numpy scan over item_embeddings (filtered by current model)
+            cursor = conn.execute(
+                "SELECT item_id, embedding, dim FROM item_embeddings WHERE model = ?",
+                (settings.EMBEDDING_MODEL,)
+            )
             candidates = []
             for r in cursor.fetchall():
                 try:
@@ -274,23 +369,24 @@ def search_similar_items(
     return results[:limit]
 
 
-def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5) -> List[Dict[str, Any]]:
-    """
-    Hybrid Search combining keyword search (FTS) and vector semantic search via Reciprocal Rank Fusion (RRF).
-    """
-    from app.database import get_items
-
-    # 1. Lexical search (FTS)
-    fts_items = get_items(query=query, limit=limit * 2)
+def _merge_hybrid_results(
+    fts_items: List[Dict[str, Any]],
+    q_vec: List[float],
+    limit: int = 10,
+    vector_weight: float = 0.5
+) -> List[Dict[str, Any]]:
     fts_ranks = {item["id"]: idx + 1 for idx, item in enumerate(fts_items)}
+    has_valid_vector = any(v != 0.0 for v in q_vec)
 
-    # 2. Vector search
-    q_vec = _deterministic_local_embedding(query, int(settings.EMBEDDING_DIM))
-    vec_results = search_similar_items(q_vec, limit=limit * 2, min_similarity=0.1)
-    vec_ranks = {r["item_id"]: idx + 1 for idx, r in enumerate(vec_results)}
-    vec_sims = {r["item_id"]: r["similarity"] for r in vec_results}
+    if has_valid_vector:
+        vec_results = search_similar_items(q_vec, limit=limit * 2, min_similarity=0.1)
+        vec_ranks = {r["item_id"]: idx + 1 for idx, r in enumerate(vec_results)}
+        vec_sims = {r["item_id"]: r["similarity"] for r in vec_results}
+    else:
+        vec_ranks = {}
+        vec_sims = {}
+        vector_weight = 0.0
 
-    # 3. Reciprocal Rank Fusion (RRF)
     all_ids = set(fts_ranks.keys()) | set(vec_ranks.keys())
     if not all_ids:
         return []
@@ -318,3 +414,25 @@ def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5) -> Li
 
     scored_items.sort(key=lambda x: x["rrf_score"], reverse=True)
     return scored_items[:limit]
+
+
+def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5) -> List[Dict[str, Any]]:
+    """
+    Synchronous Hybrid Search combining keyword search (FTS) and vector semantic search via RRF.
+    """
+    from app.database import get_items
+
+    fts_items = get_items(query=query, limit=limit * 2)
+    q_vec = generate_embedding_sync(query, is_query=True)
+    return _merge_hybrid_results(fts_items, q_vec, limit=limit, vector_weight=vector_weight)
+
+
+async def search_hybrid_async(query: str, limit: int = 10, vector_weight: float = 0.5) -> List[Dict[str, Any]]:
+    """
+    Asynchronous Hybrid Search using non-blocking embedding generation.
+    """
+    from app.database import get_items
+
+    fts_items = get_items(query=query, limit=limit * 2)
+    q_vec = await generate_embedding(query, is_query=True)
+    return _merge_hybrid_results(fts_items, q_vec, limit=limit, vector_weight=vector_weight)

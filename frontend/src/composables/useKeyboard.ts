@@ -7,7 +7,7 @@ import { useSignal } from './useSignal'
 
 type AppHeaderExposed = { focusQuickInput: () => void; focusSearchInput: () => void }
 
-/** Global keyboard shortcuts — parity with the legacy single-file UI. */
+/** Global keyboard shortcuts — parity with the legacy single-file UI and enhanced with Cmd+K. */
 export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () => boolean = () => true) {
   const items = useItemsStore()
   const ui = useUiStore()
@@ -22,12 +22,23 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
       ui.showRadarModal ||
       ui.showSessionModal ||
       ui.showWatchModal ||
-      ui.showImportModal
+      ui.showImportModal ||
+      ui.showDailyDeckModal ||
+      ui.showBrainModal ||
+      ui.showCommandPalette
     )
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    if (!enabled()) return
+    if (!enabled() || e.defaultPrevented || e.isComposing) return
+
+    // Global Command Palette shortcut (Cmd+K / Ctrl+K) works anywhere
+    if (!e.altKey && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault()
+      ui.showCommandPalette = !ui.showCommandPalette
+      return
+    }
+
     const el = document.activeElement
     const tag = el?.tagName?.toLowerCase() ?? ''
     const typing =
@@ -39,7 +50,7 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
       return
     }
 
-    // Modal-level Esc handling is done by Reka Dialog; block list shortcuts while open.
+    // Modal-level Esc handling; close active modal when open
     if (isAnyModalOpen()) {
       if (e.key === 'Escape') {
         ui.showNoteModal = false
@@ -49,14 +60,38 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         ui.showSessionModal = false
         ui.showWatchModal = false
         ui.showImportModal = false
+        ui.showDailyDeckModal = false
+        ui.showBrainModal = false
+        ui.showCommandPalette = false
       }
       return
     }
+
+    // Preserve browser shortcuts, except our custom accelerator (Cmd+B toggle sidebar)
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      if (!e.altKey && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        ui.sidebarOpen = !ui.sidebarOpen
+      }
+      return
+    }
+    if ((e.key === 'Enter' || e.key === ' ') && el?.closest('button, a')) return
+    if (el?.closest('[role="tab"], [role="menuitem"]')) return
 
     switch (e.key) {
       case '?':
         e.preventDefault()
         ui.showShortcutsModal = !ui.showShortcutsModal
+        return
+      case 'b':
+      case 'B':
+        e.preventDefault()
+        ui.showBrainModal = !ui.showBrainModal
+        return
+      case 'd':
+      case 'D':
+        e.preventDefault()
+        ui.showDailyDeckModal = !ui.showDailyDeckModal
         return
       case 'r':
       case 'R':
@@ -85,7 +120,9 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         }
         return
       case 'Escape':
-        if (ui.focusMode) {
+        if (ui.sidebarMobileOpen) {
+          ui.sidebarMobileOpen = false
+        } else if (ui.focusMode) {
           ui.focusMode = false
         } else if (ui.activeItem) {
           ui.activeItem = null
@@ -95,9 +132,13 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         e.preventDefault()
         header()?.focusSearchInput()
         return
-      case 'N':
+      case 'n':
         e.preventDefault()
         header()?.focusQuickInput()
+        return
+      case 'N':
+        e.preventDefault()
+        ui.showNoteModal = true
         return
     }
 

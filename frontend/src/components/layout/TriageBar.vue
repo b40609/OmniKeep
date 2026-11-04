@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Inbox, Star, Archive, Layers, Plus } from 'lucide-vue-next'
+import { Inbox, Star, Archive, Layers, Plus, Radio } from 'lucide-vue-next'
 import { useItemsStore, type TriageView } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
 
@@ -9,6 +9,7 @@ const ui = useUiStore()
 
 const views = computed(() => [
   { id: 'inbox' as TriageView, label: '待讀', icon: Inbox, count: items.stats.inbox },
+  { id: 'radar' as TriageView, label: '雷達', icon: Radio, count: items.stats.radar },
   { id: 'starred' as TriageView, label: '星標', icon: Star, count: items.stats.starred },
   { id: 'archived' as TriageView, label: '封存', icon: Archive, count: items.stats.archived },
   { id: 'all' as TriageView, label: '全部', icon: Layers, count: items.stats.total },
@@ -21,36 +22,36 @@ function setView(v: TriageView) {
 </script>
 
 <template>
-  <div class="ios-blur z-20 flex h-12 shrink-0 items-center gap-3 border-b border-white/40 px-3 shadow-sm dark:border-white/10 sm:px-4">
+  <div class="z-20 flex shrink-0 flex-wrap items-center gap-2 border-b border-hairline bg-card px-3 py-2 sm:px-4">
     <!-- iOS segmented control -->
-    <div class="flex items-center rounded-[10px] bg-white/50 p-0.5 shadow-inner dark:bg-white/[0.08]" role="tablist" aria-label="分類視圖">
+    <div class="grid w-full grid-cols-5 gap-1 rounded-lg bg-muted p-1 xl:w-auto" role="group" aria-label="收藏狀態">
       <button
         v-for="v in views"
         :key="v.id"
-        role="tab"
-        :aria-selected="items.triageView === v.id"
-        class="flex h-7 items-center gap-1 rounded-[8px] px-2.5 text-xs font-medium transition-all duration-200"
+        :aria-pressed="items.triageView === v.id"
+        :aria-label="`${v.label}，${v.count} 個項目`"
+        class="flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium transition-colors xl:px-3"
         :class="items.triageView === v.id
-          ? 'bg-white/90 text-foreground shadow-md font-semibold dark:bg-white/[0.16]'
-          : 'text-muted-foreground active:opacity-70'"
+          ? 'bg-card text-foreground font-semibold'
+          : 'text-muted-foreground hover:bg-accent'"
         @click="setView(v.id)"
       >
-        <component :is="v.icon" class="size-3.5" :class="items.triageView === v.id ? 'text-primary' : ''" />
-        <span class="max-sm:hidden">{{ v.label }}</span>
+        <component :is="v.icon" class="hidden size-3.5 shrink-0 sm:block" />
+        <span class="shrink-0">{{ v.label }}</span>
         <span
-          class="min-w-4 rounded-full px-1 text-2xs font-semibold tabular-nums"
-          :class="items.triageView === v.id ? 'bg-primary-soft text-primary' : 'text-subtle-foreground'"
+          class="max-w-10 truncate text-xs tabular-nums text-muted-foreground"
         >{{ v.count }}</span>
       </button>
     </div>
 
     <!-- Category chips -->
-    <div class="no-scrollbar flex flex-1 items-center justify-end gap-1.5 overflow-x-auto">
+    <div class="flex min-w-0 basis-full items-center gap-1 overflow-x-auto xl:basis-0 xl:flex-1" role="group" aria-label="分類篩選">
       <button
-        class="h-7 shrink-0 rounded-full px-3 text-2xs font-semibold transition-all duration-150 active:scale-[0.96]"
+        class="min-h-11 shrink-0 rounded-lg px-3 text-xs font-medium transition-colors"
+        :aria-pressed="items.currentCategory === '全部'"
         :class="items.currentCategory === '全部'
-          ? 'bg-primary text-primary-foreground shadow-sm'
-          : 'bg-white/50 text-muted-foreground hover:text-foreground dark:bg-white/[0.08]'"
+          ? 'bg-primary-soft text-primary-soft-foreground'
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground'"
         @click="items.currentCategory = '全部'; items.loadItems()"
       >
         全部
@@ -58,17 +59,18 @@ function setView(v: TriageView) {
       <button
         v-for="cat in items.categories"
         :key="cat.id"
-        class="flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-2xs font-medium transition-all duration-150 active:scale-[0.96]"
+        class="flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-xs font-medium transition-colors"
+        :aria-pressed="items.currentCategory === cat.name"
         :class="items.currentCategory === cat.name
-          ? 'bg-primary text-primary-foreground shadow-sm font-semibold'
-          : 'bg-white/50 text-muted-foreground hover:text-foreground dark:bg-white/[0.08]'"
+          ? 'bg-primary-soft text-primary-soft-foreground font-semibold'
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground'"
         @click="items.currentCategory = cat.name; items.loadItems()"
       >
-        <span>{{ cat.name }}</span>
-        <span class="text-2xs tabular-nums opacity-70">{{ cat.item_count ?? 0 }}</span>
+        <span>{{ cat.name === 'Inbox' ? '收件匣' : cat.name }}</span>
+        <span class="text-xs tabular-nums">{{ cat.item_count ?? 0 }}</span>
       </button>
       <button
-        class="flex h-7 shrink-0 items-center gap-1 rounded-full bg-white/50 px-2.5 dark:bg-white/[0.08] text-2xs font-medium text-primary transition-all active:scale-[0.96]"
+        class="flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-xs font-medium text-primary-soft-foreground transition-colors hover:bg-accent"
         aria-label="新增分類"
         @click="ui.showCategoryModal = true"
       >
