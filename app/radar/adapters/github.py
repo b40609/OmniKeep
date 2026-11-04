@@ -1,3 +1,4 @@
+import logging
 import re
 from app.network import public_http_client
 from datetime import datetime, timezone
@@ -6,6 +7,8 @@ from urllib.parse import urlparse, parse_qs
 from app.radar.adapters.base import BaseSourceAdapter, RawFeedItem
 from app.database import update_radar_source_fetch_meta
 from app.config import settings
+
+logger = logging.getLogger("omnikeep.radar.github")
 
 class GitHubAdapter(BaseSourceAdapter):
     source_type = "github"
@@ -52,7 +55,7 @@ class GitHubAdapter(BaseSourceAdapter):
                 try:
                     resp = await client.get(api_url, headers=headers)
                 except Exception as e:
-                    print(f"[Radar:GitHub] Network error for {repo_slug}: {e}")
+                    logger.warning(f"[Radar:GitHub] Network error for {repo_slug}: {e}")
                     update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                     return []
 
@@ -61,7 +64,7 @@ class GitHubAdapter(BaseSourceAdapter):
                     return []
 
                 if resp.status_code != 200:
-                    print(f"[Radar:GitHub] API returned {resp.status_code} for {repo_slug}")
+                    logger.warning(f"[Radar:GitHub] API returned {resp.status_code} for {repo_slug}")
                     update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                     return []
 
@@ -116,7 +119,7 @@ class GitHubAdapter(BaseSourceAdapter):
                 try:
                     resp = await client.get(api_url, headers=headers)
                 except Exception as e:
-                    print(f"[Radar:GitHub] Search error for query '{query_str}': {e}")
+                    logger.warning(f"[Radar:GitHub] Search error for query '{query_str}': {e}")
                     update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                     return []
 
@@ -125,7 +128,7 @@ class GitHubAdapter(BaseSourceAdapter):
                     return []
 
                 if resp.status_code != 200:
-                    print(f"[Radar:GitHub] Search API returned {resp.status_code} for query '{query_str}'")
+                    logger.warning(f"[Radar:GitHub] Search API returned {resp.status_code} for query '{query_str}'")
                     update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                     return []
 
@@ -170,7 +173,7 @@ class GitHubAdapter(BaseSourceAdapter):
             try:
                 resp = await client.get(source_url, headers={"User-Agent": "Mozilla/5.0"})
             except Exception as e:
-                print(f"[Radar:GitHub] Trending error: {e}")
+                logger.warning(f"[Radar:GitHub] Trending error: {e}")
                 update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 

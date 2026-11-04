@@ -1,3 +1,4 @@
+import asyncio
 import itertools
 import threading
 import json
@@ -5,6 +6,21 @@ import re
 from typing import Optional, List, Dict, Any
 from app.providers.base import BaseLLMProvider
 from app.config import settings
+
+
+async def _generate_content(client, **kwargs):
+    """Run `generate_content` without blocking the event loop.
+
+    google-genai ships a native async client (`client.aio`); use it when
+    present. On SDKs without it, push the synchronous call onto a worker
+    thread so a slow Gemini request (YouTube analysis can take tens of
+    seconds) can no longer freeze every other request in the process.
+    """
+    aio = getattr(client, "aio", None)
+    if aio is not None:
+        return await aio.models.generate_content(**kwargs)
+    return await asyncio.to_thread(client.models.generate_content, **kwargs)
+
 
 class GeminiProvider(BaseLLMProvider):
     def __init__(self, api_keys: Optional[List[str]] = None, model: Optional[str] = None):
@@ -33,7 +49,8 @@ class GeminiProvider(BaseLLMProvider):
             contents.append(system_prompt + "\n\n")
         contents.append(prompt)
 
-        response = client.models.generate_content(
+        response = await _generate_content(
+            client,
             model=self.model,
             contents=contents,
             config=gtypes.GenerateContentConfig(
@@ -53,7 +70,8 @@ class GeminiProvider(BaseLLMProvider):
         client = genai.Client(api_key=key)
         full_prompt = (system_prompt + "\n\n" if system_prompt else "") + prompt + "\n\nReturn ONLY a valid JSON object."
 
-        response = client.models.generate_content(
+        response = await _generate_content(
+            client,
             model=self.model,
             contents=[full_prompt],
             config=gtypes.GenerateContentConfig(
@@ -77,8 +95,9 @@ class GeminiProvider(BaseLLMProvider):
         from google.genai import types as gtypes
 
         client = genai.Client(api_key=key)
-        
-        response = client.models.generate_content(
+
+        response = await _generate_content(
+            client,
             model=self.model,
             contents=[
                 gtypes.Part.from_uri(

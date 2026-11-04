@@ -19,21 +19,27 @@ OmniKeep Telegram Bot 讓你無論在手機端（iPhone、Android）或電腦端
 
 ---
 
-### 第二步：啟動 Bot 並取得你的 User ID
+### 第二步：啟動 Bot 並綁定你的帳號
 1. **推薦：隨主服務自動啟動。** 只要 `.env` 設好 `TELEGRAM_BOT_TOKEN`，`python run.py` 會在 FastAPI 啟動時自動內嵌啟動 Bot 輪詢（同時帶起任務 Worker 與雷達排程），不需要另外開進程：
    ```powershell
    python run.py
    ```
    > 分離部署（可選）：若你想把 Bot 跑在另一台機器／進程，才使用 `python run_bot.py`。注意**兩者同時跑會造成 getUpdates 409 衝突**，擇一即可。
-2. 打開 Telegram，搜尋你剛建立的 Bot，點擊 **Start** 或發送隨意文字。
-3. Bot 會主動回覆：
+2. **用配對連結綁定（建議）**：登入 OmniKeep 網頁，開啟側欄底部的「通知」，按「產生 Telegram 配對連結」，再用你的 Telegram 帳號開啟連結並按「開始」。
+   - 連結 10 分鐘內有效、只能用一次，只在與 Bot 的私人對話裡有效。
+   - 綁定結果會寫進 OmniKeep 讀取的那個 `.env`（`TELEGRAM_ALLOWED_USER_IDS`），不用重新啟動。
+   - 已經有擁有者時，新綁定的帳號會另外通知原擁有者。
+   - 分離部署時，網頁上的「已綁定」要等網頁服務重新啟動才會更新；Bot 本身立即生效。
+3. **或手動設定**：對 Bot 發任何訊息，它會回覆你的 User ID：
    > ⚠️ **OmniKeep Bot 尚未綁定擁有者**  
-   > 你的 Telegram User ID 是：`987654321`
-4. 將該數字貼回 `.env`：
+   > ……或把你的 User ID `987654321` 填入 .env 的 TELEGRAM_ALLOWED_USER_IDS 後重新啟動。
+
+   將該數字填入 `.env` 後重新啟動 `python run.py`：
    ```env
    TELEGRAM_ALLOWED_USER_IDS=987654321
    ```
-5. 重新啟動 `python run.py`，即完成私有安全綁定（外人完全無法盜用你的 Bot 與 AI 額度）。
+
+沒有配對連結、也不在名單裡的人，傳什麼都不會被綁定，也不能使用 Bot（舊版會把第一個傳訊息的人自動設為擁有者，已移除）。
 
 ---
 

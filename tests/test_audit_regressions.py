@@ -21,7 +21,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app import backup, database as db, network
+from app import __version__, backup, database as db, network
 from app.background import FollowUpPool
 from app.config import settings
 from app.file_lock import FileLock
@@ -59,7 +59,7 @@ def test_all_private_routes_require_header(path):
 def test_auth_and_cors_fail_closed(monkeypatch):
     with TestClient(app) as client:
         assert client.get("/health").json() == {
-            "status": "healthy", "service": "OmniKeep", "version": "0.1.0"}
+            "status": "healthy", "service": "OmniKeep", "version": __version__}
         assert client.get("/api/watch/targets", headers=headers()).status_code == 200
         assert client.get("/api/watch/targets", headers={"X-API-Key": settings.API_KEY}).status_code == 200
         assert client.get("/api/watch/targets", params={"token": settings.API_KEY}).status_code == 401
@@ -366,7 +366,13 @@ async def test_relevance_never_exports_historical_fingerprint_and_dedups_llm(iso
 @pytest.mark.asyncio
 async def test_worker_claim_failure_cooldown_and_exclusive_ownership(monkeypatch):
     import app.queue.worker as module
-    claim = Mock(side_effect=[RuntimeError("synthetic claim failure"), None])
+
+    def fail_first_claim():
+        if claim.call_count == 1:
+            raise RuntimeError("synthetic claim failure")
+        return None  # then an empty queue, however often the loop polls
+
+    claim = Mock(side_effect=fail_first_claim)
     monkeypatch.setattr(module, "claim_next_task", claim)
     worker = TaskWorker(concurrency=2, poll_interval=0.005)
     worker._rate_limit_until = time.monotonic() + 0.01
@@ -376,7 +382,12 @@ async def test_worker_claim_failure_cooldown_and_exclusive_ownership(monkeypatch
         with pytest.raises(RuntimeError, match="owns"):
             other.start()
         assert db.reset_stale_tasks() == 0
-        await asyncio.sleep(0.035)
+        # Wait for the retry rather than a fixed 35 ms: Windows timers tick every ~15 ms,
+        # and the cooldown plus the failure's poll sleep often took longer than that.
+        for _ in range(300):
+            if claim.call_count >= 2:
+                break
+            await asyncio.sleep(0.01)
     finally:
         await worker.stop()
     assert worker.semaphore._value == 2

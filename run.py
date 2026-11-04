@@ -1,11 +1,13 @@
 import logging
 import uvicorn
 from app.config import settings
+from app.logging_setup import configure_logging
 
 if __name__ == "__main__":
     # httpx INFO request lines contain the Telegram Bot API token in the URL.
     # Application-specific bot logs provide diagnostics without exposing it.
     logging.getLogger("httpx").setLevel(logging.CRITICAL)
+    configure_logging()
     print("=" * 60)
     print("OmniKeep - Multimodal Information Radar & Second Brain")
     print(f"Dashboard: http://localhost:{settings.PORT}")

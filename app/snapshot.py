@@ -5,6 +5,7 @@ Karakeep/Hoarder pattern: Ensures second-brain trust even when source pages vani
 """
 
 import html
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,8 @@ from typing import Optional, Dict, Any
 from bs4 import BeautifulSoup
 
 from app.config import settings
+
+logger = logging.getLogger("omnikeep.snapshot")
 
 
 def _get_snapshot_dir() -> Path:
@@ -94,7 +97,7 @@ def save_html_snapshot(item_id: str, raw_html: str, url: str) -> Optional[str]:
         file_path.write_text(clean_html, encoding="utf-8")
         return str(file_path.resolve())
     except OSError as e:
-        print(f"[Snapshot] Failed to write snapshot for {item_id}: {e}")
+        logger.warning(f"[Snapshot] Failed to write snapshot for {item_id}: {e}")
         return None
 
 

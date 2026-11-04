@@ -125,11 +125,11 @@ export function useMutations() {
   }
 
   /** Quick ingest from the omnibox. */
-  async function quickIngest(content: string): Promise<boolean> {
+  async function quickIngest(content: string, page: Pick<api.IngestOptions, 'pageTitle' | 'pageDescription'> = {}): Promise<boolean> {
     ui.isIngesting = true
     const t = toast.loading('內容解析與結構化中…')
     try {
-      const data = await api.ingest(content)
+      const data = await api.ingest(content, page)
       if (data.success) {
         toast.success('已成功收錄', {
           id: t,

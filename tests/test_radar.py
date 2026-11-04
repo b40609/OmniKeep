@@ -323,7 +323,7 @@ async def test_radar_api_endpoints():
 @pytest.mark.asyncio
 async def test_main_lifespan_integration(monkeypatch):
     monkeypatch.setattr(settings, "BACKGROUND_SERVICES_ENABLED", True)
-    monkeypatch.setattr(settings, "RADAR_ENABLED", True)
+    monkeypatch.setattr(settings, "RADAR_ENABLED", False)  # no longer gates the scheduler
     from app.main import app
     from app.radar.scheduler import radar_scheduler
     from contextlib import asynccontextmanager

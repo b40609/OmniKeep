@@ -21,6 +21,7 @@ from app.database import (
     proposal_seen,
 )
 from app.providers import get_primary_provider
+from app.push import notify_new_proposal
 from app.config import settings
 from app.watch.redact import redact_text, find_risky_files, is_risky_filename
 from app.watch.locks import target_lock
@@ -197,6 +198,8 @@ async def _scan_target(target: Dict[str, Any]) -> Dict[str, Any]:
             "dedup_key": risk_key,
         }, item_data=risk_card)
         result["risk_proposal"] = saved is not None
+        if saved:
+            await notify_new_proposal(saved)
 
     # 2) Fingerprint refresh — skip Agnes when nothing changed
     sections = _material_sections(root, files, scope)

@@ -17,10 +17,12 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.parsers.cookie_manager import (
+    PLAYWRIGHT_MISSING,
     _cdp_reachable,
     _fetch_cdp_cookies,
     ensure_cdp_browser,
     get_cookie_jar,
+    playwright_installed,
     restore_headless_cdp_browser,
 )
 
@@ -69,13 +71,14 @@ def _bridge_snapshot() -> Dict[str, Any]:
     cookie_file = settings.BROWSER_COOKIE_FILE
     file_ok = bool(cookie_file) and Path(cookie_file).is_file()
     cdp_ok = _cdp_reachable(settings.BROWSER_CDP_PORT, timeout=0.8)
+    has_playwright = playwright_installed()
 
     mode = "none"
     jar: Optional[http.cookiejar.CookieJar] = None
     if file_ok:
         mode = "cookiefile"
         jar = _load_cookie_file_jar()
-    elif cdp_ok:
+    elif cdp_ok and has_playwright:
         mode = "cdp"
         try:
             jar = _fetch_cdp_cookies()
@@ -84,6 +87,7 @@ def _bridge_snapshot() -> Dict[str, Any]:
 
     return {
         "mode": mode,
+        "playwright_installed": has_playwright,
         "cdp_port": settings.BROWSER_CDP_PORT,
         "cdp_reachable": cdp_ok,
         "auto_launch": settings.BROWSER_CDP_AUTOLAUNCH,
@@ -116,6 +120,8 @@ async def session_login(req: LoginRequest) -> Dict[str, Any]:
     meta = PLATFORM_DEFS.get(req.platform)
     if not meta:
         raise HTTPException(status_code=404, detail=f"Unknown platform: {req.platform}")
+    if not playwright_installed():
+        raise HTTPException(status_code=503, detail=PLAYWRIGHT_MISSING)
 
     ok = await asyncio.to_thread(ensure_cdp_browser, visible=True)
     if not ok:
@@ -143,11 +149,25 @@ async def session_login(req: LoginRequest) -> Dict[str, Any]:
 
     return {"success": True, "platform": req.platform, "url": meta["login_url"]}
 
+# A reverse proxy on the same machine (Tailscale serve, cloudflared, ngrok...)
+# connects from loopback on behalf of a remote device. These are the headers
+# such proxies add; seeing any of them means the real client is not local.
+_PROXY_HEADERS = {"forwarded", "via", "x-real-ip", "cf-connecting-ip", "true-client-ip"}
+_PROXY_HEADER_PREFIXES = ("x-forwarded-", "tailscale-")
+
+
+def _came_through_proxy(request: Request) -> bool:
+    return any(
+        name in _PROXY_HEADERS or name.startswith(_PROXY_HEADER_PREFIXES)
+        for name in request.headers.keys()
+    )
+
+
 @router.get("/local-auth")
 async def get_local_auth(request: Request):
     """Zero-friction auto-auth for local users connecting via loopback (localhost)."""
     client_host = request.client.host if request.client else ""
     is_loopback = client_host in {"127.0.0.1", "::1", "localhost", "testclient"}
-    if not (is_loopback and settings.LOCAL_AUTO_LOGIN):
+    if not (is_loopback and settings.LOCAL_AUTO_LOGIN) or _came_through_proxy(request):
         return {"authenticated": False, "api_key": ""}
     return {"authenticated": True, "api_key": settings.API_KEY}

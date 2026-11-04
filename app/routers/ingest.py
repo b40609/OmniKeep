@@ -13,6 +13,14 @@ class IngestRequest(BaseModel):
     text: Optional[str] = None
     category: Optional[str] = None
     async_mode: Optional[bool] = False
+    # The page's title and description as the user's browser shows them (bookmarklet).
+    page_title: Optional[str] = None
+    page_description: Optional[str] = None
+
+
+def _page_hint(value: Optional[str], limit: int) -> str:
+    return " ".join((value or "").split())[:limit]
+
 
 @router.post("")
 async def ingest_url(
@@ -41,7 +49,9 @@ async def ingest_url(
 
     # Otherwise process and return full item
     try:
-        item = await run_pipeline(clean_input, req.category)
+        item = await run_pipeline(clean_input, req.category,
+                                  page_title=_page_hint(req.page_title, 300),
+                                  page_description=_page_hint(req.page_description, 1000))
         return {
             "success": True,
             "status": "completed",

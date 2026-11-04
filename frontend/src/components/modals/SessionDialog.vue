@@ -120,6 +120,9 @@ watch(
               CDP :{{ bridge.cdp_port }} · {{ bridge.total_cookies }} cookies
               <span v-if="bridge.cookie_file_exists"> · cookies.txt</span>
             </p>
+            <p v-if="bridge?.playwright_installed === false" class="mt-0.5 text-2xs text-warning">
+              這台沒有安裝 playwright，無法用自動化 Chrome 登入，請改用 cookies.txt 匯入。
+            </p>
           </div>
         </div>
         <Button variant="secondary" size="sm" :disabled="loading" @click="refresh">

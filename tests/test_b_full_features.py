@@ -1,7 +1,9 @@
 import asyncio
 import os
+import struct
 import tempfile
 import uuid
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch, AsyncMock
 
@@ -11,11 +13,14 @@ from httpx import AsyncClient, ASGITransport
 from app.config import settings
 from app.database import (
     save_item,
+    get_db_connection,
     get_item_by_id,
     init_db
 )
 from app.vector import (
+    init_vector_db,
     is_sqlite_vec_available,
+    load_vec_extension,
     store_item_embedding,
     get_item_embedding,
     search_similar_items,
@@ -34,10 +39,9 @@ from app.radar.clustering import cluster_item_to_event
 
 # ── 1. sqlite-vec & Vector Search Tests ────────────────────────
 
-def test_sqlite_vec_and_embedding_storage():
-    # sqlite-vec extension should be available in this environment
-    assert is_sqlite_vec_available() is True
-
+def test_embedding_storage_and_search():
+    # Either backend: sqlite-vec when the extension loads, the numpy scan otherwise.
+    init_vector_db()
     item_id_1 = f"vec_test_{uuid.uuid4().hex[:6]}"
     item_id_2 = f"vec_test_{uuid.uuid4().hex[:6]}"
 
@@ -66,6 +70,20 @@ def test_sqlite_vec_and_embedding_storage():
     if item_id_2 in found_ids:
         idx2 = found_ids.index(item_id_2)
         assert idx1 < idx2
+
+
+@pytest.mark.skipif(not is_sqlite_vec_available(), reason="sqlite-vec cannot load into this Python's sqlite3")
+def test_sqlite_vec_mirror_answers_knn_queries():
+    # CI checks the extension loads before running the suite, so this never skips there.
+    init_vector_db()
+    item_id = f"vec_test_{uuid.uuid4().hex[:6]}"
+    vec = _deterministic_local_embedding("sqlite-vec KNN mirror", dim=256)
+    store_item_embedding(item_id, vec)
+    with closing(get_db_connection()) as conn:
+        assert load_vec_extension(conn)
+        row = conn.execute("SELECT item_id FROM vec_items WHERE embedding MATCH ? AND k = 1",
+                           (struct.pack("256f", *vec),)).fetchone()
+    assert row["item_id"] == item_id
 
 
 def test_local_embedding_projection_and_cosine():

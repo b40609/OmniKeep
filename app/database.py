@@ -152,11 +152,12 @@ def init_db():
             """, (src_id, name, stype, url, tier, interval))
 
 
-    # 7b. Radar Settings table (User configurable scheduler & notification policy)
+    # 7b. Radar Settings table (User configurable scheduler & notification policy).
+    # `enabled` alone decides background scans; new installs start with it off (opt-in).
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS radar_settings (
             id INTEGER PRIMARY KEY CHECK (id = 1),
-            enabled INTEGER DEFAULT 1,
+            enabled INTEGER DEFAULT 0,
             interval_minutes INTEGER DEFAULT 180,
             max_analyze_per_cycle INTEGER DEFAULT 3,
             notification_mode TEXT DEFAULT 'silent',
@@ -164,7 +165,8 @@ def init_db():
             vip_threshold REAL DEFAULT 4.0,
             auto_digest_push INTEGER DEFAULT 0,
             auto_star_push INTEGER DEFAULT 0,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            migrated_env_enabled INTEGER
         )
     """)
     radar_settings_cols = {col[1] for col in cursor.execute("PRAGMA table_info(radar_settings)").fetchall()}
@@ -174,9 +176,17 @@ def init_db():
         cursor.execute("ALTER TABLE radar_settings ADD COLUMN daily_digest_hour INTEGER DEFAULT 8")
     if "vip_threshold" not in radar_settings_cols:
         cursor.execute("ALTER TABLE radar_settings ADD COLUMN vip_threshold REAL DEFAULT 4.0")
+    if "migrated_env_enabled" not in radar_settings_cols:
+        # Older versions only scanned when RADAR_ENABLED in .env was also on, so the
+        # toggle could read "on" while nothing ran. Carry the state that actually took
+        # effect into the toggle, once; the column's presence marks it done.
+        cursor.execute("ALTER TABLE radar_settings ADD COLUMN migrated_env_enabled INTEGER")
+        env_enabled = 1 if settings.RADAR_ENABLED else 0
+        cursor.execute("UPDATE radar_settings SET enabled = enabled AND ?, migrated_env_enabled = ?",
+                       (env_enabled, env_enabled))
     cursor.execute("""
         INSERT OR IGNORE INTO radar_settings (id, enabled, interval_minutes, max_analyze_per_cycle, notification_mode, daily_digest_hour, vip_threshold, auto_digest_push, auto_star_push)
-        VALUES (1, 1, 180, 3, 'silent', 8, 4.0, 0, 0)
+        VALUES (1, 0, 180, 3, 'silent', 8, 4.0, 0, 0)
     """)
 
     # 8. User Topic Weights table (Signal Tuner: Boost / Dampen / Mute)
@@ -387,6 +397,28 @@ def init_db():
             action_value TEXT NOT NULL DEFAULT '',
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL
+        )
+    """)
+
+    # 22. PWA Web Push subscriptions (one row per browser/device endpoint)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            endpoint TEXT PRIMARY KEY,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            user_agent TEXT NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL,
+            last_success_at DATETIME,
+            last_error TEXT
+        )
+    """)
+
+    # 23. Telegram one-time pairing code: at most one pending, and only its hash is kept
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_pairing (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            code_hash TEXT,
+            expires_at REAL
         )
     """)
 
@@ -811,14 +843,14 @@ def get_radar_settings() -> Dict[str, Any]:
                     notification_mode, daily_digest_hour, vip_threshold,
                     auto_digest_push, auto_star_push
                 )
-                VALUES (1, 1, 180, 3, 'silent', 8, 4.0, 0, 0)
+                VALUES (1, 0, 180, 3, 'silent', 8, 4.0, 0, 0)
             """)
             conn.commit()
             row = conn.execute("SELECT * FROM radar_settings WHERE id = 1").fetchone()
-        
+
         keys = row.keys() if hasattr(row, "keys") else []
         return {
-            "enabled": bool(row["enabled"]) if "enabled" in keys else True,
+            "enabled": bool(row["enabled"]) if "enabled" in keys else False,
             "interval_minutes": int(row["interval_minutes"]) if "interval_minutes" in keys else 180,
             "max_analyze_per_cycle": int(row["max_analyze_per_cycle"]) if "max_analyze_per_cycle" in keys else 3,
             "notification_mode": str(row["notification_mode"]) if ("notification_mode" in keys and row["notification_mode"]) else "silent",
@@ -2044,6 +2076,70 @@ def get_swipe_deck(limit: int = 10) -> List[Dict[str, Any]]:
     conn.close()
     from app.watch.taste import rank_deck
     return rank_deck(rows)[:limit]
+
+
+# ── Web Push Subscriptions DAO ────────────────────────────────────
+
+def upsert_push_subscription(endpoint: str, p256dh: str, auth: str, user_agent: str = "") -> None:
+    """A browser re-subscribing (new keys) replaces its row; delivery history restarts."""
+    now = datetime.now(timezone.utc).isoformat()
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("""
+            INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(endpoint) DO UPDATE SET
+                p256dh = excluded.p256dh, auth = excluded.auth, user_agent = excluded.user_agent,
+                created_at = excluded.created_at, last_success_at = NULL, last_error = NULL
+        """, (endpoint, p256dh, auth, user_agent[:300], now))
+
+
+def delete_push_subscription(endpoint: str) -> bool:
+    with closing(get_db_connection()) as conn, conn:
+        return conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,)).rowcount > 0
+
+
+def list_push_subscriptions() -> List[Dict[str, Any]]:
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute("SELECT * FROM push_subscriptions ORDER BY created_at").fetchall()
+    return [dict(r) for r in rows]
+
+
+def record_push_result(endpoint: str, error: Optional[str] = None) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with closing(get_db_connection()) as conn, conn:
+        if error is None:
+            conn.execute("UPDATE push_subscriptions SET last_success_at = ?, last_error = NULL WHERE endpoint = ?",
+                         (now, endpoint))
+        else:
+            conn.execute("UPDATE push_subscriptions SET last_error = ? WHERE endpoint = ?",
+                         (f"{now} {error}"[:300], endpoint))
+
+
+# ── Telegram Pairing DAO ──────────────────────────────────────────
+
+def set_telegram_pairing(code_hash: str, expires_at: float) -> None:
+    """Store a new pending code; it replaces any earlier one."""
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("""
+            INSERT INTO telegram_pairing (id, code_hash, expires_at) VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET code_hash = excluded.code_hash, expires_at = excluded.expires_at
+        """, (code_hash, expires_at))
+
+
+def consume_telegram_pairing(code_hash: str, now: float) -> bool:
+    """True for exactly one caller presenting the pending, unexpired code; it is then gone."""
+    with closing(get_db_connection()) as conn, conn:
+        return conn.execute("""
+            UPDATE telegram_pairing SET code_hash = NULL, expires_at = NULL
+            WHERE id = 1 AND code_hash = ? AND expires_at > ?
+        """, (code_hash, now)).rowcount == 1
+
+
+def get_telegram_pairing_expiry(now: float) -> Optional[float]:
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT expires_at FROM telegram_pairing WHERE id = 1 AND expires_at > ?",
+                           (now,)).fetchone()
+    return row["expires_at"] if row else None
 
 
 def seed_demo_items() -> List[Dict[str, Any]]:

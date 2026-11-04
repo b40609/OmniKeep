@@ -23,6 +23,12 @@ logger = logging.getLogger("omnikeep.vector")
 
 _SQLITE_VEC_AVAILABLE: Optional[bool] = None
 
+# Model label recorded for vectors produced by the hashed bag-of-words fallback.
+# Vectors from different models live in different spaces and must never be
+# compared against each other, so the label has to say what really produced them.
+LOCAL_EMBEDDING_MODEL = "local-hash-v1"
+_warned_model_mix: set = set()
+
 
 def is_sqlite_vec_available() -> bool:
     """Check if sqlite-vec extension can be loaded into SQLite."""
@@ -111,21 +117,54 @@ def _deterministic_local_embedding(text: str, dim: int = 256) -> List[float]:
     return vec.tolist()
 
 
-async def generate_embedding(text: str) -> List[float]:
-    """Generates an embedding vector for the text using OpenAI or local projection."""
-    dim = int(settings.EMBEDDING_DIM)
-    clean_text = (text or "").strip()[:8000]
-    if not clean_text:
-        return [0.0] * dim
-
-    api_key = settings.OPENAI_API_KEY
-    if api_key and not getattr(settings, "OMNIKEEP_TESTING", False):
+def item_embedding_text(item: Dict[str, Any]) -> str:
+    """The text an item's vector is made from: title, summary and tags as stored."""
+    tags = item.get("tech_tags") or []
+    if isinstance(tags, str):
         try:
-            import httpx
+            tags = json.loads(tags)
+        except ValueError:
+            tags = []
+    return f"{item.get('title_l1') or ''} {item.get('summary_l1') or ''} {' '.join(str(t) for t in tags)}"
+
+
+def clean_embedding_text(text: str) -> str:
+    return (text or "").strip()[:8000]
+
+
+def local_embedding(text: str, dim: int) -> List[float]:
+    """Exactly what the local fallback stores for this text, so it can be recognised later."""
+    clean_text = clean_embedding_text(text)
+    return _deterministic_local_embedding(clean_text, dim) if clean_text else [0.0] * dim
+
+
+def embeddings_api_url() -> str:
+    """OpenAI-compatible embeddings endpoint derived from OPENAI_BASE_URL
+    (so Ollama / DeepSeek / proxies work the same way chat completions do)."""
+    return f"{settings.OPENAI_BASE_URL.rstrip('/')}/embeddings"
+
+
+async def generate_embedding_with_model(text: str) -> Tuple[List[float], str]:
+    """Generates an embedding vector and returns (vector, model_label).
+
+    The label is the model that actually produced the vector: the remote
+    EMBEDDING_MODEL on success, LOCAL_EMBEDDING_MODEL for the hashed
+    bag-of-words fallback. Indexing and querying both go through here so
+    both sides always live in the same vector space.
+    """
+    dim = int(settings.EMBEDDING_DIM)
+    clean_text = clean_embedding_text(text)
+    api_key = settings.OPENAI_API_KEY
+    if not clean_text:
+        return [0.0] * dim, (settings.EMBEDDING_MODEL if api_key else LOCAL_EMBEDDING_MODEL)
+
+    if api_key and not getattr(settings, "OMNIKEEP_TESTING", False):
+        api_url = embeddings_api_url()
+        try:
             from app.network import public_http_client
             async with public_http_client(timeout=15.0) as client:
                 resp = await client.post(
-                    "https://api.openai.com/v1/embeddings",
+                    api_url,
                     headers={"Authorization": f"Bearer {api_key}"},
                     json={
                         "input": clean_text,
@@ -136,11 +175,22 @@ async def generate_embedding(text: str) -> List[float]:
                 if resp.status_code == 200:
                     data = resp.json()
                     vec = data["data"][0]["embedding"]
-                    return vec[:dim]
+                    return list(vec[:dim]), settings.EMBEDDING_MODEL
+                logger.warning(
+                    "[Vector] Embedding request to %s returned HTTP %s, using local projection: %s",
+                    api_url, resp.status_code, (getattr(resp, "text", "") or "")[:200],
+                )
         except Exception as e:
-            logger.warning(f"[Vector] OpenAI embedding failed ({e}), using local projection.")
+            logger.warning(f"[Vector] Embedding request to {api_url} failed ({e}), using local projection.")
 
-    return _deterministic_local_embedding(clean_text, dim)
+    return _deterministic_local_embedding(clean_text, dim), LOCAL_EMBEDDING_MODEL
+
+
+async def generate_embedding(text: str) -> List[float]:
+    """Generates an embedding vector for the text using the configured
+    OpenAI-compatible endpoint, or the local projection as fallback."""
+    vec, _model = await generate_embedding_with_model(text)
+    return vec
 
 
 def store_item_embedding(item_id: str, embedding: List[float], model: str = "") -> bool:
@@ -274,7 +324,31 @@ def search_similar_items(
     return results[:limit]
 
 
-def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5) -> List[Dict[str, Any]]:
+def _warn_if_index_model_mismatch(query_model: str) -> None:
+    """Log (once per model set) when stored vectors come from a different model
+    than the query vector: those rows are in another space and need re-indexing."""
+    try:
+        with closing(get_db_connection()) as conn:
+            rows = conn.execute(
+                "SELECT model, COUNT(*) AS n FROM item_embeddings GROUP BY model"
+            ).fetchall()
+    except Exception:
+        return
+    others = {r["model"]: r["n"] for r in rows if r["model"] != query_model}
+    if not others:
+        return
+    key = (query_model, tuple(sorted(others)))
+    if key in _warned_model_mix:
+        return
+    _warned_model_mix.add(key)
+    logger.warning(
+        "[Vector] Query embeddings use model %r but %s stored vector(s) were indexed with %s; "
+        "those items will not match semantically until re-indexed.",
+        query_model, sum(others.values()), ", ".join(f"{m!r} x{n}" for m, n in others.items()),
+    )
+
+
+async def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5) -> List[Dict[str, Any]]:
     """
     Hybrid Search combining keyword search (FTS) and vector semantic search via Reciprocal Rank Fusion (RRF).
     """
@@ -284,8 +358,10 @@ def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5) -> Li
     fts_items = get_items(query=query, limit=limit * 2)
     fts_ranks = {item["id"]: idx + 1 for idx, item in enumerate(fts_items)}
 
-    # 2. Vector search
-    q_vec = _deterministic_local_embedding(query, int(settings.EMBEDDING_DIM))
+    # 2. Vector search: same embedding path as indexing (app.pipeline), so the
+    #    query vector is in the same space as the stored item vectors.
+    q_vec, q_model = await generate_embedding_with_model(query)
+    _warn_if_index_model_mismatch(q_model)
     vec_results = search_similar_items(q_vec, limit=limit * 2, min_similarity=0.1)
     vec_ranks = {r["item_id"]: idx + 1 for idx, r in enumerate(vec_results)}
     vec_sims = {r["item_id"]: r["similarity"] for r in vec_results}

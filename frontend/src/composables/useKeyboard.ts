@@ -22,7 +22,9 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
       ui.showRadarModal ||
       ui.showSessionModal ||
       ui.showWatchModal ||
-      ui.showImportModal
+      ui.showImportModal ||
+      ui.showDeckModal ||
+      ui.showPushModal
     )
   }
 
@@ -49,6 +51,8 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         ui.showSessionModal = false
         ui.showWatchModal = false
         ui.showImportModal = false
+        ui.showDeckModal = false
+        ui.showPushModal = false
       }
       return
     }
@@ -68,6 +72,11 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
       case 'I':
         e.preventDefault()
         ui.showImportModal = !ui.showImportModal
+        return
+      case 'd':
+      case 'D':
+        e.preventDefault()
+        ui.showDeckModal = true
         return
 
       case '+':

@@ -16,6 +16,7 @@ from app.database import (
     set_interest_profile
 )
 from app.radar.scheduler import radar_scheduler
+from app.radar.adapters import supported_source_types
 from app.radar.recommender import tune_item_signal
 from app.radar.scheduler import run_radar_cycle
 from app.radar.digest import generate_radar_digest
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/api/radar", tags=["Radar Intelligence Engine"])
 
 class SourceCreateRequest(BaseModel):
     name: str
-    source_type: str  # 'youtube', 'github', 'rss'
+    source_type: str  # any key of app.radar.adapters.supported_source_types()
     url: str
     tier: Optional[int] = 2
     check_interval_minutes: Optional[int] = 60
@@ -145,8 +146,10 @@ async def list_sources():
 
 @router.post("/sources")
 async def create_or_update_source(req: SourceCreateRequest):
-    """Add a new YouTube channel, GitHub repository/trending, or RSS feed."""
-    valid_types = ["youtube", "github", "rss"]
+    """Add a new tracked source (YouTube channel, GitHub repo/trending, RSS feed,
+    Google News keyword, or web-change watch). Accepted types are exactly the
+    ones that have a registered adapter, so the whitelist can't drift again."""
+    valid_types = supported_source_types()
     if req.source_type.lower() not in valid_types:
         raise HTTPException(status_code=400, detail=f"source_type must be one of {valid_types}")
 
@@ -176,9 +179,14 @@ async def toggle_source(source_id: str, req: Optional[SourceToggleRequest] = Non
 
 # ── Radar Scheduler & Notification Settings ─────────────────
 
+def _settings_with_state(saved: Dict[str, Any]) -> Dict[str, Any]:
+    # The toggle only takes effect while the scheduler task runs (background services on).
+    return {**saved, "scheduler_running": radar_scheduler.is_running}
+
+
 @router.get("/settings")
 async def get_settings():
-    return {"success": True, "settings": get_radar_settings()}
+    return {"success": True, "settings": _settings_with_state(get_radar_settings())}
 
 @router.put("/settings")
 async def update_settings(req: RadarSettingsUpdateRequest):
@@ -201,7 +209,7 @@ async def update_settings(req: RadarSettingsUpdateRequest):
         auto_star_push=req.auto_star_push,
     )
     radar_scheduler.wake()
-    return {"success": True, "settings": updated}
+    return {"success": True, "settings": _settings_with_state(updated)}
 
 # ── Scanning & Digest Endpoints ─────────────────────────────
 

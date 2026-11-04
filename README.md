@@ -5,7 +5,7 @@
 **Your Self-Hosted Multimodal Knowledge Hub & Autonomous Signal Radar.**<br>
 **專屬於每位知識工作者的自託管多模態情報中樞與主動第二大腦。**
 
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Vue 3](https://img.shields.io/badge/Vue.js-3.5%2B-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
@@ -46,8 +46,8 @@
 
 ### 2. 多模態深度消化管線 (Multimodal Cognitive Pipeline)
 - **YouTube 影音**：整合 Google Gemini 原生串流解析，主機零下載、零頻寬佔用，秒級提煉數十分鐘長影片結構。
-- **Bilibili 長影片**：雙軌語音抽取技術——首選官方 CC/AI 逐字稿 JSON（0.2 秒完成），回落 DASH 音訊分離串流搭配本機 `faster-whisper`（GPU CUDA / CPU 多執行緒自動切換）。
-- **社群短影音 (Reels / TikTok / Shorts)**：關鍵幀 OCR 視覺文字識別 + 本地語音轉錄雙軌融合成高密度情報。
+- **Bilibili 長影片**：雙軌語音抽取技術——首選官方 CC/AI 逐字稿 JSON（0.2 秒完成），回落 DASH 音訊分離串流搭配本機 `faster-whisper`（GPU CUDA / CPU 多執行緒自動切換；選用安裝，見 [選用功能](docs/optional_features.md)）。
+- **社群短影音 (Reels / TikTok / Shorts)**：關鍵幀 OCR 視覺文字識別 + 語音轉錄（本機或雲端）雙軌融合成高密度情報。
 - **長文閱讀與永久快照**：採用 trafilatura 深度清洗廣告干擾，自動生成 HTML Snapshot 永久留存，徹底免疫網頁失效與連結腐敗（Link-rot Proof）。
 
 ### 3. 兩段式分層認知 (Two-Stage Triage)
@@ -60,8 +60,8 @@
 - **個人興趣特徵畫像**：根據用戶加星標、閱讀深度與自定義偏好（Dream Pass）自動計算匹配評分，僅在達到 VIP 門檻時主動推播。
 
 ### 5. 本地優先與數據主權 (Local-First & Multi-Sink Backup)
-- **高併發 SQLite WAL 架構**：啟用 SQLite WAL 模式與 Unicode61 FTS5 全文索引，毫秒級全文檢索，並支援 sqlite-vec 向量語意檢索。
-- **多端自動備份**：內建自動每日備份機制，支援本機多代輪替（Local Retention）、雲端物件同步（Rclone: Google Drive/Dropbox/S3）以及私有 Git 儲庫自動提交。
+- **高併發 SQLite WAL 架構**：啟用 SQLite WAL 模式與 Unicode61 FTS5 全文索引，毫秒級全文檢索，並支援 sqlite-vec 向量語意檢索（索引的檢查與重建見 [向量索引](docs/vector_index.md)）。
+- **多端自動備份**：內建自動每日備份機制，支援本機多代輪替（Local Retention）、雲端物件同步（Rclone: Google Drive/Dropbox/S3）以及私有 Git 儲庫自動提交。資料庫與 HTML 快照一起備份，用 `scripts/restore_backup.py` 還原，見 [備份與還原](docs/backup_restore.md)。
 
 ---
 
@@ -122,14 +122,16 @@ docker compose up -d --build
 
 **首次體驗（不需 AI 金鑰）**：登入後點選頂部「書籤匯入」，從瀏覽器匯出 HTML 書籤檔並選擇「秒速快速入庫」，接著使用搜尋列查找內容。選擇「排入 AI 深度解析佇列」或使用 AI 摘要前，才需要另外設定 AI Provider 金鑰並重啟服務。Docker 版資料與備份保存在 `omnikeep_data` volume，更新容器時請保留該 volume。
 
-**手機與捷徑**：手機以網頁方式連線可使用受保護的區網／VPN；PWA 安裝與離線快取通常需要 HTTPS。請參考 [iOS／Android 設定指南](docs/ios_shortcut.md)。倉庫保留的 `static/qr_*` 僅導向公開設定文件，並不是你的可用 Webhook；每位使用者須自行設定端點與 API Key，且應透過 `X-API-Key` 標頭傳送憑證。
+Docker 映像預設不含本機語音轉錄，也沒有 Chrome；要加入本機語音轉錄，在 `.env` 設定 `LOCAL_STT=true` 後重新建置。見 [選用功能](docs/optional_features.md)。
+
+**手機與捷徑**：手機以網頁方式連線可使用受保護的區網／VPN；PWA 安裝與離線快取通常需要 HTTPS。請參考 [iOS／Android 設定指南](docs/ios_shortcut.md)。每位使用者須自行設定端點與 API Key，且應透過 `X-API-Key` 標頭傳送憑證。
 
 ---
 
 ### 方式 B：本地環境運行 (Python + Node.js)
 
 #### 1. 安裝環境與依賴
-- **後端環境**：Python 3.10+
+- **後端環境**：Python 3.12+（CI 測試 3.12 與 3.14）
 - **前端建置**：Node.js 20.19+ 或 22.12+（Python 本地部署也必須建置一次）
 
 ```bash
@@ -141,9 +143,14 @@ python -m venv .venv
 # Linux / macOS:
 source .venv/bin/activate
 
-# 安裝 Python 依賴
+# 安裝 Python 依賴（Windows 會一併安裝自動化 Chrome 登入用的 playwright）
 pip install -r requirements.txt
+
+# 選用：本機語音轉錄（Reels、Bilibili），安裝後約多 213 MB
+pip install -r requirements-stt.txt
 ```
+
+各選用功能的用途、大小與 GPU 設定見 [選用功能](docs/optional_features.md)。
 
 #### 2. 建立首次設定並建置工作台
 ```bash
@@ -237,6 +244,7 @@ npm run build     # 編譯生產環境產物 (包含型別檢查與 PWA Service 
 | :--- | :--- | :--- |
 | `API_KEY` | *(無)* | 核心存取主金鑰（長度 >= 32 字元），保護 Web、API 與 MCP |
 | `BIND_ADDRESS` | `127.0.0.1`（新安裝範例） | Docker 主機監聽位址；要允許區網存取需明確設定 |
+| `LOCAL_STT` | `false` | Docker 建置時加入本機語音轉錄，見 [選用功能](docs/optional_features.md) |
 | `LOCAL_AUTO_LOGIN` | `false`（新安裝範例） | 是否允許從 loopback 自動取得存取金鑰；公開部署建議關閉 |
 | `PRIMARY_LLM_PROVIDER` | `openai_compatible` | 主要推理 Provider 類型 (`openai_compatible`) |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 相容端點 Base URL |
@@ -245,11 +253,10 @@ npm run build     # 編譯生產環境產物 (包含型別檢查與 PWA Service 
 | `GEMINI_API_KEYS` | *(無)* | Gemini API 金鑰清單（支援多組 Key 以逗號分隔輪詢） |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | 用於 YouTube 原生多模態串流解析的模型 |
 | `DATABASE_PATH` | `omnikeep.db` | 本地 SQLite 資料庫路徑（自動開啟 WAL 模式） |
-| `RADAR_ENABLED` | `false`（新安裝範例） | 是否啟用情報雷達巡檢排程；準備好資料源後再啟用 |
-| `RADAR_INTERVAL_SECONDS` | `10800` | 雷達自動巡檢週期（預設 3 小時） |
+| `RADAR_ENABLED` | *(已停用)* | 背景巡檢改在介面的「雷達 › 排程與推播」開關並設定週期，新安裝預設關閉。只在升級舊資料庫時讀取一次，沿用原本實際的開關狀態 |
 | `BACKUP_SINK` | `local` | 備份方案：`local`（本機輪替）、`rclone`（雲端同步）、`git`、`off` |
 | `TELEGRAM_BOT_TOKEN` | *(無)* | Telegram Ingestion Bot Token（選填） |
-| `TELEGRAM_ALLOWED_USER_IDS` | *(無)* | 授權使用 Bot 的 Telegram 用戶數值 ID（選填） |
+| `TELEGRAM_ALLOWED_USER_IDS` | *(無)* | 授權使用 Bot 的 Telegram 用戶數值 ID。可在網頁「通知」用一次性配對連結綁定，會自動寫入這裡 |
 
 ---
 
@@ -284,6 +291,14 @@ npm run build     # 編譯生產環境產物 (包含型別檢查與 PWA Service 
 3. 提交變更 (`git commit -m 'feat: Add amazing feature'`)
 4. 推送分支 (`git push origin feature/amazing-feature`)
 5. 發起 Pull Request
+
+每次 push 與 Pull Request 都會由 GitHub Actions（`.github/workflows/ci.yml`）跑前端測試與建置、後端 pytest，並實際建置 Docker 映像。本機執行：
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -rs        # 沒裝 ffmpeg 時，兩個短影音測試會自動跳過
+cd frontend && npm ci && npm test && npm run build
+```
 
 ---
 

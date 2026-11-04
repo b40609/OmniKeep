@@ -119,6 +119,7 @@ async def test_login_endpoint_requests_visible_chrome(monkeypatch):
         return False
 
     monkeypatch.setattr(session, "ensure_cdp_browser", ensure)
+    monkeypatch.setattr(session, "playwright_installed", lambda: True)  # Linux CI has none
     with pytest.raises(HTTPException) as error:
         await session.session_login(session.LoginRequest(platform="instagram"))
     assert error.value.status_code == 503

@@ -23,6 +23,7 @@ from app.database import (
 from app.watch.redact import redact_text
 from app.watch.locks import target_lock
 from app.providers import get_primary_provider
+from app.push import notify_new_proposal
 
 MIN_TAG_OVERLAP = 2
 logger = logging.getLogger("omnikeep.watch.relevance")
@@ -197,8 +198,11 @@ async def _propose(item):
         "deep_analysis": deep_analysis,
         "author": "OmniKeep 提案引擎",
     }
-    return save_proposal({
+    proposal = save_proposal({
         "target_id": tid, "proposal_type": proposal_type,
         "impact": impact, "confidence": confidence, "effort": effort,
         "dedup_key": dedup_key,
     }, item_data=card)
+    if proposal:
+        await notify_new_proposal(proposal)
+    return proposal

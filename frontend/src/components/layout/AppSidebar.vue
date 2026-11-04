@@ -2,8 +2,8 @@
 import { computed } from 'vue'
 import {
   BrainCircuit, PanelLeftClose, Plus, FileText,
-  Inbox, Star, Archive, Layers, Radar, ScanEye,
-  FolderInput, KeyRound, Keyboard, LogOut, Tag,
+  Inbox, Star, Archive, Layers, Radar, ScanEye, GalleryHorizontalEnd,
+  FolderInput, KeyRound, Keyboard, LogOut, Tag, Bell,
 } from 'lucide-vue-next'
 import { useItemsStore, type TriageView } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
@@ -14,6 +14,7 @@ const emit = defineEmits<{ (e: 'logout'): void }>()
 const items = useItemsStore()
 const ui = useUiStore()
 const radar = useRadarStore()
+const appVersion = __APP_VERSION__
 
 const views = computed(() => [
   { id: 'inbox' as TriageView, label: '收件匣', icon: Inbox, count: items.stats.inbox },
@@ -58,7 +59,7 @@ function selectCategory(catName: string) {
         </div>
         <div class="min-w-0 leading-tight">
           <p class="truncate text-sm font-bold tracking-tight text-foreground">OmniKeep</p>
-          <p class="text-2xs text-muted-foreground/70 font-medium">Knowledge Base • v2.4</p>
+          <p class="text-2xs text-muted-foreground/70 font-medium">Knowledge Base • v{{ appVersion }}</p>
         </div>
       </div>
       <button
@@ -133,6 +134,14 @@ function selectCategory(catName: string) {
           </button>
           <button
             class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground transition cursor-pointer"
+            @click="ui.showDeckModal = true; ui.sidebarMobileOpen = false"
+          >
+            <GalleryHorizontalEnd class="size-4 text-amber-500" />
+            <span>雷達滑卡</span>
+            <kbd class="ml-auto font-mono text-3xs text-subtle-foreground">D</kbd>
+          </button>
+          <button
+            class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground transition cursor-pointer"
             @click="ui.showWatchModal = true"
           >
             <ScanEye class="size-4 text-emerald-500" />
@@ -190,7 +199,7 @@ function selectCategory(catName: string) {
 
     <!-- Bottom Utility Row -->
     <div class="shrink-0 border-t border-hairline p-2 text-xs">
-      <div class="grid grid-cols-4 gap-1">
+      <div class="grid grid-cols-5 gap-1">
         <button
           class="flex flex-col items-center justify-center gap-1 rounded-lg py-2 text-muted-foreground hover:bg-accent hover:text-foreground transition cursor-pointer"
           title="匯入書籤 (I)"
@@ -214,6 +223,14 @@ function selectCategory(catName: string) {
         >
           <Keyboard class="size-4" />
           <span class="text-2xs font-medium">鍵盤</span>
+        </button>
+        <button
+          class="flex flex-col items-center justify-center gap-1 rounded-lg py-2 text-muted-foreground hover:bg-accent hover:text-foreground transition cursor-pointer"
+          title="這台裝置的推播通知"
+          @click="ui.showPushModal = true; ui.sidebarMobileOpen = false"
+        >
+          <Bell class="size-4" />
+          <span class="text-2xs font-medium">通知</span>
         </button>
         <button
           class="flex flex-col items-center justify-center gap-1 rounded-lg py-2 text-muted-foreground hover:bg-red-500/10 hover:text-red-500 transition cursor-pointer"

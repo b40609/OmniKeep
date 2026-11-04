@@ -1,3 +1,4 @@
+import logging
 import re
 import asyncio
 from typing import Dict, Any, Optional
@@ -5,8 +6,10 @@ from urllib.parse import urlparse, urljoin
 import httpx
 import trafilatura
 from bs4 import BeautifulSoup
-from app.parsers.cookie_manager import get_cookie_jar, inject_playwright_cookies
+from app.parsers.cookie_manager import inject_playwright_cookies, playwright_installed, site_cookies
 from app.network import public_http_client, validate_url
+
+logger = logging.getLogger("omnikeep.web")
 
 BROWSER_HEADERS = {
     "User-Agent": (
@@ -38,6 +41,9 @@ async def fetch_page_with_playwright(url: str) -> Optional[str]:
     from app.config import settings
     if not settings.ENABLE_BROWSER_FALLBACK:
         return None
+    if not playwright_installed():
+        logger.warning("[Web Parser] ENABLE_BROWSER_FALLBACK is on but playwright is not installed; skipped.")
+        return None
     try:
         from playwright.async_api import async_playwright
         async with async_playwright() as p:
@@ -65,7 +71,7 @@ async def fetch_page_with_playwright(url: str) -> Optional[str]:
                 async def reject_socket(ws):
                     await ws.close()
                 await ctx.route_web_socket("**/*", reject_socket)
-                await inject_playwright_cookies(ctx)
+                await inject_playwright_cookies(ctx, url)
                 page = await ctx.new_page()
                 await page.goto(url, timeout=20000, wait_until="domcontentloaded")
                 await asyncio.sleep(1.5)  # brief grace period for DOM hydration
@@ -74,7 +80,7 @@ async def fetch_page_with_playwright(url: str) -> Optional[str]:
             finally:
                 await browser.close()
     except Exception as e:
-        print(f"[Web Parser] Playwright dynamic render fallback notice: {e}")
+        logger.warning(f"[Web Parser] Playwright dynamic render fallback notice: {e}")
         return None
 
 async def parse_facebook_page(url: str) -> Dict[str, Any]:
@@ -86,7 +92,7 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
     validate_url(url)
     html_text = ""
     used_session = False
-    jar = get_cookie_jar()
+    jar = site_cookies(url)  # only facebook.com's cookies
 
     # 1. Try authenticated request using bridged session cookies
     if jar:
@@ -98,7 +104,7 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
                     html_text = resp.text
                     used_session = True
         except Exception as e:
-            print(f"[Facebook Parser] Session request notice: {e}")
+            logger.warning(f"[Facebook Parser] Session request notice: {e}")
 
     # 2. Fallback to Facebook crawler UA for public OpenGraph metadata
     if not html_text:
@@ -107,7 +113,7 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
                 resp = await client.get(url)
                 html_text = resp.text
         except Exception as e:
-            print(f"[Facebook Parser] Crawler fallback request error: {e}")
+            logger.warning(f"[Facebook Parser] Crawler fallback request error: {e}")
             html_text = ""
 
     soup = BeautifulSoup(html_text, "html.parser") if html_text else BeautifulSoup("", "html.parser")
@@ -187,14 +193,14 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
         return await parse_facebook_page(url)
 
     html = ""
-    jar = get_cookie_jar()
+    jar = site_cookies(url)  # only this site's cookies, also across redirects
     try:
         async with public_http_client(headers=BROWSER_HEADERS, cookies=jar, timeout=20.0, follow_redirects=True) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
                 html = resp.text
     except Exception as e:
-        print(f"[Web Parser] HTTP fetch failed ({e}), attempting Playwright fallback...")
+        logger.warning(f"[Web Parser] HTTP fetch failed ({e}), attempting Playwright fallback...")
 
     # Extract structured article using trafilatura
     extracted_text = ""

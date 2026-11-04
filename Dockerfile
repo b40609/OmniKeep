@@ -4,6 +4,9 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /build
 
+# vite.config.ts reads the version from ../VERSION
+COPY VERSION ./
+
 # Install frontend dependencies
 COPY frontend/package*.json ./frontend/
 WORKDIR /build/frontend
@@ -34,9 +37,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python requirements
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python requirements. LOCAL_STT=true adds on-device speech-to-text
+# (requirements-stt.txt, docs/optional_features.md); its model is cached under /data.
+ARG LOCAL_STT=false
+ENV HF_HOME=/data/huggingface
+COPY requirements.txt requirements-stt.txt ./
+RUN pip install --no-cache-dir -r requirements.txt \
+    && if [ "$LOCAL_STT" = "true" ]; then pip install --no-cache-dir -r requirements-stt.txt; fi
 
 # Copy static assets (manifest.json, icons, etc.)
 COPY static ./static
@@ -44,9 +51,12 @@ COPY static ./static
 # Copy compiled frontend assets from Stage 1 into static/dist
 COPY --from=frontend-builder /build/static/dist ./static/dist
 
-# Copy backend source code
+# Copy backend source code (app/__init__.py reads the version from VERSION)
+COPY VERSION ./
 COPY app ./app
 COPY run.py ./
+# docker compose run --rm omnikeep python scripts/restore_backup.py --latest (docs/backup_restore.md)
+COPY scripts/restore_backup.py ./scripts/
 
 # Persistent storage mount point for database, HTML snapshots, and rotating backups
 RUN mkdir -p /data/snapshots /data/backups

@@ -1,10 +1,12 @@
 import json
+import logging
 import re
 import uuid
 import asyncio
 from typing import Dict, Any, Optional
 from app.database import (
     get_all_categories,
+    get_item_by_id,
     save_item,
     normalize_canonical_url,
     find_item_by_canonical_or_url,
@@ -14,6 +16,8 @@ from app.parsers import is_youtube_url, fetch_youtube_metadata, parse_web_page, 
 from app.parsers.reel import is_video_reel_url, parse_video_reel
 from app.providers import get_primary_provider, get_gemini_provider
 from app.config import settings
+
+logger = logging.getLogger("omnikeep.pipeline")
 
 ANALYSIS_SYSTEM_PROMPT = """你是一位頂尖的資深系統架構師與技術情報分析官。
 你的任務是將使用者提供的內容精準消化，輸出結構化的兩段式情報（L1 速覽 + L2 深度剖析）。
@@ -106,16 +110,18 @@ async def _spawn_child_entity_background(source_parent_id: str, cit_id: str, tar
                 "mention_context": mention_context
             })
     except Exception as e:
-        print(f"[Entity Fan-out] Background spawn failed for {target_url}: {e}")
+        logger.warning(f"[Entity Fan-out] Background spawn failed for {target_url}: {e}")
 
 async def run_pipeline(content_input: str, manual_category: Optional[str] = None,
-                       is_sub_task: bool = False, origin: str = "manual") -> Dict[str, Any]:
+                       is_sub_task: bool = False, origin: str = "manual",
+                       page_title: str = "", page_description: str = "") -> Dict[str, Any]:
     # 1. Fetch available categories
     cat_rows = get_all_categories()
     category_names = [c["name"] for c in cat_rows]
     cat_list_str = ", ".join(category_names)
     clean_input = content_input.strip()
     raw_html = ""
+    fallback_summary = "已儲存內容，無詳細摘要。"
 
     # 2. Route by input type (Pure URL / Mobile Share Snippet vs Text Note)
     detected_url = extract_target_url(clean_input)
@@ -218,13 +224,18 @@ URL：{url}
             content_raw = page_data.get("content_raw", "")
             cover_image = page_data.get("cover_image", "")
             author = page_data.get("author", "")
-            default_title = page_data.get("title", "未命名項目")
+            # The bookmarklet sends what the user's browser shows. Prefer it: the server's
+            # own fetch may only reach a login wall ("未知標題").
+            default_title = page_title or page_data.get("title", "未命名項目")
+            fallback_summary = page_description or fallback_summary
             raw_html = page_data.get("raw_html") or (page_data.get("meta") or {}).get("raw_html") or ""
+            browser_view = "".join(f"\n瀏覽器看到的{label}：{value}"
+                                   for label, value in (("標題", page_title), ("描述", page_description)) if value)
 
             primary = get_primary_provider()
             prompt = f"""請深度分析以下網頁/文章內容：
 網址：{url}
-原始標題：{page_data.get('title', '')}
+原始標題：{page_data.get('title', '')}{browser_view}
 
 候選分類清單：[{cat_list_str}]
 
@@ -274,7 +285,7 @@ URL：{url}
         category_name = "Inbox"
 
     title_l1 = ai_result.get("title_l1") or default_title
-    summary_l1 = ai_result.get("summary_l1") or "已儲存內容，無詳細摘要。"
+    summary_l1 = ai_result.get("summary_l1") or fallback_summary
     tech_tags = ai_result.get("tech_tags", [])
     if isinstance(tech_tags, str):
         tech_tags = [t.strip() for t in tech_tags.split(",") if t.strip()]
@@ -300,7 +311,7 @@ URL：{url}
         from app.rules import apply_rules_to_item
         item_record = apply_rules_to_item(item_record)
     except Exception as e:
-        print(f"[Pipeline] Rules engine evaluation failed: {e}")
+        logger.warning(f"[Pipeline] Rules engine evaluation failed: {e}")
 
     item_id = save_item(item_record)
     item_record["id"] = item_id
@@ -313,15 +324,16 @@ URL：{url}
             from app.snapshot import save_html_snapshot
             save_html_snapshot(item_id, raw_html, url)
         except Exception as e:
-            print(f"[Pipeline] Failed to save HTML snapshot for {item_id}: {e}")
+            logger.warning(f"[Pipeline] Failed to save HTML snapshot for {item_id}: {e}")
 
     try:
-        from app.vector import generate_embedding, store_item_embedding
-        embed_text = f"{title_l1} {summary_l1} {' '.join(tech_tags)}"
-        vec = await generate_embedding(embed_text)
-        store_item_embedding(item_id, vec)
+        from app.vector import generate_embedding_with_model, item_embedding_text, store_item_embedding
+        # From the item as stored (after the rules engine), the same text a rebuild uses.
+        embed_text = item_embedding_text(get_item_by_id(item_id) or item_record)
+        vec, embed_model = await generate_embedding_with_model(embed_text)
+        store_item_embedding(item_id, vec, model=embed_model)
     except Exception as e:
-        print(f"[Pipeline] Failed to store vector embedding for {item_id}: {e}")
+        logger.warning(f"[Pipeline] Failed to store vector embedding for {item_id}: {e}")
 
     # 3. Entity Fan-out & Citation Linking (Deduplication & Unpacking)
     sub_entities = ai_result.get("sub_entities", [])
@@ -366,6 +378,6 @@ URL：{url}
                         follow_up_pool.submit(lambda parent=item_id, citation=cit_id, name=raw_name, url=canon_url, why=reason:
                                               _spawn_child_entity_background(parent, citation, name, url, why))
                     except Exception as e:
-                        print(f"[Entity Fan-out] Error scheduling child spawn: {e}")
+                        logger.warning(f"[Entity Fan-out] Error scheduling child spawn: {e}")
 
     return item_record

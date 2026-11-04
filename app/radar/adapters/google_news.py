@@ -3,6 +3,7 @@
 Converts user search queries or direct Google News RSS URLs into raw feed items.
 Extracts title, clean author/media name, publication date, and link.
 """
+import logging
 from typing import List, Dict, Any, Optional
 import urllib.parse
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ import feedparser
 from app.network import public_http_client
 from app.radar.adapters.base import BaseSourceAdapter, RawFeedItem
 from app.database import update_radar_source_fetch_meta
+
+logger = logging.getLogger("omnikeep.radar.google_news")
 
 
 class GoogleNewsAdapter(BaseSourceAdapter):
@@ -42,7 +45,7 @@ class GoogleNewsAdapter(BaseSourceAdapter):
             try:
                 resp = await client.get(source_url, headers=headers)
             except Exception as e:
-                print(f"[Radar:GoogleNews] Network error for {source_url}: {e}")
+                logger.warning(f"[Radar:GoogleNews] Network error for {source_url}: {e}")
                 update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 
@@ -51,7 +54,7 @@ class GoogleNewsAdapter(BaseSourceAdapter):
                 return []
 
             if resp.status_code != 200:
-                print(f"[Radar:GoogleNews] HTTP {resp.status_code} for {source_url}")
+                logger.warning(f"[Radar:GoogleNews] HTTP {resp.status_code} for {source_url}")
                 update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 

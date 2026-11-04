@@ -3,6 +3,7 @@
 Monitors non-RSS web pages (changelogs, documentation, engineering blogs).
 Extracts main text, computes content hash, and emits a raw item when content changes.
 """
+import logging
 from typing import List, Dict, Any, Optional
 import hashlib
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from bs4 import BeautifulSoup
 from app.network import public_http_client
 from app.radar.adapters.base import BaseSourceAdapter, RawFeedItem
 from app.database import update_radar_source_fetch_meta
+
+logger = logging.getLogger("omnikeep.radar.web_change")
 
 
 class WebChangeAdapter(BaseSourceAdapter):
@@ -29,12 +32,12 @@ class WebChangeAdapter(BaseSourceAdapter):
             try:
                 resp = await client.get(source_url, headers=headers)
             except Exception as e:
-                print(f"[Radar:WebChange] Network error for {source_url}: {e}")
+                logger.warning(f"[Radar:WebChange] Network error for {source_url}: {e}")
                 update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 
             if resp.status_code != 200:
-                print(f"[Radar:WebChange] HTTP {resp.status_code} for {source_url}")
+                logger.warning(f"[Radar:WebChange] HTTP {resp.status_code} for {source_url}")
                 update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 

@@ -37,6 +37,7 @@ OmniKeep 解析 Instagram Reels、Facebook 貼文、YouTube 會員影片等內�
 - **獨立 profile**：`%LOCALAPPDATA%\OmniKeep\chrome-cdp`，與日常瀏覽器完全隔離，互不干擾。
 - 為何不用你原本的 Chrome？Chrome 136+ 基於安全**封鎖預設 profile 的遠端除錯埠**，且 127+ 的 App-Bound Encryption 讓外部程式無法解密 cookie DB（yt-dlp #7271、#10927）。獨立 profile + CDP 是唯一穩定解。
 - 橋接只會 `connect_over_cdp` 讀取 cookie，斷開時**不會關閉**該 Chrome。
+- 需要 Python 套件 `playwright`。Windows 執行 `pip install -r requirements.txt` 時會自動安裝；其他系統與 Docker 不會安裝，會話面板會顯示提示，請改用 cookies.txt（見 [選用功能](optional_features.md)）。
 
 ### 相關設定（.env）
 
@@ -78,5 +79,8 @@ curl http://localhost:5000/health
 
 ## 🔒 隱私聲明
 
-- Session cookie 只存在於**你自己的機器**（automation profile / cookies.txt / 暫存檔）。
+- Session cookie 只存在於**你自己的機器**（automation profile / cookies.txt）。
+- 解析某個網址時，只取出**那個網站**的 cookie（例如 `fb.watch` 算 facebook.com），其他網站的登入狀態不會被帶上，也不會寫進任何檔案。
+- yt-dlp 需要檔案時，cookie 寫進一個只有你（與系統管理員）能開的暫存資料夾，下載完就刪除；當機留下的會在下次啟動或下次匯出時清掉。你的 `cookies.txt` 不會直接交給 yt-dlp，所以不會被它改寫。
+- 舊版曾把所有網站的 cookie 明文留在 `%TEMP%\omnikeep-cookies\session.cookies`，新版啟動時會自動刪除。
 - OmniKeep 不含任何遙測；cookie 不會被傳送到 OmniKeep 以外的任何伺服器（解析目標網站本身除外）。

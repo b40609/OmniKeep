@@ -6,11 +6,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.static_assets import CurrentBuildFiles
 from fastapi.responses import FileResponse
+from app import __version__
 from app.config import settings
 from app.database import init_db
 from app.routers import (
     items_router, categories_router, ingest_router, line_router,
-    radar_router, session_router, watch_router, behavior_router, rules_router
+    radar_router, session_router, watch_router, behavior_router, rules_router, push_router,
+    telegram_router,
 )
 from app.mcp_server import mcp
 from app.radar.scheduler import radar_scheduler
@@ -42,12 +44,21 @@ async def lifespan(app: FastAPI):
         init_vector_db()
     except Exception as e:
         logger.warning(f"Could not initialize vector database: {e}")
+    if settings.LOCAL_AUTO_LOGIN:
+        logger.warning(
+            "LOCAL_AUTO_LOGIN is enabled: /api/session/local-auth hands the API key to "
+            "loopback clients. Requests with reverse-proxy headers are refused, but "
+            "disable it if any other process forwards traffic to this port."
+        )
     if not settings.BACKGROUND_SERVICES_ENABLED:
         yield
         return
     from app.background import follow_up_pool
     from app.backup import backup_loop
     from app.bot.telegram_bot import get_telegram_bot
+    from app.parsers.cookie_manager import sweep_cookie_exports
+    # Cookie exports left by a crash, and the all-sites export older versions kept in TEMP.
+    sweep_cookie_exports()
     tasks = []
     bot = None
     worker_started = False
@@ -56,9 +67,10 @@ async def lifespan(app: FastAPI):
         follow_up_pool.start()
         task_worker.start()
         worker_started = True
-        if settings.RADAR_ENABLED:
-            radar_scheduler.start()
-            radar_started = True
+        # Always running; each cycle checks the radar settings toggle, and saving the
+        # settings wakes it, so switching the radar on or off needs no restart.
+        radar_scheduler.start()
+        radar_started = True
         if settings.BACKUP_SINK != "off":
             tasks.append(asyncio.create_task(backup_loop()))
         bot = get_telegram_bot() if settings.TELEGRAM_BOT_TOKEN else None
@@ -90,7 +102,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="OmniKeep",
     description="Self-hosted Multimodal Information Radar & Second Brain",
-    version="0.1.0",
+    version=__version__,
     lifespan=lifespan
 )
 
@@ -116,6 +128,8 @@ app.include_router(session_router)
 app.include_router(watch_router)
 app.include_router(behavior_router)
 app.include_router(rules_router)
+app.include_router(push_router)
+app.include_router(telegram_router)
 
 # Mount Remote MCP Server (SSE Transport)
 app.mount("/mcp", mcp.sse_app(mount_path="/mcp"))
@@ -151,4 +165,4 @@ async def serve_dashboard():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "OmniKeep", "version": "0.1.0"}
+    return {"status": "healthy", "service": "OmniKeep", "version": __version__}

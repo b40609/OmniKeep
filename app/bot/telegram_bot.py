@@ -14,6 +14,7 @@ import re
 from typing import Optional, Dict, Any, List
 import httpx
 
+from app.bot.telegram_pairing import bind_telegram_user, redeem_pairing_code
 from app.config import settings
 from app.database import (
     get_items,
@@ -199,6 +200,7 @@ class TelegramBot:
         self.api_url = f"https://api.telegram.org/bot{self.token}"
         self.running = False
         self._client: Optional[httpx.AsyncClient] = None
+        self._username: Optional[str] = None
 
     async def get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -220,6 +222,38 @@ class TelegramBot:
         client = await self.get_client()
         resp = await client.post(f"{self.api_url}/{method}", json=data)
         return resp.json()
+
+    async def get_username(self) -> Optional[str]:
+        """The bot's @username (for t.me links), looked up once with getMe."""
+        if not self._username:
+            res = await self.send_api("getMe", {})
+            self._username = (res.get("result") or {}).get("username")
+        return self._username
+
+    async def pair(self, chat: Dict[str, Any], user_id: int, code: str):
+        """Bind the sender of a one-time pairing link (/start <code>) as an owner."""
+        chat_id = chat.get("id")
+        if chat.get("type") != "private" or not user_id:
+            await self.send_message(chat_id, "⛔ 只能在與 Bot 的私人對話中配對。")
+            return
+        if not redeem_pairing_code(code):
+            await self.send_message(chat_id, "⛔ <b>配對連結無效或已過期</b>。請在 OmniKeep 網頁的「通知」重新產生。")
+            return
+        earlier_owners = [owner for owner in settings.telegram_allowed_ids if owner != user_id]
+        persisted = bind_telegram_user(user_id)
+        logger.warning("Telegram user %s bound as an owner through a pairing link", user_id)
+        await self.send_message(
+            chat_id,
+            f"🎉 <b>已綁定為 OmniKeep 擁有者</b>（<code>{user_id}</code>）。傳 /help 看看能做什麼。"
+            + ("" if persisted else "\n\n⚠️ 無法寫入 .env，重新啟動後需要再配對一次，"
+               "或把這個 ID 填入 TELEGRAM_ALLOWED_USER_IDS。"),
+        )
+        for owner in earlier_owners:
+            await self.send_message(
+                owner,
+                f"🔐 Telegram 帳號 <code>{user_id}</code> 剛透過配對連結取得 OmniKeep 存取權。"
+                f"如果不是你操作的，請從 .env 的 TELEGRAM_ALLOWED_USER_IDS 移除它並重新啟動。",
+            )
 
     async def send_message(
         self,
@@ -338,28 +372,24 @@ class TelegramBot:
         user_id = from_user.get("id", 0)
         text = (message.get("text") or message.get("caption") or "").strip()
 
-        # Authorization check & First-time Auto-pairing
-        if not self.is_authorized(user_id):
-            allowed = settings.telegram_allowed_ids
-            if not allowed:
-                logger.info(f"Auto-pairing initial Telegram user as owner: {user_id}")
-                settings.TELEGRAM_ALLOWED_USER_IDS_RAW = str(user_id)
-                try:
-                    import dotenv
-                    dotenv.set_key(".env", "TELEGRAM_ALLOWED_USER_IDS", str(user_id))
-                except Exception as e:
-                    logger.warning(f"Failed to persist TELEGRAM_ALLOWED_USER_IDS to .env: {e}")
+        # A one-time pairing link from the web app arrives as "/start <code>".
+        start = re.fullmatch(r"/start(?:@\w+)?\s+(\S+)", text)
+        if start:
+            await self.pair(message.get("chat", {}), user_id, start.group(1))
+            return
 
-                await self.send_message(
-                    chat_id,
-                    f"🎉 <b>OmniKeep 擁有者驗證成功！</b>\n\n"
-                    f"已將你的帳號 (<code>{user_id}</code>) 綁定為安全白名單。\n"
-                    f"第二大腦現已全功能就緒！"
+        # Only owners get further. Messaging first binds nobody.
+        if not self.is_authorized(user_id):
+            if not settings.telegram_allowed_ids:
+                msg = (
+                    f"⚠️ <b>OmniKeep Bot 尚未綁定擁有者</b>\n\n"
+                    f"請在 OmniKeep 網頁開啟「通知」，按「產生 Telegram 配對連結」，再用這個帳號開啟連結。\n"
+                    f"或把你的 User ID <code>{user_id}</code> 填入 .env 的 TELEGRAM_ALLOWED_USER_IDS 後重新啟動。"
                 )
             else:
                 msg = f"⛔ <b>未授權的存取</b>。你的 User ID (<code>{user_id}</code>) 不在允許名單中。"
-                await self.send_message(chat_id, msg)
-                return
+            await self.send_message(chat_id, msg)
+            return
 
         # Commands
         if text.startswith("/start") or text.startswith("/help"):

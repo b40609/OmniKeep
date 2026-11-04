@@ -79,6 +79,8 @@ export interface RadarSettings {
   auto_digest_push?: boolean
   auto_star_push?: boolean
   updated_at?: string
+  /** Read-only: whether the server's scheduler task runs at all (background services on). */
+  scheduler_running?: boolean
 }
 
 export interface RadarTopic {
@@ -108,7 +110,12 @@ export function setApiKey(value: string) {
   apiKey = value
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** `read` turns a successful response into the result; file downloads pass their own. */
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  read: (res: Response) => Promise<unknown> = (res) => res.json(),
+): Promise<T> {
   if (!apiKey) throw new Error('請先登入')
   const version = authVersion
   function ensureCurrentSession() {
@@ -133,7 +140,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(detail)
   }
-  const body = res.status === 204 ? undefined : await res.json()
+  const body = res.status === 204 ? undefined : await read(res)
   ensureCurrentSession()
   return body as T
 }
@@ -171,6 +178,42 @@ export function deleteItem(id: number): Promise<void> {
 
 export function getStats(): Promise<Stats> {
   return request<Stats>('/api/items/stats')
+}
+
+/* ---------------- Telegram owner binding ---------------- */
+
+export interface TelegramStatus {
+  configured: boolean
+  bound_user_ids: number[]
+  /** Epoch seconds while an unused pairing link is still valid. */
+  pairing_expires_at: number | null
+}
+
+export interface TelegramPairing {
+  /** https://t.me/<bot>?start=<one-time code> */
+  link: string
+  expires_at: number
+}
+
+export function getTelegramStatus(): Promise<TelegramStatus> {
+  return request<TelegramStatus>('/api/telegram/status')
+}
+
+export function createTelegramPairing(): Promise<TelegramPairing> {
+  return request<TelegramPairing>('/api/telegram/pairing', { method: 'POST' })
+}
+
+export interface ExportFile {
+  blob: Blob
+  filename: string
+}
+
+export function exportItems(format: 'json' | 'markdown', starredOnly: boolean): Promise<ExportFile> {
+  const fallback = format === 'json' ? 'omnikeep_export.json' : 'omnikeep_markdown.zip'
+  return request<ExportFile>(`/api/items/export?format=${format}&starred_only=${starredOnly}`, undefined, async (res) => ({
+    blob: await res.blob(),
+    filename: res.headers.get('content-disposition')?.match(/filename="?([^";]+)"?/)?.[1] || fallback,
+  }))
 }
 
 export function seedDemoItems(): Promise<{ success: boolean; count: number; message: string }> {
@@ -243,13 +286,23 @@ export interface IngestResult {
   detail?: string
 }
 
-export function ingest(content: string, opts: { category?: string | null; async?: boolean } = {}): Promise<IngestResult> {
+export interface IngestOptions {
+  category?: string | null
+  async?: boolean
+  /** What the user's browser showed for the page (bookmarklet); the server uses it as a hint. */
+  pageTitle?: string
+  pageDescription?: string
+}
+
+export function ingest(content: string, opts: IngestOptions = {}): Promise<IngestResult> {
   return request<IngestResult>('/api/ingest', {
     method: 'POST',
     body: JSON.stringify({
       content,
       category: opts.category ?? null,
       async_mode: opts.async ?? false,
+      ...(opts.pageTitle ? { page_title: opts.pageTitle } : {}),
+      ...(opts.pageDescription ? { page_description: opts.pageDescription } : {}),
     }),
   })
 }
@@ -418,6 +471,7 @@ export interface SessionPlatformStatus {
 
 export interface SessionBridgeSnapshot {
   mode: 'cdp' | 'cookiefile' | 'none' | 'unknown'
+  playwright_installed?: boolean
   cdp_port?: number
   cdp_reachable?: boolean
   auto_launch?: boolean
@@ -582,6 +636,63 @@ export function logBehaviorEvent(payload: BehaviorEventPayload): Promise<{ succe
 
 export function getBehaviorStats(days = 7): Promise<{ total_events: number; window_days: number; by_type: Record<string, number> }> {
   return request(`/api/behavior/stats?days=${days}`)
+}
+
+/** Same verbs as the Telegram /deck buttons: up/down/star are taste labels, snooze only re-queues. */
+export type SwipeAction = 'swipe_up' | 'swipe_down' | 'swipe_star' | 'snooze'
+
+export interface DeckItem extends Item {
+  reasons?: string[]
+  is_exploration?: boolean
+  deck_score?: number
+}
+
+export function getSwipeDeck(limit = 50): Promise<{ count: number; items: DeckItem[] }> {
+  return request(`/api/behavior/deck?limit=${limit}`)
+}
+
+export function recordSwipe(itemId: number | string, action: SwipeAction): Promise<{ success: boolean; event_type: SwipeAction; duplicate?: boolean }> {
+  return logBehaviorEvent({ event_type: action, item_id: String(itemId) }) as Promise<{ success: boolean; event_type: SwipeAction; duplicate?: boolean }>
+}
+
+/* ---------------- Web Push ---------------- */
+
+export interface PushConfig {
+  configured: boolean
+  public_key: string
+  subscriptions: number
+}
+
+/** PushSubscription.toJSON() */
+export interface PushSubscriptionPayload {
+  endpoint?: string
+  keys?: Record<string, string>
+}
+
+export interface PushDelivery {
+  success: boolean
+  sent: number
+  removed: number
+  failed: number
+}
+
+export function getPushConfig(): Promise<PushConfig> {
+  return request('/api/push/config')
+}
+
+export function subscribePush(subscription: PushSubscriptionPayload): Promise<{ success: boolean }> {
+  return request('/api/push/subscribe', {
+    method: 'POST',
+    body: JSON.stringify({ endpoint: subscription.endpoint, keys: subscription.keys }),
+  })
+}
+
+export function unsubscribePush(endpoint: string): Promise<{ success: boolean; removed: boolean }> {
+  return request('/api/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) })
+}
+
+export function sendTestPush(): Promise<PushDelivery> {
+  return request('/api/push/test', { method: 'POST' })
 }
 
 /* ---------------- Bookmark Importer ---------------- */

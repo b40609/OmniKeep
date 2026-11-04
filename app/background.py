@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 
 from app.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("omnikeep.background")
 
 
 class FollowUpPool:

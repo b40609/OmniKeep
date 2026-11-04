@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+/* vue-sonner 2 no longer injects its CSS. In the components layer, so the
+   utility classes in components/ui/sonner/Toaster.vue still win. */
+@import 'vue-sonner/style.css' layer(components);
 
 @custom-variant dark (&:is(.dark *));
 

@@ -6,6 +6,7 @@ Employs an approve/dismiss gating workflow respecting user sovereignty.
 """
 from typing import Dict, Any, Optional
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from collections import Counter
@@ -19,6 +20,9 @@ from app.database import (
     get_dreampass_proposal,
 )
 from app.config import settings
+from app.network import public_http_client
+
+logger = logging.getLogger("omnikeep.dreampass")
 
 _DREAMPASS_SYSTEM_PROMPT = """你是一位敏銳的「個人知識與情報品味管家」。
 你的任務是回顧使用者最近的真實情報互動訊號（包含星標收藏、手動調升、封存、調降抑制的技術標籤與文章），
@@ -128,11 +132,9 @@ async def run_dreampass_reflection(days: int = 7) -> Dict[str, Any]:
     parsed = None
     if settings.OPENAI_API_KEY:
         try:
-            import httpx
-            from app.network import public_http_client
             api_url = f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions"
             payload = {
-                "model": settings.OPENAI_MODEL,
+                "model": settings.PRIMARY_MODEL,
                 "messages": [
                     {"role": "system", "content": _DREAMPASS_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt}
@@ -153,9 +155,18 @@ async def run_dreampass_reflection(days: int = 7) -> Dict[str, Any]:
                     data = resp.json()
                     content = data["choices"][0]["message"]["content"]
                     parsed = json.loads(content)
+                else:
+                    logger.warning(
+                        "[DreamPass] LLM reflection returned HTTP %s from %s, using heuristic: %s",
+                        resp.status_code, api_url, (resp.text or "")[:300],
+                    )
         except Exception as e:
-            # Fall back to heuristic
-            print(f"[DreamPass] LLM reflection failed, using heuristic: {e}")
+            # Fall back to heuristic, but never silently: a wrong settings field,
+            # a network error or malformed JSON must show up in the logs.
+            logger.warning(
+                "[DreamPass] LLM reflection failed (%s: %s), using heuristic",
+                type(e).__name__, e, exc_info=True,
+            )
 
     if not parsed or not isinstance(parsed, dict) or "suggested_profile" not in parsed:
         parsed = _heuristic_dreampass_analysis(signals, current_profile)

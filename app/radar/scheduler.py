@@ -1,5 +1,6 @@
 import asyncio
 import html
+import logging
 from contextlib import closing
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -20,6 +21,9 @@ from app.radar.recommender import score_item_detailed, rank_items_with_explorati
 from app.radar.clustering import cluster_item_to_event
 from app.radar.digest import generate_radar_digest
 from app.pipeline import run_pipeline
+from app.push import send_push
+
+logger = logging.getLogger("omnikeep.radar")
 
 def is_source_due(source: Dict[str, Any], force: bool = False) -> bool:
     if force:
@@ -103,7 +107,7 @@ async def _backfill_pending(budget: int) -> List[Dict[str, Any]]:
             if item:
                 analyzed.append(item)
         except Exception as e:
-            print(f"[Radar:Scheduler] Backfill failed for {stub['url']}: {e}")
+            logger.warning(f"[Radar:Scheduler] Backfill failed for {stub['url']}: {e}")
     return analyzed
 
 def _maybe_autostar(item: Dict[str, Any], detail: Dict[str, Any]) -> None:
@@ -123,7 +127,7 @@ async def _analyze_candidate(url: str, tier: int = 2) -> Optional[Dict[str, Any]
     tags = item.get("tech_tags") or []
     detail = score_item_detailed(tags, tier=tier)
     if detail["blocked"]:
-        print(f"[Radar:Recommender] Item blocked by muted tag: {item.get('title_l1')}")
+        logger.info(f"[Radar:Recommender] Item blocked by muted tag: {item.get('title_l1')}")
         delete_item(item["id"])
         return None
     event_id = cluster_item_to_event(item)
@@ -151,7 +155,7 @@ async def _push_autostar_notices(items: List[Dict[str, Any]]) -> None:
         for chat_id in settings.telegram_allowed_ids:
             await bot.send_message(chat_id, text)
     except Exception as e:
-        print(f"[Radar:AutoStar] Telegram push failed: {e}")
+        logger.warning(f"[Radar:AutoStar] Telegram push failed: {e}")
 
 
 async def _safe_relevance_check(item: Dict[str, Any]) -> None:
@@ -159,9 +163,9 @@ async def _safe_relevance_check(item: Dict[str, Any]) -> None:
         from app.watch.relevance import maybe_propose_for_item
         proposal = await maybe_propose_for_item(item)
         if proposal:
-            print(f"[Radar:Relevance] Proposal created: {proposal['id']} for item {item.get('id')}")
+            logger.info(f"[Radar:Relevance] Proposal created: {proposal['id']} for item {item.get('id')}")
     except Exception as e:
-        print(f"[Radar:Relevance] Check failed for {item.get('id')}: {e}")
+        logger.warning(f"[Radar:Relevance] Check failed for {item.get('id')}: {e}")
 
 
 async def _push_digest_to_telegram(digest_info: Dict[str, Any], ranked_items: List[Dict[str, Any]]) -> None:
@@ -181,7 +185,40 @@ async def _push_digest_to_telegram(digest_info: Dict[str, Any], ranked_items: Li
         for chat_id in settings.telegram_allowed_ids:
             await bot.send_message(chat_id, text)
     except Exception as e:
-        print(f"[Radar:DigestPush] Telegram push failed: {e}")
+        logger.warning(f"[Radar:DigestPush] Telegram push failed: {e}")
+
+
+async def _push_autostar_to_web(items: List[Dict[str, Any]]) -> None:
+    """PWA twin of _push_autostar_notices; independent of whether Telegram is set up."""
+    starred = [it for it in items if it.get("auto_starred")]
+    if not starred:
+        return
+    try:
+        lines = "\n".join(f"⭐ {it.get('title_l1', '')[:60]}" for it in starred[:5])
+        await send_push("🤖 雷達自動收藏", lines, tag="radar-autostar")
+    except Exception:
+        logger.exception("Web Push for auto-starred items failed")
+
+
+async def _push_digest_to_web(digest_info: Dict[str, Any], ranked_items: List[Dict[str, Any]]) -> None:
+    """PWA twin of _push_digest_to_telegram; independent of whether Telegram is set up."""
+    if not digest_info or not digest_info.get("success"):
+        return
+    try:
+        titles = "\n".join(f"• {it.get('title_l1', '')[:60]}" for it in ranked_items[:5])
+        await send_push(f"📰 {digest_info.get('title', '雷達摘要')}", titles, tag="radar-digest")
+    except Exception:
+        logger.exception("Web Push for radar digest failed")
+
+
+async def _announce_autostar(items: List[Dict[str, Any]]) -> None:
+    await _push_autostar_notices(items)
+    await _push_autostar_to_web(items)
+
+
+async def _announce_digest(digest_info: Dict[str, Any], ranked_items: List[Dict[str, Any]]) -> None:
+    await _push_digest_to_telegram(digest_info, ranked_items)
+    await _push_digest_to_web(digest_info, ranked_items)
 
 
 async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict[str, Any]:
@@ -202,13 +239,13 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
         try:
             adapter = get_adapter(src.get("source_type"))
             if not adapter:
-                print(f"[Radar:Scheduler] Unknown source type: {src.get('source_type')}")
+                logger.warning(f"[Radar:Scheduler] Unknown source type: {src.get('source_type')}")
                 continue
             if not is_source_due(src, force=force):
                 continue
             raw_items = await adapter.fetch_latest(src)
         except Exception as e:
-            print(f"[Radar:Scheduler] Failed to scan source {src.get('name')}: {e}")
+            logger.warning(f"[Radar:Scheduler] Failed to scan source {src.get('name')}: {e}")
             continue
         for raw in raw_items or []:
             with closing(get_db_connection()) as conn:
@@ -219,7 +256,7 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
                 continue  # already ingested; pending stubs wait for backfill
             pg_score, blocked = pregate_item(raw.title, raw.url, raw.content or "", weight_index)
             if blocked:
-                print(f"[Radar:Scheduler] Pre-gate dropped (muted topic): {raw.title}")
+                logger.info(f"[Radar:Scheduler] Pre-gate dropped (muted topic): {raw.title}")
                 if row:
                     delete_item(row["id"])
                 continue
@@ -229,7 +266,7 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
     try:
         cfg = get_radar_settings()
     except Exception as e:
-        print(f"[Radar:Scheduler] Failed to get settings: {e}")
+        logger.warning(f"[Radar:Scheduler] Failed to get settings: {e}")
         cfg = {"max_analyze_per_cycle": 3, "notification_mode": "silent"}
 
     # Backfill oldest pending stubs first, then spend remaining budget on the
@@ -251,7 +288,7 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
             if item:
                 all_new_items.append(item)
         except Exception as e:
-            print(f"[Radar:Scheduler] Error analyzing {raw.url}: {e}")
+            logger.warning(f"[Radar:Scheduler] Error analyzing {raw.url}: {e}")
 
     # Rank newly detected items using 80/20 Epsilon-Greedy exploration
     ranked_items = rank_items_with_exploration(all_new_items, exploration_ratio=0.2)
@@ -265,21 +302,21 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
         if auto_digest and len(ranked_items) >= 2 and local_hour == target_hour:
             item_ids = [it["id"] for it in ranked_items]
             digest_info = await generate_radar_digest(item_ids, digest_type="daily")
-            await _push_digest_to_telegram(digest_info, ranked_items)
+            await _announce_digest(digest_info, ranked_items)
     elif notification_mode == "vip_alert":
         vip_threshold = float(cfg.get("vip_threshold", 4.0))
         vip_items = [it for it in ranked_items if float(it.get("radar_score", 0.0)) >= vip_threshold]
         if vip_items:
-            await _push_autostar_notices(vip_items)
+            await _announce_autostar(vip_items)
     elif notification_mode == "legacy" or cfg.get("auto_digest_push") or cfg.get("auto_star_push"):
         if auto_digest and len(ranked_items) >= 2 and cfg.get("auto_digest_push"):
             item_ids = [it["id"] for it in ranked_items]
             local_hour = datetime.now().astimezone().hour
             dtype = "evening" if 17 <= local_hour <= 23 else "morning"
             digest_info = await generate_radar_digest(item_ids, digest_type=dtype)
-            await _push_digest_to_telegram(digest_info, ranked_items)
+            await _announce_digest(digest_info, ranked_items)
         if cfg.get("auto_star_push"):
-            await _push_autostar_notices(ranked_items)
+            await _announce_autostar(ranked_items)
     else:
         # Default 'silent': zero Telegram messages!
         pass
@@ -323,7 +360,7 @@ class RadarScheduler:
         self._stop_event.clear()
         self._wake_event.clear()
         self._task = asyncio.create_task(self._loop(initial_delay=initial_delay))
-        print(f"[Radar:Scheduler] Background scheduler loop started.")
+        logger.info(f"[Radar:Scheduler] Background scheduler loop started.")
 
     async def _loop(self, initial_delay: float = 10.0):
         if initial_delay > 0:
@@ -337,21 +374,21 @@ class RadarScheduler:
             try:
                 cfg = get_radar_settings()
             except Exception as e:
-                print(f"[Radar:Scheduler] Error loading settings in loop: {e}")
-                cfg = {"enabled": True, "interval_minutes": 180, "max_analyze_per_cycle": 3}
+                logger.warning(f"[Radar:Scheduler] Error loading settings in loop: {e}")
+                cfg = {"enabled": False, "interval_minutes": 180, "max_analyze_per_cycle": 3}
 
-            is_enabled = cfg.get("enabled", True)
+            is_enabled = cfg.get("enabled", False)
             interval_minutes = cfg.get("interval_minutes", 180)
 
             if is_enabled and interval_minutes > 0:
                 try:
-                    print("[Radar:Scheduler] Starting periodic radar scan cycle...")
+                    logger.info("[Radar:Scheduler] Starting periodic radar scan cycle...")
                     res = await run_radar_cycle(force=False, auto_digest=True)
-                    print(f"[Radar:Scheduler] Cycle complete: {res['new_items_count']} new items detected across {res['sources_scanned']} sources.")
+                    logger.info(f"[Radar:Scheduler] Cycle complete: {res['new_items_count']} new items detected across {res['sources_scanned']} sources.")
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    print(f"[Radar:Scheduler] Error during periodic cycle: {e}")
+                    logger.error(f"[Radar:Scheduler] Error during periodic cycle: {e}")
 
             # Sleep duration in seconds
             sleep_seconds = float(interval_minutes * 60) if (is_enabled and interval_minutes > 0) else 3600.0
@@ -374,13 +411,13 @@ class RadarScheduler:
     async def stop(self):
         if not self._is_running:
             return
-        print("[Radar:Scheduler] Stopping background scheduler...")
+        logger.info("[Radar:Scheduler] Stopping background scheduler...")
         self._stop_event.set()
         self._wake_event.set()
         if self._task:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
         self._is_running = False
-        print("[Radar:Scheduler] Background scheduler stopped.")
+        logger.info("[Radar:Scheduler] Background scheduler stopped.")
 
 radar_scheduler = RadarScheduler()
