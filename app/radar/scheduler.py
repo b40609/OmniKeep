@@ -2,7 +2,7 @@ import asyncio
 import html
 import logging
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from app.config import settings
 from app.database import (
@@ -14,7 +14,10 @@ from app.database import (
     update_item_field,
     log_behavior_event,
     get_all_topic_weights,
-    get_radar_settings
+    get_radar_settings,
+    get_last_radar_digest_at,
+    get_latest_radar_digests,
+    get_radar_items_updated_since,
 )
 from app.radar.adapters import get_adapter
 from app.radar.recommender import score_item_detailed, rank_items_with_exploration
@@ -137,10 +140,9 @@ async def _analyze_candidate(url: str, tier: int = 2) -> Optional[Dict[str, Any]
     _maybe_autostar(item, detail)
     return item
 
-async def _push_autostar_notices(items: List[Dict[str, Any]]) -> None:
-    """Best-effort Telegram notice for auto-collected items; silent on failure."""
-    starred = [it for it in items if it.get("auto_starred")]
-    if not starred:
+async def _push_items_to_telegram(items: List[Dict[str, Any]], heading: str) -> None:
+    """Best-effort Telegram notice listing up to 5 items with their reasons; silent on failure."""
+    if not items:
         return
     try:
         from app.bot.telegram_bot import get_telegram_bot
@@ -148,14 +150,48 @@ async def _push_autostar_notices(items: List[Dict[str, Any]]) -> None:
         if not bot:
             return
         lines = []
-        for it in starred[:5]:
+        for it in items[:5]:
             reasons = "；".join(str(r) for r in (it.get("reasons") or [])[:2])
             lines.append(f"<b>{html.escape(it.get('title_l1', '')[:60])}</b>\n{html.escape(reasons)}")
-        text = "<b>雷達精選推薦</b>\n\n" + "\n\n".join(lines)
+        text = f"<b>{heading}</b>\n\n" + "\n\n".join(lines)
         for chat_id in settings.telegram_allowed_ids:
             await bot.send_message(chat_id, text)
     except Exception as e:
-        logger.warning(f"[Radar:AutoStar] Telegram push failed: {e}")
+        logger.warning(f"[Radar:Notify] Telegram push failed: {e}")
+
+
+async def _push_text_to_line(text: str) -> None:
+    """Best-effort LINE push to every allowed user; skipped when LINE is not set up."""
+    if not settings.LINE_CHANNEL_ACCESS_TOKEN:
+        return
+    try:
+        from app.bot.line_bot import push_line_messages
+    except Exception as e:
+        logger.warning(f"[Radar:Notify] LINE bot unavailable: {e}")
+        return
+    for user_id in settings.line_allowed_ids:
+        try:
+            # A LINE text message holds at most 5,000 characters.
+            await push_line_messages(user_id, [{"type": "text", "text": text[:4900]}])
+        except Exception as e:
+            logger.warning(f"[Radar:Notify] LINE push failed: {e}")
+
+
+async def _push_items_to_web(items: List[Dict[str, Any]], title: str, tag: str, bullet: str) -> None:
+    if not items:
+        return
+    try:
+        lines = "\n".join(f"{bullet} {it.get('title_l1', '')[:60]}" for it in items[:5])
+        await send_push(title, lines, tag=tag)
+    except Exception:
+        logger.exception("Web Push for radar items failed")
+
+
+async def _push_items_to_line(items: List[Dict[str, Any]], heading: str, bullet: str) -> None:
+    if not items:
+        return
+    lines = "\n".join(f"{bullet} {it.get('title_l1', '')[:60]}" for it in items[:5])
+    await _push_text_to_line(f"{heading}\n\n{lines}")
 
 
 async def _safe_relevance_check(item: Dict[str, Any]) -> None:
@@ -188,18 +224,6 @@ async def _push_digest_to_telegram(digest_info: Dict[str, Any], ranked_items: Li
         logger.warning(f"[Radar:DigestPush] Telegram push failed: {e}")
 
 
-async def _push_autostar_to_web(items: List[Dict[str, Any]]) -> None:
-    """PWA twin of _push_autostar_notices; independent of whether Telegram is set up."""
-    starred = [it for it in items if it.get("auto_starred")]
-    if not starred:
-        return
-    try:
-        lines = "\n".join(f"⭐ {it.get('title_l1', '')[:60]}" for it in starred[:5])
-        await send_push("🤖 雷達自動收藏", lines, tag="radar-autostar")
-    except Exception:
-        logger.exception("Web Push for auto-starred items failed")
-
-
 async def _push_digest_to_web(digest_info: Dict[str, Any], ranked_items: List[Dict[str, Any]]) -> None:
     """PWA twin of _push_digest_to_telegram; independent of whether Telegram is set up."""
     if not digest_info or not digest_info.get("success"):
@@ -211,14 +235,101 @@ async def _push_digest_to_web(digest_info: Dict[str, Any], ranked_items: List[Di
         logger.exception("Web Push for radar digest failed")
 
 
+async def _push_digest_to_line(digest_info: Dict[str, Any], ranked_items: List[Dict[str, Any]]) -> None:
+    if not digest_info or not digest_info.get("success"):
+        return
+    titles = "\n".join(f"• {it.get('title_l1', '')[:60]}" for it in ranked_items[:5])
+    await _push_text_to_line(f"📰 {digest_info.get('title', '雷達摘要')}\n\n{titles}\n\n完整摘要請到 OmniKeep 查看。")
+
+
 async def _announce_autostar(items: List[Dict[str, Any]]) -> None:
-    await _push_autostar_notices(items)
-    await _push_autostar_to_web(items)
+    """Auto-collected items only (legacy auto_star_push)."""
+    starred = [it for it in items if it.get("auto_starred")]
+    await _push_items_to_telegram(starred, "雷達精選推薦")
+    await _push_items_to_web(starred, "🤖 雷達自動收藏", "radar-autostar", "⭐")
+    await _push_items_to_line(starred, "🤖 雷達自動收藏", "⭐")
+
+
+async def _announce_vip(items: List[Dict[str, Any]]) -> None:
+    """vip_alert: every item that reached the threshold, whether or not auto-star collected it."""
+    await _push_items_to_telegram(items, "雷達重要項目")
+    await _push_items_to_web(items, "🔔 雷達重要項目", "radar-vip", "•")
+    await _push_items_to_line(items, "🔔 雷達重要項目", "•")
 
 
 async def _announce_digest(digest_info: Dict[str, Any], ranked_items: List[Dict[str, Any]]) -> None:
     await _push_digest_to_telegram(digest_info, ranked_items)
     await _push_digest_to_web(digest_info, ranked_items)
+    await _push_digest_to_line(digest_info, ranked_items)
+
+
+# ── Daily digest: on the owner's hour, independent of when scan cycles run ──
+
+DAILY_DIGEST_GRACE_HOURS = 3     # a late start (machine asleep at the hour) still sends within this window
+DAILY_DIGEST_MAX_ITEMS = 20      # keeps the digest prompt bounded
+DIGEST_CHECK_SECONDS = 60.0
+_daily_digest_running = False
+
+
+def _parse_ts(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)  # CURRENT_TIMESTAMP rows are UTC
+
+
+def daily_digest_due(now_local: datetime, target_hour: int, last_sent: Optional[datetime]) -> bool:
+    """True while a digest slot is open (target hour up to the grace period) and nothing was sent in it."""
+    grace = timedelta(hours=DAILY_DIGEST_GRACE_HOURS)
+    for days_back in (0, 1):  # yesterday's slot can still be open just after midnight
+        day = now_local - timedelta(days=days_back)
+        slot = day.replace(hour=target_hour, minute=0, second=0, microsecond=0)
+        if slot <= now_local < slot + grace:
+            return last_sent is None or last_sent < slot
+    return False
+
+
+def _daily_digest_candidates(since: datetime) -> List[Dict[str, Any]]:
+    """Radar items analyzed since `since` that no recent digest has covered yet."""
+    covered = set()
+    for digest in get_latest_radar_digests(limit=20):
+        covered.update(digest.get("item_ids") or [])
+    since_iso = since.astimezone(timezone.utc).isoformat()
+    return [it for it in get_radar_items_updated_since(since_iso) if it["id"] not in covered]
+
+
+async def maybe_send_daily_digest(cfg: Optional[Dict[str, Any]] = None,
+                                  now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+    """Send the daily digest once per day at daily_digest_hour, whenever scan cycles happen to run.
+
+    Collects radar items analyzed since the previous daily digest (the last 24 hours the first
+    time). Returns the digest, or None when it is not due or there is nothing to report.
+    """
+    global _daily_digest_running
+    if _daily_digest_running:
+        return None
+    cfg = cfg if cfg is not None else get_radar_settings()
+    if not cfg.get("enabled") or cfg.get("notification_mode") != "daily_digest":
+        return None
+    now_local = (now or datetime.now(timezone.utc)).astimezone()
+    last_sent = _parse_ts(get_last_radar_digest_at("daily"))
+    if not daily_digest_due(now_local, int(cfg.get("daily_digest_hour", 8)), last_sent):
+        return None
+    _daily_digest_running = True
+    try:
+        since = last_sent or (now_local - timedelta(hours=24))
+        ranked = rank_items_with_exploration(_daily_digest_candidates(since), exploration_ratio=0.2)
+        ranked = ranked[:DAILY_DIGEST_MAX_ITEMS]
+        if not ranked:
+            return None
+        digest_info = await generate_radar_digest([it["id"] for it in ranked], digest_type="daily")
+        await _announce_digest(digest_info, ranked)
+        return digest_info
+    finally:
+        _daily_digest_running = False
 
 
 async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict[str, Any]:
@@ -297,17 +408,15 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
     digest_info = None
 
     if notification_mode == "daily_digest":
-        local_hour = datetime.now().astimezone().hour
-        target_hour = int(cfg.get("daily_digest_hour", 8))
-        if auto_digest and len(ranked_items) >= 2 and local_hour == target_hour:
-            item_ids = [it["id"] for it in ranked_items]
-            digest_info = await generate_radar_digest(item_ids, digest_type="daily")
-            await _announce_digest(digest_info, ranked_items)
+        # The scheduler's digest check sends at the chosen hour even when no cycle runs then;
+        # a cycle inside the slot just sends it sooner. Both go through the same once-a-day gate.
+        if auto_digest:
+            digest_info = await maybe_send_daily_digest(cfg)
     elif notification_mode == "vip_alert":
         vip_threshold = float(cfg.get("vip_threshold", 4.0))
         vip_items = [it for it in ranked_items if float(it.get("radar_score", 0.0)) >= vip_threshold]
         if vip_items:
-            await _announce_autostar(vip_items)
+            await _announce_vip(vip_items)
     elif notification_mode == "legacy" or cfg.get("auto_digest_push") or cfg.get("auto_star_push"):
         if auto_digest and len(ranked_items) >= 2 and cfg.get("auto_digest_push"):
             item_ids = [it["id"] for it in ranked_items]
@@ -341,6 +450,7 @@ class RadarScheduler:
     """
     def __init__(self):
         self._task: Optional[asyncio.Task] = None
+        self._digest_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
         self._wake_event = asyncio.Event()
         self._is_running = False
@@ -362,7 +472,25 @@ class RadarScheduler:
         self._stop_event = asyncio.Event()
         self._wake_event = asyncio.Event()
         self._task = asyncio.create_task(self._loop(initial_delay=initial_delay))
+        self._digest_task = asyncio.create_task(self._digest_loop(initial_delay=initial_delay))
         logger.info(f"[Radar:Scheduler] Background scheduler loop started.")
+
+    async def _digest_loop(self, initial_delay: float = 10.0):
+        """Checks every minute whether the daily digest is due; cheap when it is not (one DB read)."""
+        delay = initial_delay
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=max(delay, 0.0))
+                break
+            except asyncio.TimeoutError:
+                pass
+            delay = DIGEST_CHECK_SECONDS
+            try:
+                await maybe_send_daily_digest()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"[Radar:Digest] Daily digest check failed: {e}")
 
     async def _loop(self, initial_delay: float = 10.0):
         if initial_delay > 0:
@@ -416,9 +544,10 @@ class RadarScheduler:
         logger.info("[Radar:Scheduler] Stopping background scheduler...")
         self._stop_event.set()
         self._wake_event.set()
-        if self._task:
-            self._task.cancel()
-            await asyncio.gather(self._task, return_exceptions=True)
+        tasks = [t for t in (self._task, self._digest_task) if t]
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         self._is_running = False
         logger.info("[Radar:Scheduler] Background scheduler stopped.")
 

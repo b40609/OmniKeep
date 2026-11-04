@@ -1113,6 +1113,37 @@ def get_latest_radar_digests(limit: int = 10) -> List[Dict[str, Any]]:
             r["item_ids"] = []
     return rows
 
+def get_last_radar_digest_at(digest_type: str) -> Optional[str]:
+    """created_at of the newest digest of this type (ISO text), or None."""
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(
+            "SELECT created_at FROM radar_digests WHERE digest_type = ? ORDER BY created_at DESC LIMIT 1",
+            (digest_type,),
+        ).fetchone()
+    return row["created_at"] if row else None
+
+def get_radar_items_updated_since(since_iso: str, limit: int = 200) -> List[Dict[str, Any]]:
+    """Analyzed radar items whose row changed after since_iso (UTC ISO, the format save_item writes).
+
+    updated_at, not created_at: a pending stub saved before the cutoff but analyzed after it
+    keeps its old created_at, and only updated_at shows when its analysis landed.
+    """
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute("""
+            SELECT * FROM items
+            WHERE origin = 'radar' AND analysis_status = 'done' AND updated_at > ?
+            ORDER BY updated_at DESC LIMIT ?
+        """, (since_iso, limit)).fetchall()
+    items = []
+    for row in rows:
+        d = dict(row)
+        try:
+            d["tech_tags"] = json.loads(d["tech_tags"])
+        except Exception:
+            d["tech_tags"] = []
+        items.append(d)
+    return items
+
 # ── Entity Fan-out & Citations DAO ──────────────────────────
 
 def normalize_canonical_url(url: str) -> str:
