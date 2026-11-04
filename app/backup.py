@@ -1,4 +1,4 @@
-"""Multi-sink backup for the second brain (single SQLite file + FTS).
+"""Multi-sink backup for the second brain (SQLite database + HTML snapshots).
 
 Sinks (BACKUP_SINK in .env) — self-hosters pick what they have:
   local  rotating zip snapshots into BACKUP_DIR (default, zero deps)
@@ -7,8 +7,13 @@ Sinks (BACKUP_SINK in .env) — self-hosters pick what they have:
   off    disabled
 The DB snapshot is taken via sqlite3's online-backup API so a live WAL
 database is copied consistently without stopping the server.
+
+Archive layout (format 2): omnikeep.db, snapshots/<item id>.html, backup.json.
+Format 1 archives hold omnikeep.db only.
 """
 import asyncio
+import json
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -17,11 +22,16 @@ import tempfile
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
+from app import __version__
 from app.config import settings
 from app.database import log_backup_run
 from app.file_lock import FileLock
+
+ARCHIVE_FORMAT = 2
+# app/snapshot.py names each snapshot after its item id.
+_SNAPSHOT_NAME = re.compile(r"^[A-Za-z0-9_-]+\.html$")
 
 
 def _snapshot_db(tmp_dir: Path) -> Path:
@@ -34,9 +44,26 @@ def _snapshot_db(tmp_dir: Path) -> Path:
     return snap
 
 
+def _snapshot_files() -> List[Path]:
+    root = Path(settings.SNAPSHOT_DIR)
+    if not root.is_dir():
+        return []
+    return sorted(path for path in root.iterdir()
+                  if _SNAPSHOT_NAME.match(path.name) and path.is_file() and not path.is_symlink())
+
+
 def _make_zip(snap_db: Path, zip_path: Path) -> int:
+    snapshots = _snapshot_files()
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(snap_db, "omnikeep.db")
+        for path in snapshots:
+            zf.write(path, f"snapshots/{path.name}")
+        zf.writestr("backup.json", json.dumps({
+            "format": ARCHIVE_FORMAT,
+            "app_version": __version__,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "snapshots": len(snapshots),
+        }, indent=2))
     return zip_path.stat().st_size
 
 
