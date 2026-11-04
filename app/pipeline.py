@@ -5,6 +5,7 @@ import asyncio
 from typing import Dict, Any, Optional
 from app.database import (
     get_all_categories,
+    get_item_by_id,
     save_item,
     normalize_canonical_url,
     find_item_by_canonical_or_url,
@@ -323,8 +324,9 @@ URL：{url}
             print(f"[Pipeline] Failed to save HTML snapshot for {item_id}: {e}")
 
     try:
-        from app.vector import generate_embedding_with_model, store_item_embedding
-        embed_text = f"{title_l1} {summary_l1} {' '.join(tech_tags)}"
+        from app.vector import generate_embedding_with_model, item_embedding_text, store_item_embedding
+        # From the item as stored (after the rules engine), the same text a rebuild uses.
+        embed_text = item_embedding_text(get_item_by_id(item_id) or item_record)
         vec, embed_model = await generate_embedding_with_model(embed_text)
         store_item_embedding(item_id, vec, model=embed_model)
     except Exception as e:

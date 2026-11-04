@@ -117,6 +117,27 @@ def _deterministic_local_embedding(text: str, dim: int = 256) -> List[float]:
     return vec.tolist()
 
 
+def item_embedding_text(item: Dict[str, Any]) -> str:
+    """The text an item's vector is made from: title, summary and tags as stored."""
+    tags = item.get("tech_tags") or []
+    if isinstance(tags, str):
+        try:
+            tags = json.loads(tags)
+        except ValueError:
+            tags = []
+    return f"{item.get('title_l1') or ''} {item.get('summary_l1') or ''} {' '.join(str(t) for t in tags)}"
+
+
+def clean_embedding_text(text: str) -> str:
+    return (text or "").strip()[:8000]
+
+
+def local_embedding(text: str, dim: int) -> List[float]:
+    """Exactly what the local fallback stores for this text, so it can be recognised later."""
+    clean_text = clean_embedding_text(text)
+    return _deterministic_local_embedding(clean_text, dim) if clean_text else [0.0] * dim
+
+
 def embeddings_api_url() -> str:
     """OpenAI-compatible embeddings endpoint derived from OPENAI_BASE_URL
     (so Ollama / DeepSeek / proxies work the same way chat completions do)."""
@@ -132,7 +153,7 @@ async def generate_embedding_with_model(text: str) -> Tuple[List[float], str]:
     both sides always live in the same vector space.
     """
     dim = int(settings.EMBEDDING_DIM)
-    clean_text = (text or "").strip()[:8000]
+    clean_text = clean_embedding_text(text)
     api_key = settings.OPENAI_API_KEY
     if not clean_text:
         return [0.0] * dim, (settings.EMBEDDING_MODEL if api_key else LOCAL_EMBEDDING_MODEL)

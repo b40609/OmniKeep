@@ -100,6 +100,18 @@ def _git_push(zip_path: Path) -> None:
             raise RuntimeError(f"git step failed: {res.stderr[:400]}")
 
 
+def snapshot_archive(label: str) -> Path:
+    """A restorable archive of the current data, taken before a bulk change. Named
+    omnikeep-<label>-<stamp>.zip, so local rotation (omnikeep-backup-*) never removes it."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup_dir = Path(settings.BACKUP_DIR)
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = backup_dir / f"omnikeep-{label}-{stamp}.zip"
+    with tempfile.TemporaryDirectory(prefix="snapshot-", dir=backup_dir) as tmp_dir:
+        _make_zip(_snapshot_db(Path(tmp_dir)), zip_path)
+    return zip_path
+
+
 def run_backup() -> Dict[str, Any]:
     sink = settings.BACKUP_SINK.lower()
     if sink == "off":

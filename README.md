@@ -60,7 +60,7 @@
 - **個人興趣特徵畫像**：根據用戶加星標、閱讀深度與自定義偏好（Dream Pass）自動計算匹配評分，僅在達到 VIP 門檻時主動推播。
 
 ### 5. 本地優先與數據主權 (Local-First & Multi-Sink Backup)
-- **高併發 SQLite WAL 架構**：啟用 SQLite WAL 模式與 Unicode61 FTS5 全文索引，毫秒級全文檢索，並支援 sqlite-vec 向量語意檢索。
+- **高併發 SQLite WAL 架構**：啟用 SQLite WAL 模式與 Unicode61 FTS5 全文索引，毫秒級全文檢索，並支援 sqlite-vec 向量語意檢索（索引的檢查與重建見 [向量索引](docs/vector_index.md)）。
 - **多端自動備份**：內建自動每日備份機制，支援本機多代輪替（Local Retention）、雲端物件同步（Rclone: Google Drive/Dropbox/S3）以及私有 Git 儲庫自動提交。資料庫與 HTML 快照一起備份，用 `scripts/restore_backup.py` 還原，見 [備份與還原](docs/backup_restore.md)。
 
 ---
