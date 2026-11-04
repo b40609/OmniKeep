@@ -55,7 +55,6 @@ class Settings(BaseSettings):
 
     # Radar Engine Configuration
     RADAR_ENABLED: bool = False
-    RADAR_INTERVAL_SECONDS: int = 10800
     GITHUB_TOKEN: str = ""
 
     # Radar cost gate (A-minimal): analyze only the best candidates per cycle;
