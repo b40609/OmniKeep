@@ -1,5 +1,6 @@
 """The Docker image must hold every file the app reads at run time. No Docker needed:
 the Dockerfile's WORKDIR/COPY lines are replayed against the repo."""
+import os
 import shlex
 import shutil
 import subprocess
@@ -67,3 +68,8 @@ def test_runtime_stage_imports_the_app_and_reports_the_version(isolated_runtime)
                          capture_output=True, text=True, timeout=60)
     assert res.returncode == 0, res.stderr
     assert res.stdout.strip() == (REPO / "VERSION").read_text(encoding="utf-8").strip()
+    # The restore command documented for Docker runs inside the image.
+    listing = subprocess.run([sys.executable, "scripts/restore_backup.py", "--list"], cwd=image,
+                             env={**os.environ, "BACKUP_DIR": str(isolated_runtime / "backups")},
+                             capture_output=True, text=True, timeout=60)
+    assert listing.returncode == 0 and "(none)" in listing.stdout, listing.stdout + listing.stderr

@@ -51,6 +51,8 @@ COPY --from=frontend-builder /build/static/dist ./static/dist
 COPY VERSION ./
 COPY app ./app
 COPY run.py ./
+# docker compose run --rm omnikeep python scripts/restore_backup.py --latest (docs/backup_restore.md)
+COPY scripts/restore_backup.py ./scripts/
 
 # Persistent storage mount point for database, HTML snapshots, and rotating backups
 RUN mkdir -p /data/snapshots /data/backups

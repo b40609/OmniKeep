@@ -61,7 +61,7 @@
 
 ### 5. 本地優先與數據主權 (Local-First & Multi-Sink Backup)
 - **高併發 SQLite WAL 架構**：啟用 SQLite WAL 模式與 Unicode61 FTS5 全文索引，毫秒級全文檢索，並支援 sqlite-vec 向量語意檢索。
-- **多端自動備份**：內建自動每日備份機制，支援本機多代輪替（Local Retention）、雲端物件同步（Rclone: Google Drive/Dropbox/S3）以及私有 Git 儲庫自動提交。
+- **多端自動備份**：內建自動每日備份機制，支援本機多代輪替（Local Retention）、雲端物件同步（Rclone: Google Drive/Dropbox/S3）以及私有 Git 儲庫自動提交。資料庫與 HTML 快照一起備份，用 `scripts/restore_backup.py` 還原，見 [備份與還原](docs/backup_restore.md)。
 
 ---
 

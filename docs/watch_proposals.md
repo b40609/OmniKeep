@@ -33,7 +33,7 @@ OmniKeep 不再只是被動收藏雷達：它會**監看你自己機器上的專
 
 ## 備份（第二大腦保險）
 
-`app/backup.py` 每日於 `BACKUP_HOUR` 後自動備份 SQLite（透過線上備份 API，服務不停機），sink 自選：`local`（輪替 zip，預設）／`rclone`（40+ 雲端）／`git`（版本歷史）／`off`。設定見 `.env.example`。
+`app/backup.py` 每日於 `BACKUP_HOUR` 後自動備份 SQLite 與 HTML 快照（資料庫透過線上備份 API，服務不停機），sink 自選：`local`（輪替 zip，預設）／`rclone`（40+ 雲端）／`git`（版本歷史）／`off`。設定見 `.env.example`；還原用 `scripts/restore_backup.py`，步驟見 [backup_restore.md](backup_restore.md)。
 
 ## 相關檔案
 
