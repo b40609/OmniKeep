@@ -11,12 +11,12 @@ export interface AccentOption {
 }
 
 export const ACCENT_OPTIONS: AccentOption[] = [
-  { id: 'blue', label: 'iOS 藍', color: '#0a84ff' },
-  { id: 'violet', label: 'Linear 紫', color: '#5e6ad2' },
-  { id: 'emerald', label: '極客綠', color: '#10b981' },
+  { id: 'blue', label: '藍色', color: '#0065d1' },
+  { id: 'violet', label: '紫色', color: '#4f5bc4' },
+  { id: 'emerald', label: '綠色', color: '#047857' },
   { id: 'amber', label: '琥珀橘', color: '#f59e0b' },
   { id: 'rose', label: '洋紅', color: '#f43f5e' },
-  { id: 'zinc', label: '極簡灰', color: '#71717a' },
+  { id: 'zinc', label: '石墨', color: '#71717a' },
 ]
 
 const theme = useLocalStorage<ThemeMode>('omnikeep-theme', 'dark')
@@ -43,7 +43,7 @@ function applyTheme() {
   if (meta) {
     if (theme.value === 'oled') meta.content = '#000000'
     else if (dark) meta.content = '#111216'
-    else meta.content = '#f2f2f7'
+    else meta.content = '#f4f5f7'
   }
 }
 

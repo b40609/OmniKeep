@@ -7,10 +7,13 @@ retrieve, synthesize, and write back engineering intelligence into OmniKeep's Se
 import sys
 import json
 import uuid
+import sqlite3
 import argparse
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 from mcp.server.fastmcp import FastMCP
 
+from app.config import settings
 from app.database import (
     get_items,
     get_item_by_id,
@@ -24,6 +27,7 @@ from app.database import (
 from app.logging_setup import configure_logging
 from app.pipeline import run_pipeline
 from app.providers import get_primary_provider
+from app.vector import search_hybrid
 
 # Initialize FastMCP Server
 mcp = FastMCP(
@@ -69,6 +73,70 @@ async def search_brain(
 
     output = f"找到 {len(results)} 筆相關情報：\n\n" + "\n\n".join(results)
     output += "\n\n---\n💡 提示：使用 `get_item_architecture(item_id)` 取得 L2 架構規格；使用 `writeback_insight(...)` 可將對話結論寫回大腦。"
+    return output
+
+
+# ── 1b. Hybrid Search Tool (FTS5 + sqlite-vec via RRF) ──────────
+
+@mcp.tool()
+async def hybrid_search_brain(
+    query: str,
+    category: Optional[str] = None,
+    is_starred: Optional[bool] = None,
+    is_read: Optional[bool] = None,
+    limit: int = 5
+) -> str:
+    """
+    Perform advanced Hybrid Search combining SQLite FTS5 keyword matching and
+    vector semantic search (sqlite-vec) using Reciprocal Rank Fusion (RRF).
+    Discovers conceptually related intelligence even when keywords do not match verbatim.
+    """
+    fetch_limit = min(limit * 3, 50)
+    raw_results = await search_hybrid(query=query, limit=fetch_limit)
+
+    filtered = []
+    for item in raw_results:
+        if category and item.get("category_name", "").lower() != category.lower():
+            continue
+        if is_starred is not None and bool(item.get("is_starred")) != is_starred:
+            continue
+        if is_read is not None and bool(item.get("is_read")) != is_read:
+            continue
+        filtered.append(item)
+        if len(filtered) >= limit:
+            break
+
+    if not filtered:
+        return f"在 OmniKeep 大腦中未找到與「{query}」相關的語意情報項目。"
+
+    results = []
+    for item in filtered:
+        status = "已讀" if item.get("is_read") else "待讀"
+        star = " [⭐]" if item.get("is_starred") else ""
+        tags_raw = item.get("tech_tags", [])
+        if isinstance(tags_raw, str):
+            try:
+                tags = ", ".join(json.loads(tags_raw))
+            except Exception:
+                tags = tags_raw
+        elif isinstance(tags_raw, list):
+            tags = ", ".join(tags_raw)
+        else:
+            tags = ""
+
+        rrf = item.get("rrf_score", 0.0)
+        sim = item.get("similarity", 0.0)
+        sim_str = f" · 語意分: {sim:.2f}" if sim > 0 else ""
+
+        results.append(
+            f"### [{item.get('id')}] {item.get('title_l1')}{star}\n"
+            f"- **分類/狀態**: {item.get('category_name')} ({status}){sim_str} · RRF: {rrf}\n"
+            f"- **技術標籤**: #{tags}\n"
+            f"- **白話核心**: {item.get('summary_l1')}"
+        )
+
+    output = f"【混合檢索 (FTS5 + 向量)】找到 {len(results)} 筆相關情報：\n\n" + "\n\n".join(results)
+    output += "\n\n---\n💡 提示：使用 `get_item_architecture(item_id)` 取得 L2 架構規格；使用 `read_sql_query(...)` 進行結構化唯讀查詢。"
     return output
 
 
@@ -483,6 +551,52 @@ async def scan_watch_target(target_id: str = "") -> str:
     return "\n".join(lines)
 
 
+# ── 10b. Read-Only SQL Query Tool ──────────────────────────────
+
+def _read_only_connection() -> sqlite3.Connection:
+    """A connection that cannot write: the file is opened read-only and query_only is on."""
+    db_uri = Path(settings.DATABASE_PATH).resolve().as_uri() + "?mode=ro"
+    conn = sqlite3.connect(db_uri, uri=True, timeout=10.0, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA query_only = ON")
+    return conn
+
+
+@mcp.tool()
+async def read_sql_query(query: str, limit: int = 50) -> str:
+    """
+    Execute a read-only SQL query against omnikeep.db (SELECT, PRAGMA, EXPLAIN, WITH only).
+    Write operations (INSERT, UPDATE, DELETE, DROP, ALTER) are strictly rejected.
+    """
+    clean = query.strip()
+    first_word = clean.split()[0].upper() if clean.split() else ""
+    if first_word not in ("SELECT", "PRAGMA", "EXPLAIN", "WITH"):
+        return "錯誤：僅允許唯讀查詢（SELECT, PRAGMA, EXPLAIN, WITH）。"
+
+    if first_word in ("SELECT", "WITH") and "LIMIT" not in clean.upper():
+        clean = f"{clean} LIMIT {min(limit, 100)}"
+
+    # The first-word check is only a hint: `WITH x AS (...) DELETE ...` and
+    # `PRAGMA user_version = 1` pass it. The connection itself refuses writes.
+    try:
+        conn = _read_only_connection()
+    except sqlite3.Error as e:
+        return f"SQL 執行錯誤: {str(e)}"
+    try:
+        cursor = conn.cursor()
+        cursor.execute(clean)
+        rows = cursor.fetchall()
+        if not rows:
+            return "查詢結果為空 (0 rows)。"
+        results = [dict(row) for row in rows]
+        return json.dumps(results, ensure_ascii=False, indent=2, default=str)
+    except Exception as e:
+        return f"SQL 執行錯誤: {str(e)}"
+    finally:
+        conn.close()
+
+
 # ── 11. Resources ───────────────────────────────────────────────
 
 @mcp.resource("omnikeep://stats")
@@ -490,6 +604,126 @@ async def get_stats_resource() -> str:
     """Returns current real-time counts across Inbox, Starred, Archived, and Total."""
     stats = get_status_counts()
     return json.dumps(stats, ensure_ascii=False, indent=2)
+
+@mcp.resource("omnikeep://schema")
+async def get_schema_resource() -> str:
+    """Returns database schema definition and semantic data dictionary for OmniKeep."""
+    schema_dict = {
+        "database": "omnikeep.db (SQLite WAL mode with FTS5 and sqlite-vec)",
+        "tables": {
+            "items": {
+                "description": "核心知識庫情報項目（文章、影音、技術規格、筆記）",
+                "columns": {
+                    "id": "TEXT PRIMARY KEY - 唯一代碼",
+                    "url": "TEXT UNIQUE - 原始收錄網址",
+                    "source_type": "TEXT - 來源類型 (youtube, bilibili, web, reel, twitter, note)",
+                    "category_name": "TEXT - 所屬分類 (預設 'Inbox')",
+                    "title_l1": "TEXT - L1 直擊本質的精煉標題",
+                    "summary_l1": "TEXT - L1 白話核心痛點與解法 (1-2 句話)",
+                    "tech_tags": "TEXT (JSON Array) - 技術標籤清單",
+                    "deep_analysis": "TEXT - L2 深度技術架構、規格解構與詳細 Markdown",
+                    "content_raw": "TEXT - 清洗後的原始純淨文本或字幕全文",
+                    "author": "TEXT - 作者或頻道名稱",
+                    "published_date": "TEXT - 原文發布日期",
+                    "is_starred": "INTEGER - 1: ⭐ 星標收藏, 0: 一般未加星",
+                    "is_read": "INTEGER - 1: 已封存/已讀 (Archive), 0: 待讀 (Inbox)",
+                    "origin": "TEXT - 'manual': 手動收錄, 'radar': 情報雷達主動捕獲",
+                    "analysis_status": "TEXT - 'done': 解析完成, 'processing', 'failed'",
+                    "created_at": "DATETIME - 建立時間",
+                    "updated_at": "DATETIME - 更新時間"
+                }
+            },
+            "categories": {
+                "description": "知識庫分類清單",
+                "columns": {
+                    "id": "INTEGER PRIMARY KEY",
+                    "name": "TEXT UNIQUE - 分類名稱",
+                    "icon": "TEXT - UI 圖標名稱",
+                    "sort_order": "INTEGER - 排序權重"
+                }
+            },
+            "proposals": {
+                "description": "自主情報雷達產生的決策與架構提案",
+                "columns": {
+                    "id": "TEXT PRIMARY KEY",
+                    "item_id": "TEXT - 關聯的情報項目 ID",
+                    "target_id": "TEXT - 關聯的監控目標 ID",
+                    "proposal_type": "TEXT - 'risk': 風險警示, 'architectural': 架構升級建議",
+                    "impact": "REAL (0-10) - 影響力評分",
+                    "confidence": "REAL (0-10) - 信心度",
+                    "effort": "REAL (0-10) - 實施成本",
+                    "status": "TEXT - 'pending': 待決策, 'approved': 已採納, 'dismissed': 已忽略",
+                    "created_at": "DATETIME"
+                }
+            },
+            "watch_targets": {
+                "description": "自主監看目標目錄與程式庫",
+                "columns": {
+                    "id": "TEXT PRIMARY KEY",
+                    "name": "TEXT - 監控目標名稱",
+                    "path": "TEXT - 本機路徑",
+                    "preset": "TEXT - 監控預設策略 ('balanced', 'strict')",
+                    "is_active": "INTEGER - 1: 啟用中, 0: 暫停",
+                    "last_scan_at": "TEXT - 最後掃描時間",
+                    "fingerprint_version": "TEXT - 程式庫指紋版本"
+                }
+            },
+            "items_fts": {
+                "description": "SQLite FTS5 全文索引虛擬表 (支援 unicode61 分詞)",
+                "indexed_columns": ["title_l1", "summary_l1", "tech_tags", "deep_analysis", "content_raw"]
+            }
+        }
+    }
+    return json.dumps(schema_dict, ensure_ascii=False, indent=2)
+
+
+@mcp.resource("omnikeep://golden-queries")
+async def get_golden_queries_resource() -> str:
+    """Returns verified golden Text-to-SQL query templates (Few-Shot examples) for AI Agents."""
+    golden_queries = [
+        {
+            "scenario": "查詢待讀 (Inbox) 且已加星標 (Starred) 的高價值精華情報",
+            "sql": "SELECT id, title_l1, category_name, tech_tags, summary_l1, created_at FROM items WHERE is_read = 0 AND is_starred = 1 ORDER BY created_at DESC LIMIT 10;"
+        },
+        {
+            "scenario": "統計各分類下的情報總數、待讀數與星標數",
+            "sql": "SELECT category_name, COUNT(*) AS total_count, SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) AS unread_count, SUM(CASE WHEN is_starred = 1 THEN 1 ELSE 0 END) AS starred_count FROM items GROUP BY category_name ORDER BY total_count DESC;"
+        },
+        {
+            "scenario": "依特定技術標籤（例如 AI、Agent 或 Quant）篩選情報",
+            "sql": "SELECT id, title_l1, category_name, tech_tags, summary_l1 FROM items WHERE tech_tags LIKE '%Agent%' OR tech_tags LIKE '%AI%' ORDER BY created_at DESC LIMIT 10;"
+        },
+        {
+            "scenario": "查詢最近 7 天由情報雷達（Radar）自主捕獲的項目",
+            "sql": "SELECT id, title_l1, category_name, origin, created_at FROM items WHERE origin = 'radar' AND created_at >= datetime('now', '-7 days') ORDER BY created_at DESC LIMIT 10;"
+        },
+        {
+            "scenario": "查詢待決策 (pending) 且影響力大於 7 分的高優先級提案",
+            "sql": "SELECT p.id, p.proposal_type, p.impact, p.confidence, p.effort, i.title_l1 FROM proposals p JOIN items i ON p.item_id = i.id WHERE p.status = 'pending' AND p.impact >= 7.0 ORDER BY p.impact DESC LIMIT 10;"
+        },
+        {
+            "scenario": "統計各情報來源（YouTube, Bilibili, Web 等）的數量與百分比佔比",
+            "sql": "SELECT source_type, COUNT(*) AS count, ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM items), 1) AS percentage FROM items GROUP BY source_type ORDER BY count DESC;"
+        },
+        {
+            "scenario": "使用 SQLite FTS5 全文索引檢索特定關鍵字",
+            "sql": "SELECT i.id, i.title_l1, i.category_name, i.summary_l1 FROM items_fts fts JOIN items i ON fts.rowid = i.rowid WHERE items_fts MATCH 'FastAPI OR MCP' ORDER BY rank LIMIT 10;"
+        },
+        {
+            "scenario": "查詢目前活躍的監看目標及其指紋更新狀態",
+            "sql": "SELECT id, name, target_type, path, preset, last_scan_at, fingerprint_version FROM watch_targets WHERE is_active = 1 ORDER BY last_scan_at DESC;"
+        },
+        {
+            "scenario": "查看最近的備份紀錄與檔案大小 (MB)",
+            "sql": "SELECT id, sink, status, file_path, ROUND(size_bytes / 1024.0 / 1024.0, 2) AS size_mb, created_at FROM backup_runs ORDER BY created_at DESC LIMIT 10;"
+        },
+        {
+            "scenario": "查詢特定情報項目的關聯引用 (Citations)",
+            "sql": "SELECT c.id, c.target_name, c.target_canonical_url, c.mention_context FROM item_citations c WHERE c.source_parent_id = 'YOUR_ITEM_ID';"
+        }
+    ]
+    return json.dumps(golden_queries, ensure_ascii=False, indent=2)
+
 
 @mcp.resource("omnikeep://categories")
 async def get_categories_resource() -> str:

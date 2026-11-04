@@ -575,7 +575,11 @@ def get_items(
         if is_read is not None:
             sql += " AND i.is_read = ?"
             params.append(1 if is_read else 0)
-        if origin:
+        if origin == "curated":
+            sql += " AND (i.origin != 'radar' OR i.is_starred = 1)"
+        elif origin == "radar":
+            sql += " AND i.origin = 'radar'"
+        elif origin and origin != "all":
             sql += " AND i.origin = ?"
             params.append(origin)
         sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
@@ -607,7 +611,11 @@ def get_items(
             if is_read is not None:
                 fallback_sql += " AND i.is_read = ?"
                 f_params.append(1 if is_read else 0)
-            if origin:
+            if origin == "curated":
+                fallback_sql += " AND (i.origin != 'radar' OR i.is_starred = 1)"
+            elif origin == "radar":
+                fallback_sql += " AND i.origin = 'radar'"
+            elif origin and origin != "all":
                 fallback_sql += " AND i.origin = ?"
                 f_params.append(origin)
             fallback_sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
@@ -632,7 +640,11 @@ def get_items(
         if is_read is not None:
             sql += " AND i.is_read = ?"
             params.append(1 if is_read else 0)
-        if origin:
+        if origin == "curated":
+            sql += " AND (i.origin != 'radar' OR i.is_starred = 1)"
+        elif origin == "radar":
+            sql += " AND i.origin = 'radar'"
+        elif origin and origin != "all":
             sql += " AND i.origin = ?"
             params.append(origin)
         sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
@@ -702,16 +714,18 @@ def delete_item(item_id: str) -> bool:
 def get_status_counts() -> Dict[str, int]:
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM items WHERE is_read = 0")
+    cursor.execute("SELECT COUNT(*) FROM items WHERE is_read = 0 AND (origin != 'radar' OR is_starred = 1)")
     inbox = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM items WHERE is_starred = 1")
     starred = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM items WHERE is_read = 1")
     archived = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM items WHERE origin = 'radar' AND is_read = 0 AND is_starred = 0")
+    radar = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM items")
     total = cursor.fetchone()[0]
     conn.close()
-    return {"inbox": inbox, "starred": starred, "archived": archived, "total": total}
+    return {"inbox": inbox, "starred": starred, "archived": archived, "radar": radar, "total": total}
 
 # ── Radar Sources & Recommender DAO ──────────────────────────
 
@@ -1074,10 +1088,14 @@ def get_latest_radar_digests(limit: int = 10) -> List[Dict[str, Any]]:
 # ── Entity Fan-out & Citations DAO ──────────────────────────
 
 def normalize_canonical_url(url: str) -> str:
-    """Normalize project/repo URLs (strip trailing slashes, .git, fragments, params, lower-case host/repo)"""
+    """Normalize project/repo URLs (strip trailing slashes, .git, fragments, params, comments, lower-case host/repo)"""
     if not url:
         return ""
     clean = url.strip()
+    # Extract leading pure URL if text contains embedded comments or trailing annotations
+    url_match = re.search(r'https?://[^\s()<>"]+', clean)
+    if url_match:
+        clean = url_match.group(0)
     # Strip URL fragments and query params
     if "#" in clean:
         clean = clean.split("#", 1)[0]
@@ -1093,6 +1111,14 @@ def normalize_canonical_url(url: str) -> str:
         owner = m.group(1).lower()
         repo = m.group(2).lower()
         return f"https://github.com/{owner}/{repo}"
+
+    # Specific Threads URL normalization: https://www.threads.net/@user/post/id
+    m_threads = re.match(r'^https?://(?:www\.)?threads\.(?:net|com)/(@[^/]+)/post/([^/?#]+)', clean, re.IGNORECASE)
+    if m_threads:
+        user_slug = m_threads.group(1).lower()
+        post_id = m_threads.group(2)
+        return f"https://www.threads.net/{user_slug}/post/{post_id}"
+
     return clean
 
 def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
@@ -1250,6 +1276,147 @@ def get_sub_entities_for_parent(source_parent_id: str) -> List[Dict[str, Any]]:
             r["tech_tags"] = []
     return rows
 
+
+def get_related_items(item_id: str, limit: int = 4) -> List[Dict[str, Any]]:
+    """Find semantically related items in the knowledge base using vector similarity.
+    Falls back to tag/keyword matching if embeddings are absent.
+    """
+    candidates: List[Dict[str, Any]] = []
+    try:
+        from app.vector import get_item_embedding, search_similar_items
+        emb = get_item_embedding(item_id)
+        if emb:
+            sim_results = search_similar_items(emb, limit=limit + 3, min_similarity=0.35)
+            for r in sim_results:
+                c_id = r["item_id"]
+                if str(c_id) == str(item_id):
+                    continue
+                it = get_item_by_id(c_id)
+                if it:
+                    candidates.append({
+                        "id": it["id"],
+                        "title_l1": it["title_l1"],
+                        "summary_l1": it["summary_l1"],
+                        "category_name": it.get("category_name", "Inbox"),
+                        "source_type": it.get("source_type", "web"),
+                        "tech_tags": it.get("tech_tags", []),
+                        "similarity": r["similarity"],
+                        "relation_type": "semantic"
+                    })
+                if len(candidates) >= limit:
+                    break
+    except Exception as e:
+        pass
+
+    # Fallback / supplement with tag overlap
+    if len(candidates) < limit:
+        curr = get_item_by_id(item_id)
+        tags = curr.get("tech_tags") if curr else []
+        existing_ids = {str(c["id"]) for c in candidates} | {str(item_id)}
+        if tags and isinstance(tags, list):
+            for tag in tags[:3]:
+                if len(candidates) >= limit:
+                    break
+                items_with_tag = get_items(category=None, query=str(tag), limit=5)
+                for it in items_with_tag:
+                    if str(it["id"]) not in existing_ids:
+                        candidates.append({
+                            "id": it["id"],
+                            "title_l1": it["title_l1"],
+                            "summary_l1": it["summary_l1"],
+                            "category_name": it.get("category_name", "Inbox"),
+                            "source_type": it.get("source_type", "web"),
+                            "tech_tags": it.get("tech_tags", []),
+                            "similarity": 0.5,
+                            "relation_type": "tag_overlap"
+                        })
+                        existing_ids.add(str(it["id"]))
+                        if len(candidates) >= limit:
+                            break
+
+    return candidates[:limit]
+
+
+def get_item_knowledge_graph(item_id: str) -> Dict[str, Any]:
+    """Assemble an entity knowledge graph of nodes and edges surrounding the given item."""
+    curr = get_item_by_id(item_id)
+    if not curr:
+        return {"nodes": [], "edges": []}
+
+    nodes = [{
+        "id": str(curr["id"]),
+        "label": curr["title_l1"],
+        "type": "center",
+        "category": curr.get("category_name", "Inbox"),
+        "url": curr.get("url", "")
+    }]
+    edges = []
+    seen_nodes = {str(curr["id"])}
+
+    # 1. Backlinks (parents citing this item)
+    backlinks = get_citations_for_target(item_id)
+    for b in backlinks:
+        pid = str(b["parent_id"])
+        if pid not in seen_nodes:
+            nodes.append({
+                "id": pid,
+                "label": b.get("parent_title") or "引用來源",
+                "type": "backlink",
+                "category": b.get("parent_source_type", "web"),
+                "url": b.get("parent_url", "")
+            })
+            seen_nodes.add(pid)
+        edges.append({
+            "source": pid,
+            "target": str(curr["id"]),
+            "relation": "cites",
+            "context": b.get("mention_context", "")
+        })
+
+    # 2. Outbound entities (sub-projects mentioned)
+    sub_ents = get_sub_entities_for_parent(item_id)
+    for sub in sub_ents:
+        target_id = sub.get("target_item_id")
+        sub_id = str(target_id) if target_id else f"ent-{sub.get('citation_id')}"
+        if sub_id not in seen_nodes:
+            nodes.append({
+                "id": sub_id,
+                "label": sub.get("target_name") or sub.get("title_l1") or "實體項目",
+                "type": "entity",
+                "category": sub.get("category_name", "實體"),
+                "url": sub.get("target_canonical_url", ""),
+                "is_internal": target_id is not None
+            })
+            seen_nodes.add(sub_id)
+        edges.append({
+            "source": str(curr["id"]),
+            "target": sub_id,
+            "relation": "mentions",
+            "context": sub.get("mention_context", "")
+        })
+
+    # 3. Semantic neighbors (vector similarity)
+    related = get_related_items(item_id, limit=3)
+    for rel in related:
+        rid = str(rel["id"])
+        if rid not in seen_nodes:
+            nodes.append({
+                "id": rid,
+                "label": rel["title_l1"],
+                "type": "semantic",
+                "category": rel.get("category_name", "Inbox"),
+                "similarity": rel.get("similarity", 0.0)
+            })
+            seen_nodes.add(rid)
+        edges.append({
+            "source": str(curr["id"]),
+            "target": rid,
+            "relation": "similar",
+            "weight": rel.get("similarity", 0.0)
+        })
+
+    return {"nodes": nodes, "edges": edges}
+
 # ── Ingest Tasks DAO (Hoarder Pattern / Persistent Queue) ──────
 
 # Schema-preserving completion outbox: ingestion remains 'completed' while
@@ -1396,6 +1563,12 @@ def claim_next_task() -> Optional[Dict[str, Any]]:
             WHERE id = (
                 SELECT id FROM ingest_tasks
                 WHERE status = 'queued'
+                  AND (
+                      source != 'telegram'
+                      OR chat_id IS NULL
+                      OR message_id IS NOT NULL
+                      OR datetime(created_at) <= datetime('now', '-5 seconds')
+                  )
                 ORDER BY created_at ASC
                 LIMIT 1
             )
@@ -1650,13 +1823,14 @@ def get_recent_taste_signals(days: int = 7) -> Dict[str, Any]:
     """, (f"-{days} days",))
     event_counts = {r["event_type"]: r["c"] for r in cursor.fetchall()}
 
-    # 2. Positively engaged items (starred or boosted)
+    # 2. Positively engaged items (starred or boosted) - Zero pollution for professional profile
     cursor.execute("""
         SELECT DISTINCT i.id, i.title_l1, i.summary_l1, i.tech_tags, i.category_name, i.source_type
         FROM items i
         LEFT JOIN behavior_events b ON b.item_id = i.id
         WHERE (i.is_starred = 1 OR b.event_type IN ('swipe_star', 'boost', 'open_snapshot'))
           AND julianday(i.created_at) > julianday('now', ?)
+          AND (i.category_name IS NULL OR i.category_name NOT IN ('生活娛樂', '迷因語錄', '美食', '旅遊', '隔離區'))
         ORDER BY i.created_at DESC LIMIT 20
     """, (f"-{days} days",))
     positive_items = []
@@ -1675,6 +1849,7 @@ def get_recent_taste_signals(days: int = 7) -> Dict[str, Any]:
         JOIN items i ON b.item_id = i.id
         WHERE b.event_type IN ('dampen', 'mute', 'swipe_down')
           AND julianday(b.created_at) > julianday('now', ?)
+          AND (i.category_name IS NULL OR i.category_name NOT IN ('生活娛樂', '迷因語錄', '美食', '旅遊', '隔離區'))
         ORDER BY b.created_at DESC LIMIT 15
     """, (f"-{days} days",))
     negative_items = []
@@ -2043,6 +2218,95 @@ def get_behavior_stats(days: int = 7) -> Dict[str, Any]:
     total = cursor.fetchone()["c"]
     conn.close()
     return {"total_events": total, "window_days": days, "by_type": by_type}
+
+def get_daily_review_deck(limit: int = 10) -> List[Dict[str, Any]]:
+    """Curated daily review deck (10 cards):
+    1. Unread high-scoring candidates (manual & radar, un-swiped).
+    2. Spaced repetition: resurface quality past bookmarks from 7, 30, 90 days ago.
+    3. Blended through taste rank_deck with exploration interleaving.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 1. Fetch unread candidates (up to 30 candidates to rank)
+    cursor.execute("""
+        SELECT i.* FROM items i
+        WHERE i.is_read = 0
+          AND i.analysis_status != 'pending'
+          AND NOT EXISTS (
+              SELECT 1 FROM behavior_events e
+              WHERE e.item_id = i.id AND e.event_type IN ('swipe_up','swipe_down','swipe_star'))
+          AND NOT EXISTS (
+              SELECT 1 FROM behavior_events e
+              WHERE e.item_id = i.id AND e.event_type = 'snooze'
+                AND julianday(e.created_at) > julianday('now', '-1 day'))
+        ORDER BY i.created_at DESC
+        LIMIT 30
+    """)
+    unread_rows = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        try:
+            d["tech_tags"] = json.loads(d["tech_tags"])
+        except Exception:
+            d["tech_tags"] = []
+        d["deck_type"] = "unread"
+        unread_rows.append(d)
+
+    # 2. Fetch spaced repetition resurfacing candidates (7, 30, 90 days ago)
+    cursor.execute("""
+        SELECT i.*,
+               CASE
+                 WHEN julianday('now') - julianday(i.created_at) BETWEEN 5 AND 14 THEN '7d'
+                 WHEN julianday('now') - julianday(i.created_at) BETWEEN 25 AND 35 THEN '30d'
+                 WHEN julianday('now') - julianday(i.created_at) BETWEEN 80 AND 100 THEN '90d'
+                 ELSE 'past'
+               END as age_bucket,
+               ROUND(julianday('now') - julianday(i.created_at), 1) as age_days
+        FROM items i
+        WHERE (i.is_starred = 1 OR i.is_read = 1)
+          AND julianday('now') - julianday(i.created_at) >= 5
+          AND NOT EXISTS (
+              SELECT 1 FROM behavior_events e
+              WHERE e.item_id = i.id
+                AND julianday(e.created_at) > julianday('now', '-7 days'))
+        ORDER BY i.is_starred DESC, RANDOM()
+        LIMIT 10
+    """)
+    resurface_rows = []
+    for r in cursor.fetchall():
+        d = dict(r)
+        try:
+            d["tech_tags"] = json.loads(d["tech_tags"])
+        except Exception:
+            d["tech_tags"] = []
+        d["deck_type"] = "resurface"
+        d["is_resurfaced"] = True
+        bucket = d.get("age_bucket")
+        days = int(d.get("age_days", 7))
+        if bucket == "7d":
+            d["resurfaced_reason"] = "🕰️ 7天前溫故知新"
+        elif bucket == "30d":
+            d["resurfaced_reason"] = "🕰️ 30天前歷史重現"
+        elif bucket == "90d":
+            d["resurfaced_reason"] = "🕰️ 90天前經典回顧"
+        else:
+            d["resurfaced_reason"] = f"🕰️ {days}天前歷史收藏"
+        resurface_rows.append(d)
+
+    conn.close()
+
+    from app.watch.taste import rank_deck
+    ranked_unread = rank_deck(unread_rows, exploration_ratio=0.2)
+    n_resurface = min(len(resurface_rows), 3)
+    picked_resurface = resurface_rows[:n_resurface]
+
+    final_deck = ranked_unread[:max(0, limit - len(picked_resurface))]
+    for card in picked_resurface:
+        pos = min(len(final_deck), 2 if len(final_deck) >= 2 else len(final_deck))
+        final_deck.insert(pos, card)
+
+    return final_deck[:limit]
 
 def get_swipe_deck(limit: int = 10) -> List[Dict[str, Any]]:
     """Un-acted radar items, newest first.

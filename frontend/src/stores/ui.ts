@@ -15,7 +15,7 @@ export const useUiStore = defineStore('ui', () => {
   // the list and here, so mutations are synced into both copies by id.
   const activeItem = ref<Item | null>(null)
   const detailTab = ref<ReaderTab>('analysis')
-  const readerFontSize = useLocalStorage('omnikeep-reader-font', 15)
+  const readerFontSize = useLocalStorage('omnikeep-reader-font', 16)
   const readerLineHeight = useLocalStorage('omnikeep-reader-lineh', 1.8)
   const readerWidth = useLocalStorage('omnikeep-reader-width', 720)
   const focusMode = ref(false)
@@ -31,6 +31,9 @@ export const useUiStore = defineStore('ui', () => {
   const showImportModal = ref(false)
   const showDeckModal = ref(false)
   const showPushModal = ref(false)
+  const showDailyDeckModal = ref(false)
+  const showBrainModal = ref(false)
+  const showCommandPalette = ref(false)
 
   // Ingest
   const isIngesting = ref(false)
@@ -39,6 +42,7 @@ export const useUiStore = defineStore('ui', () => {
     sidebarOpen, sidebarMobileOpen,
     activeItem, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
     showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal, showDeckModal, showPushModal,
+    showDailyDeckModal, showBrainModal, showCommandPalette,
     watchTab,
     isIngesting,
   }

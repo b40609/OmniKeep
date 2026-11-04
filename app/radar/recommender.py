@@ -52,14 +52,14 @@ def score_item_detailed(tags: List[str], tier: int = 2, is_exploration: bool = F
             scores.append(w)
 
     if blocked_tag:
-        reasons.append(f"🔇 命中靜音標籤「{blocked_tag}」")
+        reasons.append(f"排除：符合靜音標籤「{blocked_tag}」")
         base_score = -999.0
     else:
         # Max + average hybrid to emphasize high-interest tags without over-inflating long lists
         base_score = 0.6 * max(scores) + 0.4 * (sum(scores) / len(scores)) if scores else 1.0
         hot = sorted(((t, w) for t, w in tag_weights.items() if w > 1.0), key=lambda x: -x[1])[:2]
         for t, w in hot:
-            reasons.append(f"🏷️ 你對「{t}」的權重 {w:g}")
+            reasons.append(f"標籤匹配：「{t}」（權重 {w:g}）")
 
     tier_multipliers = {1: 1.25, 2: 1.0, 3: 0.75}
     tier_mult = tier_multipliers.get(tier, 1.0)
@@ -69,13 +69,13 @@ def score_item_detailed(tags: List[str], tier: int = 2, is_exploration: bool = F
         final_score = round(base_score * tier_mult, 3)
 
     if tier == 1:
-        reasons.append("📡 Tier 1 官方來源 ×1.25")
+        reasons.append("官方訊源加權 (Tier 1 ×1.25)")
     elif tier == 3:
-        reasons.append("📊 Tier 3 聚合來源 ×0.75")
+        reasons.append("聚合訊源降權 (Tier 3 ×0.75)")
     if is_exploration:
         reasons.append("🧭 探索卡（避免同溫層）")
     if not reasons:
-        reasons.append("🆕 尚無互動訊號，預設權重")
+        reasons.append("基準預設權重")
 
     return {
         "score": final_score,

@@ -165,9 +165,9 @@ async def _propose(item):
         return None
 
     card_title = (
-        f"🔗 提案：{target_module} ⟷ {item_title}"
+        f"提案：{target_module} ⟷ {item_title}"
         if target_module and target_module not in ("全專案架構", "架構待確認")
-        else f"🔗 提案：{item_title} ⟷ {target['name']}"
+        else f"提案：{item_title} ⟷ {target['name']}"
     )
     card_summary = f"{verdict}。模組：{target_module or target['name']}｜依據：{external_evidence}"
     deep_analysis = redact_text(

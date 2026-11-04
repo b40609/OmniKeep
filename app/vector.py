@@ -1,13 +1,14 @@
 """
 OmniKeep Vector Search & Embedding Engine (sqlite-vec & Hybrid RRF).
 Provides fast local vector retrieval with sqlite-vec extension and pure numpy fallback.
-Supports OpenAI text-embedding-3-small (dim 256) and deterministic local projections.
+Supports local Ollama embeddinggemma-2, OpenAI-compatible endpoints (dim 256) and deterministic local projections.
 """
 
 import hashlib
 import json
 import logging
 import math
+import os
 import re
 import struct
 from contextlib import closing
@@ -144,13 +145,62 @@ def embeddings_api_url() -> str:
     return f"{settings.OPENAI_BASE_URL.rstrip('/')}/embeddings"
 
 
-async def generate_embedding_with_model(text: str) -> Tuple[List[float], str]:
+def remote_embedding_model() -> str:
+    """Model name sent to the OpenAI-compatible endpoint. embeddinggemma-2 only
+    exists on the local Ollama runner, so the cloud fallback uses OpenAI's model."""
+    model = settings.EMBEDDING_MODEL
+    return "text-embedding-3-small" if model == "embeddinggemma-2" else model
+
+
+def ollama_embedding_enabled() -> bool:
+    """The local Ollama runner is tried first unless OLLAMA_BASE_URL is blank.
+    Unit tests (OMNIKEEP_TESTING=1) never reach a real runner on this machine."""
+    return bool((settings.OLLAMA_BASE_URL or "").strip()) and os.environ.get("OMNIKEEP_TESTING") != "1"
+
+
+def _normalized(vec: List[float], dim: int) -> List[float]:
+    v = np.array(vec[:dim], dtype=np.float32)
+    norm = np.linalg.norm(v)
+    if norm > 1e-9:
+        v /= norm
+    return v.tolist()
+
+
+async def _ollama_embedding(clean_text: str, dim: int, is_query: bool) -> Optional[List[float]]:
+    """embeddinggemma-2 (or EMBEDDING_MODEL) on the local Ollama runner.
+
+    OLLAMA_BASE_URL is the operator's own loopback service, so it does not go
+    through public_http_client (that one refuses local addresses by design).
+    embeddinggemma uses an asymmetric prompt: queries carry a task prefix,
+    documents are embedded as-is. The Matryoshka vector is cut to EMBEDDING_DIM
+    and re-normalised.
+    """
+    prompt_input = f"task: search result | query: {clean_text}" if is_query else clean_text
+    url = f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/embed"
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+            resp = await client.post(url, json={"model": settings.EMBEDDING_MODEL, "input": prompt_input})
+        if resp.status_code == 200:
+            embs = resp.json().get("embeddings") or []
+            if embs and len(embs[0]) >= dim:
+                return _normalized(embs[0], dim)
+            logger.debug("[Vector] Ollama returned no usable %s-dim embedding, checking fallback...", dim)
+        else:
+            logger.debug("[Vector] Ollama embedding returned HTTP %s, checking fallback...", resp.status_code)
+    except Exception as e:
+        logger.debug(f"[Vector] Local Ollama embedding failed ({e}), checking fallback...")
+    return None
+
+
+async def generate_embedding_with_model(text: str, is_query: bool = False) -> Tuple[List[float], str]:
     """Generates an embedding vector and returns (vector, model_label).
 
-    The label is the model that actually produced the vector: the remote
-    EMBEDDING_MODEL on success, LOCAL_EMBEDDING_MODEL for the hashed
-    bag-of-words fallback. Indexing and querying both go through here so
-    both sides always live in the same vector space.
+    Tried in order: the local Ollama runner (EMBEDDING_MODEL, e.g. embeddinggemma-2),
+    the OpenAI-compatible endpoint at OPENAI_BASE_URL, then the hashed
+    bag-of-words fallback. The label is the model that actually produced the
+    vector, so vectors from different spaces are never mistaken for each other.
+    Indexing and querying both go through here; set is_query for search queries.
     """
     dim = int(settings.EMBEDDING_DIM)
     clean_text = clean_embedding_text(text)
@@ -158,8 +208,16 @@ async def generate_embedding_with_model(text: str) -> Tuple[List[float], str]:
     if not clean_text:
         return [0.0] * dim, (settings.EMBEDDING_MODEL if api_key else LOCAL_EMBEDDING_MODEL)
 
+    # 1. Local runner (Ollama, embeddinggemma-2 by default)
+    if ollama_embedding_enabled():
+        vec = await _ollama_embedding(clean_text, dim, is_query)
+        if vec is not None:
+            return vec, settings.EMBEDDING_MODEL
+
+    # 2. OpenAI-compatible endpoint
     if api_key and not getattr(settings, "OMNIKEEP_TESTING", False):
         api_url = embeddings_api_url()
+        remote_model = remote_embedding_model()
         try:
             from app.network import public_http_client
             async with public_http_client(timeout=15.0) as client:
@@ -168,14 +226,14 @@ async def generate_embedding_with_model(text: str) -> Tuple[List[float], str]:
                     headers={"Authorization": f"Bearer {api_key}"},
                     json={
                         "input": clean_text,
-                        "model": settings.EMBEDDING_MODEL,
+                        "model": remote_model,
                         "dimensions": dim
                     }
                 )
                 if resp.status_code == 200:
                     data = resp.json()
                     vec = data["data"][0]["embedding"]
-                    return list(vec[:dim]), settings.EMBEDDING_MODEL
+                    return list(vec[:dim]), remote_model
                 logger.warning(
                     "[Vector] Embedding request to %s returned HTTP %s, using local projection: %s",
                     api_url, resp.status_code, (getattr(resp, "text", "") or "")[:200],
@@ -183,13 +241,14 @@ async def generate_embedding_with_model(text: str) -> Tuple[List[float], str]:
         except Exception as e:
             logger.warning(f"[Vector] Embedding request to {api_url} failed ({e}), using local projection.")
 
+    # 3. Deterministic fallback
     return _deterministic_local_embedding(clean_text, dim), LOCAL_EMBEDDING_MODEL
 
 
-async def generate_embedding(text: str) -> List[float]:
-    """Generates an embedding vector for the text using the configured
-    OpenAI-compatible endpoint, or the local projection as fallback."""
-    vec, _model = await generate_embedding_with_model(text)
+async def generate_embedding(text: str, is_query: bool = False) -> List[float]:
+    """Generates an embedding vector for the text (local Ollama, the configured
+    OpenAI-compatible endpoint, or the local projection as fallback)."""
+    vec, _model = await generate_embedding_with_model(text, is_query=is_query)
     return vec
 
 
@@ -262,10 +321,13 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
 def search_similar_items(
     query_vector: List[float],
     limit: int = 10,
-    min_similarity: float = 0.3
+    min_similarity: float = 0.3,
+    model: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Search for items similar to query_vector using sqlite-vec MATCH or numpy fallback.
+    With `model`, only vectors labelled with that model are compared: vectors from
+    another model live in another space and their similarity means nothing.
     Returns: list of dicts with item_id, similarity, distance.
     """
     dim = len(query_vector)
@@ -277,14 +339,28 @@ def search_similar_items(
         used_vec = False
         if has_vec:
             try:
-                # sqlite-vec MATCH query
-                cursor = conn.execute("""
+                # sqlite-vec MATCH query; vec_items has no model column, so with a
+                # model filter fetch more neighbours and drop the other models after.
+                k = limit * 2 if model is None else limit * 8
+                rows = conn.execute("""
                     SELECT item_id, distance
                     FROM vec_items
                     WHERE embedding MATCH ? AND k = ?
                     ORDER BY distance ASC
-                """, (packed, limit * 2))
-                for r in cursor.fetchall():
+                """, (packed, k)).fetchall()
+                allowed = None
+                if model is not None and rows:
+                    ids = [r["item_id"] for r in rows]
+                    placeholders = ",".join("?" * len(ids))
+                    allowed = {
+                        r["item_id"] for r in conn.execute(
+                            f"SELECT item_id FROM item_embeddings WHERE model = ? AND item_id IN ({placeholders})",
+                            (model, *ids),
+                        ).fetchall()
+                    }
+                for r in rows:
+                    if allowed is not None and r["item_id"] not in allowed:
+                        continue
                     dist = float(r["distance"])
                     # Approximate cosine similarity from cosine distance: sim = 1.0 - dist
                     sim = max(0.0, round(1.0 - dist, 4))
@@ -301,7 +377,12 @@ def search_similar_items(
 
         if not used_vec or not results:
             # Fallback: numpy scan over item_embeddings
-            cursor = conn.execute("SELECT item_id, embedding, dim FROM item_embeddings")
+            if model is None:
+                cursor = conn.execute("SELECT item_id, embedding, dim FROM item_embeddings")
+            else:
+                cursor = conn.execute(
+                    "SELECT item_id, embedding, dim FROM item_embeddings WHERE model = ?", (model,)
+                )
             candidates = []
             for r in cursor.fetchall():
                 try:
@@ -348,25 +429,27 @@ def _warn_if_index_model_mismatch(query_model: str) -> None:
     )
 
 
-async def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5) -> List[Dict[str, Any]]:
-    """
-    Hybrid Search combining keyword search (FTS) and vector semantic search via Reciprocal Rank Fusion (RRF).
-    """
-    from app.database import get_items
-
-    # 1. Lexical search (FTS)
-    fts_items = get_items(query=query, limit=limit * 2)
+def _merge_hybrid_results(
+    fts_items: List[Dict[str, Any]],
+    q_vec: List[float],
+    limit: int = 10,
+    vector_weight: float = 0.5,
+    model: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Reciprocal Rank Fusion of FTS ranks and vector ranks. An all-zero query
+    vector (empty text) carries no meaning, so ranking then falls back to FTS."""
     fts_ranks = {item["id"]: idx + 1 for idx, item in enumerate(fts_items)}
+    has_valid_vector = any(v != 0.0 for v in q_vec)
 
-    # 2. Vector search: same embedding path as indexing (app.pipeline), so the
-    #    query vector is in the same space as the stored item vectors.
-    q_vec, q_model = await generate_embedding_with_model(query)
-    _warn_if_index_model_mismatch(q_model)
-    vec_results = search_similar_items(q_vec, limit=limit * 2, min_similarity=0.1)
-    vec_ranks = {r["item_id"]: idx + 1 for idx, r in enumerate(vec_results)}
-    vec_sims = {r["item_id"]: r["similarity"] for r in vec_results}
+    if has_valid_vector:
+        vec_results = search_similar_items(q_vec, limit=limit * 2, min_similarity=0.1, model=model)
+        vec_ranks = {r["item_id"]: idx + 1 for idx, r in enumerate(vec_results)}
+        vec_sims = {r["item_id"]: r["similarity"] for r in vec_results}
+    else:
+        vec_ranks = {}
+        vec_sims = {}
+        vector_weight = 0.0
 
-    # 3. Reciprocal Rank Fusion (RRF)
     all_ids = set(fts_ranks.keys()) | set(vec_ranks.keys())
     if not all_ids:
         return []
@@ -394,3 +477,20 @@ async def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5)
 
     scored_items.sort(key=lambda x: x["rrf_score"], reverse=True)
     return scored_items[:limit]
+
+
+async def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5) -> List[Dict[str, Any]]:
+    """
+    Hybrid Search combining keyword search (FTS) and vector semantic search via Reciprocal Rank Fusion (RRF).
+    """
+    from app.database import get_items
+
+    # 1. Lexical search (FTS)
+    fts_items = get_items(query=query, limit=limit * 2)
+
+    # 2. Vector search: same embedding path as indexing (app.pipeline), so the
+    #    query vector is in the same space as the stored item vectors; only
+    #    vectors labelled with the query's model are compared.
+    q_vec, q_model = await generate_embedding_with_model(query, is_query=True)
+    _warn_if_index_model_mismatch(q_model)
+    return _merge_hybrid_results(fts_items, q_vec, limit=limit, vector_weight=vector_weight, model=q_model)

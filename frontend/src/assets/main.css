@@ -7,46 +7,44 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================
-   DESIGN TOKENS — iOS Human Interface Guidelines
-   Light-first system palette, big radii, hairline separators,
-   frosted-glass surfaces, soft shadows.
+   DESIGN TOKENS — neutral workspace surfaces and paired accent colors
    ============================================================ */
 :root {
   color-scheme: light;
   /* iOS Light */
-  --background: #f2f2f7;            /* systemGroupedBackground */
+  --background: #f4f5f7;            /* systemGroupedBackground */
   --background-subtle: #ffffff;     /* secondarySystemGroupedBackground */
-  --foreground: #000000;            /* label */
+  --foreground: #202124;            /* label */
   --card: #ffffff;
   --card-foreground: #000000;
   --popover: #ffffff;
   --popover-foreground: #000000;
   --muted: rgba(118, 118, 128, 0.12);   /* systemFill quaternary */
   --muted-foreground: #3c3c43;          /* secondaryLabel (99% opacity base) */
-  --subtle-foreground: rgba(60, 60, 67, 0.6);
+  --subtle-foreground: #606069;
   --accent: rgba(118, 118, 128, 0.12);
   --accent-foreground: #000000;
   --border: rgba(60, 60, 67, 0.29);     /* separator */
   --border-strong: rgba(60, 60, 67, 0.36);
   --hairline: rgba(60, 60, 67, 0.18);
   --input: #ffffff;
-  --ring: #007aff;
+  --ring: #0065d1;
 
-  --primary: #007aff;                   /* systemBlue */
-  --primary-hover: #0071eb;
+  --primary: #0065d1;                   /* systemBlue */
+  --primary-hover: #0056b3;
   --primary-foreground: #ffffff;
   --primary-soft: rgba(0, 122, 255, 0.12);
-  --primary-soft-foreground: #007aff;
+  --primary-soft-foreground: #0056b3;
 
-  --success: #34c759;                   /* systemGreen */
+  --success: #176334;                   /* systemGreen */
   --success-soft: rgba(52, 199, 89, 0.14);
-  --warning: #ff9500;                   /* systemOrange */
+  --warning: #92400e;                   /* systemOrange */
   --warning-soft: rgba(255, 149, 0, 0.14);
-  --danger: #ff3b30;                    /* systemRed */
+  --danger: #c4251b;                    /* systemRed */
   --danger-soft: rgba(255, 59, 48, 0.12);
-  --info: #5ac8fa;                      /* systemTeal */
+  --info: #006b91;                      /* systemTeal */
   --info-soft: rgba(90, 200, 250, 0.16);
-  --purple: #af52de;                    /* systemPurple */
+  --purple: #7e339e;                    /* systemPurple */
   --purple-soft: rgba(175, 82, 222, 0.12);
 
   --scrollbar-thumb: rgba(0, 0, 0, 0.18);
@@ -75,8 +73,8 @@
   --popover: #22232a;
   --popover-foreground: #ffffff;
   --muted: rgba(118, 118, 128, 0.24);
-  --muted-foreground: rgba(235, 235, 245, 0.6);
-  --subtle-foreground: rgba(235, 235, 245, 0.4);
+  --muted-foreground: #c0c0ca;
+  --subtle-foreground: #b2b2bd;
   --accent: rgba(118, 118, 128, 0.24);
   --accent-foreground: #ffffff;
   --border: rgba(84, 84, 88, 0.6);
@@ -87,15 +85,15 @@
 
   /* Primary accent colors managed by data-accent */
 
-  --success: #30d158;
+  --success: #69d98a;
   --success-soft: rgba(48, 209, 88, 0.18);
-  --warning: #ff9f0a;
+  --warning: #ffb454;
   --warning-soft: rgba(255, 159, 10, 0.18);
-  --danger: #ff453a;
+  --danger: #ff8a80;
   --danger-soft: rgba(255, 69, 58, 0.16);
-  --info: #64d2ff;
+  --info: #85d9f8;
   --info-soft: rgba(100, 210, 255, 0.18);
-  --purple: #bf5af2;
+  --purple: #d2a2ed;
   --purple-soft: rgba(191, 90, 242, 0.18);
 
   --scrollbar-thumb: rgba(235, 235, 245, 0.2);
@@ -125,7 +123,7 @@
   --popover-foreground: #ffffff;
   --muted: rgba(255, 255, 255, 0.1);
   --muted-foreground: #a1a1aa;
-  --subtle-foreground: #71717a;
+  --subtle-foreground: #a1a1aa;
   --accent: rgba(255, 255, 255, 0.1);
   --accent-foreground: #ffffff;
   --border: rgba(255, 255, 255, 0.16);
@@ -136,15 +134,15 @@
 
   /* Primary accent colors managed by data-accent */
 
-  --success: #30d158;
+  --success: #69d98a;
   --success-soft: rgba(48, 209, 88, 0.18);
-  --warning: #ff9f0a;
+  --warning: #ffb454;
   --warning-soft: rgba(255, 159, 10, 0.18);
-  --danger: #ff453a;
+  --danger: #ff8a80;
   --danger-soft: rgba(255, 69, 58, 0.16);
-  --info: #64d2ff;
+  --info: #85d9f8;
   --info-soft: rgba(100, 210, 255, 0.18);
-  --purple: #bf5af2;
+  --purple: #d2a2ed;
   --purple-soft: rgba(191, 90, 242, 0.18);
 
   --scrollbar-thumb: rgba(255, 255, 255, 0.2);
@@ -160,11 +158,6 @@
   --glass-tint: #18181b;
 }
 
-/* Hide floating aurora blur in OLED mode for true pure black and zero GPU waste */
-.oled .aurora {
-  display: none !important;
-}
-
 /* ============================================================
    Accent Color Palettes (Data-Accent on root/html)
    Rock-solid specificity across Light, Dark, and OLED pure black
@@ -173,111 +166,111 @@
 /* 1. iOS Blue (Default) */
 [data-accent="blue"],
 :root[data-accent="blue"] {
-  --primary: #007aff;
-  --primary-hover: #0071eb;
+  --primary: #0065d1;
+  --primary-hover: #0056b3;
   --primary-foreground: #ffffff;
   --primary-soft: rgba(0, 122, 255, 0.12);
-  --primary-soft-foreground: #007aff;
-  --ring: #007aff;
+  --primary-soft-foreground: #0056b3;
+  --ring: #0065d1;
 }
 :root.dark[data-accent="blue"],
 :root.oled[data-accent="blue"],
 .dark[data-accent="blue"],
 .oled[data-accent="blue"] {
-  --primary: #0a84ff;
-  --primary-hover: #409cff;
-  --primary-foreground: #ffffff;
+  --primary: #78b4ff;
+  --primary-hover: #9ac7ff;
+  --primary-foreground: #101820;
   --primary-soft: rgba(10, 132, 255, 0.18);
-  --primary-soft-foreground: #64aefc;
-  --ring: #0a84ff;
+  --primary-soft-foreground: #9ac7ff;
+  --ring: #78b4ff;
 }
 
 /* 2. Linear Violet */
 [data-accent="violet"],
 :root[data-accent="violet"] {
-  --primary: #5e6ad2;
-  --primary-hover: #4f5bc4;
+  --primary: #4f5bc4;
+  --primary-hover: #414db1;
   --primary-foreground: #ffffff;
   --primary-soft: rgba(94, 106, 210, 0.14);
-  --primary-soft-foreground: #5e6ad2;
-  --ring: #5e6ad2;
+  --primary-soft-foreground: #414db1;
+  --ring: #4f5bc4;
 }
 :root.dark[data-accent="violet"],
 :root.oled[data-accent="violet"],
 .dark[data-accent="violet"],
 .oled[data-accent="violet"] {
-  --primary: #6e79d6;
-  --primary-hover: #828df8;
-  --primary-foreground: #ffffff;
+  --primary: #9da6ef;
+  --primary-hover: #b9c0ff;
+  --primary-foreground: #11131a;
   --primary-soft: rgba(110, 121, 214, 0.22);
-  --primary-soft-foreground: #9ba5ff;
-  --ring: #6e79d6;
+  --primary-soft-foreground: #b9c0ff;
+  --ring: #9da6ef;
 }
 
 /* 3. Emerald Green */
 [data-accent="emerald"],
 :root[data-accent="emerald"] {
-  --primary: #059669;
-  --primary-hover: #047857;
+  --primary: #047857;
+  --primary-hover: #066344;
   --primary-foreground: #ffffff;
   --primary-soft: rgba(5, 150, 105, 0.14);
-  --primary-soft-foreground: #059669;
-  --ring: #059669;
+  --primary-soft-foreground: #066344;
+  --ring: #047857;
 }
 :root.dark[data-accent="emerald"],
 :root.oled[data-accent="emerald"],
 .dark[data-accent="emerald"],
 .oled[data-accent="emerald"] {
-  --primary: #10b981;
-  --primary-hover: #34d399;
-  --primary-foreground: #ffffff;
+  --primary: #34d399;
+  --primary-hover: #6ee7b7;
+  --primary-foreground: #10231b;
   --primary-soft: rgba(16, 185, 129, 0.22);
   --primary-soft-foreground: #6ee7b7;
-  --ring: #10b981;
+  --ring: #34d399;
 }
 
 /* 4. Amber Orange */
 [data-accent="amber"],
 :root[data-accent="amber"] {
-  --primary: #d97706;
-  --primary-hover: #b45309;
+  --primary: #92400e;
+  --primary-hover: #78350f;
   --primary-foreground: #ffffff;
   --primary-soft: rgba(217, 119, 6, 0.14);
-  --primary-soft-foreground: #d97706;
-  --ring: #d97706;
+  --primary-soft-foreground: #78350f;
+  --ring: #92400e;
 }
 :root.dark[data-accent="amber"],
 :root.oled[data-accent="amber"],
 .dark[data-accent="amber"],
 .oled[data-accent="amber"] {
-  --primary: #f59e0b;
-  --primary-hover: #fbbf24;
-  --primary-foreground: #ffffff;
+  --primary: #fbbf24;
+  --primary-hover: #fcd34d;
+  --primary-foreground: #241a0b;
   --primary-soft: rgba(245, 158, 11, 0.22);
   --primary-soft-foreground: #fcd34d;
-  --ring: #f59e0b;
+  --ring: #fbbf24;
 }
 
 /* 5. Rose Red */
 [data-accent="rose"],
 :root[data-accent="rose"] {
-  --primary: #e11d48;
-  --primary-hover: #be123c;
+  --primary: #be123c;
+  --primary-hover: #9f1239;
   --primary-foreground: #ffffff;
   --primary-soft: rgba(225, 29, 72, 0.14);
-  --primary-soft-foreground: #e11d48;
-  --ring: #e11d48;
+  --primary-soft-foreground: #9f1239;
+  --ring: #be123c;
 }
 :root.dark[data-accent="rose"],
 :root.oled[data-accent="rose"],
 .dark[data-accent="rose"],
 .oled[data-accent="rose"] {
-  --primary: #f43f5e;
-  --primary-hover: #fb7185;
-  --primary-foreground: #ffffff;
+  --primary: #fb7185;
+  --primary-hover: #fda4af;
+  --primary-foreground: #291118;
   --primary-soft: rgba(244, 63, 94, 0.22);
   --primary-soft-foreground: #fda4af;
-  --ring: #f43f5e;
+  --ring: #fb7185;
 }
 
 /* 6. Minimalist Zinc */
@@ -288,7 +281,7 @@
   --primary-foreground: #ffffff;
   --primary-soft: rgba(63, 63, 70, 0.14);
   --primary-soft-foreground: #3f3f46;
-  --ring: #52525b;
+  --ring: #3f3f46;
 }
 :root.dark[data-accent="zinc"],
 :root.oled[data-accent="zinc"],
@@ -299,7 +292,7 @@
   --primary-foreground: #09090b;
   --primary-soft: rgba(255, 255, 255, 0.15);
   --primary-soft-foreground: #f4f4f5;
-  --ring: #d4d4d8;
+  --ring: #e4e4e7;
 }
 
 /* ============================================================
@@ -369,16 +362,16 @@ option {
   --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo,
     Consolas, monospace;
 
-  --text-3xs: 0.625rem;
-  --text-3xs--line-height: 0.875rem;
-  --text-2xs: 0.6875rem;
+  --text-3xs: 0.75rem;
+  --text-3xs--line-height: 1rem;
+  --text-2xs: 0.75rem;
   --text-2xs--line-height: 1rem;
 
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-xl: 1.25rem;
-  --radius-2xl: 1.75rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 0.75rem;
 
   --shadow-card: var(--card-shadow);
   --shadow-float: var(--float-shadow);
@@ -407,7 +400,7 @@ option {
   }
   ::selection {
     background: var(--primary);
-    color: #fff;
+    color: var(--primary-foreground);
   }
   :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
     outline: 2px solid var(--ring);
@@ -451,94 +444,55 @@ option {
   padding-bottom: max(0px, env(safe-area-inset-bottom));
 }
 
-/* Frosted glass helper (iOS nav bars / tab bars) */
-.ios-blur {
-  background-color: var(--nav-blur);
-  backdrop-filter: saturate(180%) blur(28px);
-  -webkit-backdrop-filter: saturate(180%) blur(28px);
+/* Compatibility names keep existing dialogs on the same opaque surface. */
+.ios-blur, .glass, .glass-strong, .glass-tint { background: var(--card); }
+.glass, .glass-strong, .glass-tint { border: 1px solid var(--hairline); }
+.glass-strong { box-shadow: var(--float-shadow); }
+@layer components {
+.item-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  color: var(--muted-foreground);
 }
-
-/* ============================================================
-   LIQUID GLASS
-   玻璃面板：半透明底 + 重模糊 + 白色高光邊框
-   ============================================================ */
-.glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--card-shadow), inset 0 1px 0 var(--glass-highlight);
+.item-action:hover, .item-action[data-state="open"] { background: var(--accent); color: var(--foreground); }
+.item-action:disabled { opacity: 0.45; }
+.item-menu {
+  z-index: 80;
+  min-width: 220px;
+  max-width: calc(100vw - 24px);
+  max-height: var(--reka-dropdown-menu-content-available-height);
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--float-shadow);
 }
-.glass-strong {
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(32px) saturate(200%);
-  -webkit-backdrop-filter: blur(32px) saturate(200%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--float-shadow), inset 0 1px 0 var(--glass-highlight);
+.item-menu-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
 }
-/* 輕量玻璃：靠單一父層 blur 供質感，元素本身只加透明白（效能友善） */
-.glass-tint {
-  background: var(--glass-tint);
-  border: 1px solid var(--glass-border);
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
+.item-menu-entry[data-highlighted] {
+  background: var(--accent);
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
-
-/* ============================================================
-   AURORA — 玻璃背後的彩色光暈（讓半透明有內容可透）
-   ============================================================ */
-.aurora {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
 }
-.aurora i {
-  position: absolute;
-  display: block;
-  border-radius: 9999px;
-  filter: blur(90px);
-  opacity: 0.55;
-  will-change: transform;
-}
-.aurora i:nth-child(1) {
-  width: 44vw; height: 44vw; top: -12vw; left: -8vw;
-  background: radial-gradient(circle, #7ab8ff 0%, rgba(122, 184, 255, 0) 70%);
-  animation: drift1 26s ease-in-out infinite alternate;
-}
-.aurora i:nth-child(2) {
-  width: 38vw; height: 38vw; top: 18vh; right: -10vw;
-  background: radial-gradient(circle, #d3b5ff 0%, rgba(211, 181, 255, 0) 70%);
-  animation: drift2 32s ease-in-out infinite alternate;
-}
-.aurora i:nth-child(3) {
-  width: 34vw; height: 34vw; bottom: -10vw; left: 24vw;
-  background: radial-gradient(circle, #a4f3e1 0%, rgba(164, 243, 225, 0) 70%);
-  animation: drift3 24s ease-in-out infinite alternate;
-}
-.aurora i:nth-child(4) {
-  width: 26vw; height: 26vw; bottom: 22vh; right: 18vw;
-  background: radial-gradient(circle, #ffc7e0 0%, rgba(255, 199, 224, 0) 70%);
-  animation: drift1 36s ease-in-out infinite alternate-reverse;
-}
-.dark .aurora i {
-  opacity: 0.3;
-  filter: blur(110px);
-}
-@keyframes drift1 {
-  from { transform: translate(0, 0) scale(1); }
-  to { transform: translate(6vw, 8vh) scale(1.15); }
-}
-@keyframes drift2 {
-  from { transform: translate(0, 0) scale(1.1); }
-  to { transform: translate(-7vw, -6vh) scale(0.95); }
-}
-@keyframes drift3 {
-  from { transform: translate(0, 0) scale(0.95); }
-  to { transform: translate(5vw, -7vh) scale(1.12); }
-}
+input, textarea { caret-color: var(--primary); }
 @media (prefers-reduced-motion: reduce) {
-  .aurora i { animation: none; }
+  .swipe-content { transition: none !important; }
 }
 
 /* ============================================================
@@ -654,4 +608,84 @@ option {
 .prose-reader img {
   max-width: 100%;
   border-radius: var(--radius-lg);
+}
+
+
+/* ============================================================
+   Prism.js Syntax Highlighting Tokens
+   ============================================================ */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: #71717a;
+  font-style: italic;
+}
+.token.punctuation {
+  color: #a1a1aa;
+}
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol {
+  color: #f59e0b;
+}
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin {
+  color: #10b981;
+}
+.token.operator,
+.token.entity,
+.token.url {
+  color: #38bdf8;
+}
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+  color: #818cf8;
+  font-weight: 600;
+}
+.token.function,
+.token.class-name {
+  color: #60a5fa;
+}
+.token.regex,
+.token.important,
+.token.variable {
+  color: #f43f5e;
+}
+
+/* ============================================================
+   Linear-grade tactile feedback & micro-glow
+   ============================================================ */
+.micro-glow {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.micro-glow:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.08);
+}
+.tactile-press {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tactile-press:active {
+  transform: scale(0.98);
+}
+
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+.animate-shimmer {
+  animation: shimmer 1.8s infinite;
 }

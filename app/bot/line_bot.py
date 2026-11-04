@@ -170,7 +170,7 @@ def create_item_flex_bubble(item: Dict[str, Any]) -> Dict[str, Any]:
             "contents": [
                 {
                     "type": "text",
-                    "text": "⚡ 白話核心重點：",
+                    "text": "核心提要",
                     "color": "#a1a1aa",
                     "size": "xs",
                     "weight": "bold"
@@ -212,7 +212,7 @@ def create_item_flex_bubble(item: Dict[str, Any]) -> Dict[str, Any]:
                     "color": "#27272a",
                     "action": {
                         "type": "postback",
-                        "label": "⭐ 已星標" if is_starred else "☆ 加星標",
+                        "label": "★ 已收藏" if is_starred else "☆ 收藏",
                         "data": f"action=star&id={item_id}"
                     }
                 },
@@ -223,7 +223,7 @@ def create_item_flex_bubble(item: Dict[str, Any]) -> Dict[str, Any]:
                     "color": "#27272a",
                     "action": {
                         "type": "postback",
-                        "label": "✅ 已封存" if is_read else "📦 封存",
+                        "label": "✓ 已封存" if is_read else "封存",
                         "data": f"action=archive&id={item_id}"
                     }
                 }
@@ -241,14 +241,14 @@ def create_item_flex_bubble(item: Dict[str, Any]) -> Dict[str, Any]:
             "color": "#4f46e5",
             "action": {
                 "type": "uri",
-                "label": "🌐 原始頁",
+                "label": "原始連結 ↗",
                 "uri": clean_url
             }
         })
 
     return {
         "type": "flex",
-        "altText": f"🧠 [{category}] {title}",
+        "altText": f"[{category}] {title}",
         "contents": bubble
     }
 
@@ -298,7 +298,7 @@ async def process_line_event(event: Dict[str, Any]):
         elif action == "archive":
             next_read = 0 if item.get("is_read") else 1
             update_item_field(item_id, {"is_read": next_read})
-            msg_text = "已歸檔至封存區 📦" if next_read else "已移回待讀 Inbox 📥"
+            msg_text = "已封存" if next_read else "已移回待讀"
             if reply_token:
                 await reply_line_messages(reply_token, [{"type": "text", "text": f"[{item.get('title_l1')[:20]}] {msg_text}"}])
         return
@@ -317,9 +317,9 @@ async def process_line_event(event: Dict[str, Any]):
         # Commands
         if text in ["/help", "說明", "help"]:
             help_text = (
-                f"🧠 OmniKeep 第二大腦 LINE 助手\n\n"
+                f"OmniKeep LINE 助手\n\n"
                 f"綁定身分: {user_id}\n\n"
-                f"• 隨手存入：直接傳送任何網址、YouTube 或技術段落，AI 會在幾秒內提煉出 L1/L2 結構化情報卡。\n"
+                f"• 隨手存入：直接傳送任何網址、YouTube 或技術段落，AI 會在幾秒內提煉出核心重點與深度架構解析。\n"
                 f"• 輸入「庫存」或 /stats：查詢當前大腦未讀數\n"
                 f"• 輸入「待讀」：列出最近待讀清單"
             )
@@ -330,11 +330,11 @@ async def process_line_event(event: Dict[str, Any]):
         if text in ["/stats", "庫存", "統計"]:
             stats = get_status_counts()
             stats_text = (
-                f"📊 OmniKeep 第二大腦庫存：\n\n"
-                f"📥 待讀 Inbox: {stats.get('inbox', 0)} 篇\n"
-                f"⭐ 星標精選: {stats.get('starred', 0)} 篇\n"
-                f"📦 已封存: {stats.get('archived', 0)} 篇\n"
-                f"📚 總計: {stats.get('total', 0)} 篇"
+                f"庫存狀態統計：\n\n"
+                f"待讀收件匣: {stats.get('inbox', 0)} 篇\n"
+                f"精選收藏: {stats.get('starred', 0)} 篇\n"
+                f"已封存: {stats.get('archived', 0)} 篇\n"
+                f"總計收錄: {stats.get('total', 0)} 篇"
             )
             if reply_token:
                 await reply_line_messages(reply_token, [{"type": "text", "text": stats_text}])
@@ -344,7 +344,7 @@ async def process_line_event(event: Dict[str, Any]):
             items = get_items(is_read=False, limit=3)
             if not items:
                 if reply_token:
-                    await reply_line_messages(reply_token, [{"type": "text", "text": "🎉 待讀 Inbox 目前全數消化完畢！"}])
+                    await reply_line_messages(reply_token, [{"type": "text", "text": "待讀收件匣目前為空。"}])
                 return
             bubbles = [create_item_flex_bubble(item) for item in items]
             if reply_token:
@@ -354,5 +354,5 @@ async def process_line_event(event: Dict[str, Any]):
         # Hoarder Mode Ingestion: Immediate receipt via replyToken (<50ms) + async background execution via push
         await start_line_loading(user_id, seconds=30)
         if reply_token:
-            await reply_line_messages(reply_token, [{"type": "text", "text": "📥 已收件排隊中，AI 正在進行雙軌情報提煉..."}])
+            await reply_line_messages(reply_token, [{"type": "text", "text": "[Queued] 已收件排隊中，正在進行情報提煉..."}])
         create_ingest_task(url=text, source="line", chat_id=user_id, message_id=None)

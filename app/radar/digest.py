@@ -15,9 +15,9 @@ DIGEST_PROMPT_TEMPLATE = """你是一位高階系統架構師與首席技術情�
 1. 一律使用繁體中文（台灣習慣用語）。
 2. 極簡、高密度、直擊本質，嚴禁廢話套話（如「值得注意的是」、「總結來說」）。
 3. 結構：
-   - ⚡ 核心趨勢總結（2-3點關鍵架構洞見）
-   - 🛠️ 重大項目與發布解構（每個項目 1-2 行核心突破與實踐建議）
-   - 🎯 後續行動/技術雷達建議
+   - 核心趨勢與架構洞見（2-3點關鍵觀察）
+   - 重點項目與發布解構（每個項目條列核心突破、量化指標與實踐建議）
+   - 技術雷達與後續行動建議
 """
 
 async def generate_radar_digest(item_ids: List[str], digest_type: str = "evening") -> Dict[str, Any]:
@@ -33,7 +33,7 @@ async def generate_radar_digest(item_ids: List[str], digest_type: str = "evening
             items_text_list.append(
                 f"[{idx}] {item['title_l1']} ({item['source_type']})\n"
                 f"標籤: {', '.join(item.get('tech_tags') or [])}\n"
-                f"白話核心: {item['summary_l1']}\n"
+                f"核心提要: {item['summary_l1']}\n"
                 f"連結: {item['url']}\n"
             )
 

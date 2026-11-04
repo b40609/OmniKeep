@@ -272,3 +272,37 @@ async def test_telegram_supervisor_restarts_crashed_poller():
             await supervise_telegram_polling(bot)
     assert bot.run_polling.await_count == 2
     sleep.assert_awaited_once_with(3)
+
+
+@pytest.mark.asyncio
+async def test_claim_next_task_waits_for_telegram_message_id():
+    from app.database import claim_next_task
+    task = create_ingest_task(
+        url="https://example.com/wait-msg-id",
+        source="telegram",
+        chat_id=987654,
+        message_id=None,
+    )
+    assert claim_next_task() is None
+    set_ingest_task_message_id(task["id"], 54321)
+    claimed = claim_next_task()
+    assert claimed is not None
+    assert claimed["id"] == task["id"]
+    assert claimed["message_id"] == 54321
+
+
+@pytest.mark.asyncio
+async def test_worker_fails_and_notifies_even_if_claimed_without_message_id():
+    task = create_ingest_task(
+        url="https://example.com/late-msg-id-fail",
+        source="telegram",
+        chat_id=888777,
+        message_id=None,
+    )
+    task_in_memory = dict(task)
+    set_ingest_task_message_id(task["id"], 998877)
+
+    worker = TaskWorker(concurrency=1, max_retries=0)
+    with patch("app.queue.worker.run_pipeline", side_effect=RuntimeError("Network issue")),          patch("app.queue.worker.notify_task_failed", new=AsyncMock()) as mock_failed:
+        await worker._process_task(task_in_memory)
+        mock_failed.assert_awaited_once_with(888777, 998877, "Network issue")
