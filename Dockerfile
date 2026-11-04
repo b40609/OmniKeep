@@ -4,6 +4,9 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /build
 
+# vite.config.ts reads the version from ../VERSION
+COPY VERSION ./
+
 # Install frontend dependencies
 COPY frontend/package*.json ./frontend/
 WORKDIR /build/frontend
@@ -44,7 +47,8 @@ COPY static ./static
 # Copy compiled frontend assets from Stage 1 into static/dist
 COPY --from=frontend-builder /build/static/dist ./static/dist
 
-# Copy backend source code
+# Copy backend source code (app/__init__.py reads the version from VERSION)
+COPY VERSION ./
 COPY app ./app
 COPY run.py ./
 
