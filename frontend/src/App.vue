@@ -6,6 +6,7 @@ import { useKeyboard } from '@/composables/useKeyboard'
 import { useItemsStore } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
 import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, checkLocalAuth, type SessionBridgeSnapshot } from '@/lib/api'
+import { linkedPanel, OPEN_LINK_MESSAGE } from '@/lib/push'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import ItemList from '@/components/items/ItemList.vue'
@@ -73,6 +74,9 @@ async function login(explicitKey?: string, isAuto = false): Promise<boolean> {
     await items.refreshAll()
     await maybeShowSessionHint()
     await checkUrlParamIngest()
+    if (openLinkedPanel(window.location.href)) {
+      window.history.replaceState({}, document.title, window.location.pathname)
+    }
     return true
   } catch (error) {
     if (!isAuto) {
@@ -108,6 +112,19 @@ async function checkUrlParamIngest() {
       }
     }
   }
+}
+
+/** 新提案 notifications link to `/?open=proposals`: show 監看中心 on its 提案 tab. */
+function openLinkedPanel(href: string): boolean {
+  if (linkedPanel(href, window.location.origin) !== 'proposals') return false
+  ui.watchTab = 'proposals'
+  ui.showWatchModal = true
+  return true
+}
+
+// A notification clicked while this window is already open arrives here instead of as a page load.
+function onWorkerMessage(event: MessageEvent) {
+  if (signedIn.value && event.data?.type === OPEN_LINK_MESSAGE) openLinkedPanel(String(event.data.url))
 }
 
 async function bootstrapAuth() {
@@ -189,9 +206,13 @@ function onAuthRequired() {
 
 onMounted(() => {
   window.addEventListener('omnikeep-auth-required', onAuthRequired)
+  navigator.serviceWorker?.addEventListener('message', onWorkerMessage)
   bootstrapAuth()
 })
-onUnmounted(() => window.removeEventListener('omnikeep-auth-required', onAuthRequired))
+onUnmounted(() => {
+  window.removeEventListener('omnikeep-auth-required', onAuthRequired)
+  navigator.serviceWorker?.removeEventListener('message', onWorkerMessage)
+})
 </script>
 
 <template>

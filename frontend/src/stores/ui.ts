@@ -4,6 +4,7 @@ import { useLocalStorage } from '@vueuse/core'
 import type { Item } from '@/lib/api'
 
 export type ReaderTab = 'analysis' | 'reader'
+export type WatchTab = 'targets' | 'proposals' | 'backup'
 
 export const useUiStore = defineStore('ui', () => {
   // Navigation & Layout
@@ -26,6 +27,7 @@ export const useUiStore = defineStore('ui', () => {
   const showRadarModal = ref(false)
   const showSessionModal = ref(false)
   const showWatchModal = ref(false)
+  const watchTab = ref<WatchTab>('targets')
   const showImportModal = ref(false)
   const showDeckModal = ref(false)
   const showPushModal = ref(false)
@@ -37,6 +39,7 @@ export const useUiStore = defineStore('ui', () => {
     sidebarOpen, sidebarMobileOpen,
     activeItem, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
     showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal, showDeckModal, showPushModal,
+    watchTab,
     isIngesting,
   }
 })

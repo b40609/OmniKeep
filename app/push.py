@@ -20,6 +20,7 @@ from py_vapid import Vapid02
 from app.config import settings
 from app.database import (
     delete_push_subscription,
+    get_item_by_id,
     list_push_subscriptions,
     record_push_result,
 )
@@ -32,6 +33,8 @@ DEFAULT_SUBJECT = "https://github.com/b40609/OmniKeep"
 _TOPIC = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 # Push services accept 4096-byte encrypted bodies; keep text well under that.
 _MAX_BODY_CHARS = 400
+# The PWA opens 監看中心 on its 提案 tab for this link (frontend/src/lib/push.ts).
+PROPOSALS_URL = "/?open=proposals"
 
 
 def push_configured() -> bool:
@@ -137,3 +140,17 @@ async def send_push(title: str, body: str, url: str = "/", tag: Optional[str] = 
     for outcome in outcomes:
         counts[outcome] += 1
     return counts
+
+
+async def notify_new_proposal(proposal: Dict[str, Any]) -> Dict[str, int]:
+    """Announce a newly saved pending proposal (Telegram has no counterpart); never raises."""
+    try:
+        card = get_item_by_id(proposal["item_id"]) or {}
+        scores = (f"影響 {float(proposal['impact']):g} · 信心 {float(proposal['confidence']):g}"
+                  f" · 成本 {float(proposal['effort']):g}")
+        # One tag per proposal, so a second proposal doesn't replace the first notification.
+        return await send_push("📋 新的待決提案", f"{card.get('title_l1') or '新提案'}\n{scores}",
+                               url=PROPOSALS_URL, tag=f"proposal-{proposal['id']}")
+    except Exception:
+        logger.exception("Web Push for new proposal failed")
+        return {"sent": 0, "removed": 0, "failed": 0}

@@ -26,7 +26,11 @@ self.addEventListener('notificationclick', (event) => {
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       const existing = windows.find((client) => new URL(client.url).origin === self.location.origin)
-      if (existing) return existing.focus()
+      if (existing) {
+        // The open app handles the link itself (App.vue), so it keeps its state instead of reloading.
+        existing.postMessage({ type: 'omnikeep-open-link', url: target })
+        return existing.focus()
+      }
       return self.clients.openWindow(target)
     })(),
   )

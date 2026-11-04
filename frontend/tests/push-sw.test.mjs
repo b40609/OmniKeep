@@ -66,22 +66,29 @@ test('click targets are forced back onto this origin', async () => {
   assert.deepEqual(shown.map((s) => s.options.data.url), ['/', '/', '/?view=deck'])
 })
 
-test('clicking focuses an open OmniKeep window, otherwise opens one', async () => {
+test('clicking hands the link to an open OmniKeep window, otherwise opens one at it', async () => {
   let focused = 0
-  const open = loadWorker({ windows: [{ url: 'https://desktop.tailnet-name.ts.net/', focus: async () => { focused++ } }] })
+  const posted = []
+  const appWindow = (url) => ({ url, focus: async () => { focused++ }, postMessage: (m) => posted.push(m) })
+  const open = loadWorker({ windows: [appWindow('https://desktop.tailnet-name.ts.net/')] })
   let closed = false
-  const click = (h) => {
+  const click = (h, url) => {
     const pending = []
-    h.notificationclick({ notification: { close: () => { closed = true }, data: { url: '/' } }, waitUntil: (p) => pending.push(p) })
+    h.notificationclick({ notification: { close: () => { closed = true }, data: { url } }, waitUntil: (p) => pending.push(p) })
     return Promise.all(pending)
   }
-  await click(open.handlers)
+  await click(open.handlers, '/?open=proposals')
   assert.equal(closed, true)
   assert.equal(focused, 1)
   assert.deepEqual(open.opened, [])
+  // Same message type as OPEN_LINK_MESSAGE in src/lib/push.ts, which App.vue listens for.
+  assert.deepEqual(JSON.parse(JSON.stringify(posted)), [
+    { type: 'omnikeep-open-link', url: 'https://desktop.tailnet-name.ts.net/?open=proposals' },
+  ])
 
-  const none = loadWorker({ windows: [{ url: 'https://other.example/', focus: async () => { focused++ } }] })
-  await click(none.handlers)
-  assert.deepEqual(none.opened, ['https://desktop.tailnet-name.ts.net/'])
+  const none = loadWorker({ windows: [appWindow('https://other.example/')] })
+  await click(none.handlers, '/?open=proposals')
+  assert.deepEqual(none.opened, ['https://desktop.tailnet-name.ts.net/?open=proposals'])
   assert.equal(focused, 1)
+  assert.equal(posted.length, 1)
 })

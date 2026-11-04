@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import time
+from unittest.mock import AsyncMock, Mock
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -14,8 +15,19 @@ import pytest
 
 from app import push
 from app.config import settings
-from app.database import list_push_subscriptions, upsert_push_subscription
+from app.database import (
+    add_watch_target,
+    get_item_by_id,
+    get_proposals,
+    get_watch_target,
+    list_push_subscriptions,
+    save_item,
+    save_proposal,
+    update_watch_target,
+    upsert_push_subscription,
+)
 from app.main import app
+from app.watch import relevance, scanner
 from scripts.generate_vapid_keys import generate_vapid_pair
 
 ENDPOINT = "https://fcm.googleapis.com/fcm/send/synthetic-device-1"
@@ -292,3 +304,84 @@ async def test_web_push_works_without_telegram(radar_outlets, monkeypatch):
     monkeypatch.setattr("app.bot.telegram_bot.get_telegram_bot", lambda: None)
     await scheduler._announce_digest({"success": True, "title": "戰報"}, [{"title_l1": "a"}])
     assert len(pushed) == 1
+
+
+# ── New proposals: web only, Telegram never announced them ───────
+
+async def test_new_proposal_links_to_the_proposals_tab(vapid, monkeypatch):
+    browser = Browser()
+    _subscribe(browser)
+    seen = _mock_push_service(monkeypatch)
+    card = save_item({"url": "fixture://proposal/push", "title_l1": "🔗 提案：app/network.py ⟷ httpx 2.0"})
+    proposal = save_proposal({"item_id": card, "impact": 8, "confidence": 9, "effort": 2.5})
+
+    assert await push.notify_new_proposal(proposal) == {"sent": 1, "removed": 0, "failed": 0}
+    assert browser.decrypt(seen[0].content) == {
+        "title": "📋 新的待決提案",
+        "body": "🔗 提案：app/network.py ⟷ httpx 2.0\n影響 8 · 信心 9 · 成本 2.5",
+        "url": "/?open=proposals",
+        "tag": f"proposal-{proposal['id']}",
+    }
+    # Each proposal has its own Topic, so the push service never collapses two of them.
+    assert seen[0].headers["topic"] == f"proposal-{proposal['id']}"
+
+
+async def test_proposal_push_failure_never_reaches_the_caller(monkeypatch):
+    monkeypatch.setattr(push, "get_item_by_id", Mock(side_effect=RuntimeError("database is locked")))
+    proposal = {"id": "p1", "item_id": "i1", "impact": 1, "confidence": 1, "effort": 1}
+    assert await push.notify_new_proposal(proposal) == {"sent": 0, "removed": 0, "failed": 0}
+
+
+async def test_risk_scan_pushes_a_new_proposal_once_without_filenames(vapid, monkeypatch, isolated_runtime):
+    browser = Browser()
+    _subscribe(browser)
+    seen = _mock_push_service(monkeypatch)
+    (isolated_runtime / "password.txt").write_text("SYNTHETIC_NEVER_READ")
+    target = add_watch_target("DemoOS", str(isolated_runtime), preset="strict")
+    provider = Mock(generate_json=AsyncMock(return_value={"title_l1": "fingerprint"}))
+    monkeypatch.setattr(scanner, "get_primary_provider", lambda: provider)
+
+    await scanner.scan_target(target)
+    await scanner.scan_target(get_watch_target(target["id"]))  # same risk → deduplicated, no second push
+
+    assert len(seen) == 1
+    sent = browser.decrypt(seen[0].content)
+    assert sent["tag"] == f"proposal-{get_proposals()[0]['id']}"
+    assert "DemoOS" in sent["body"] and "疑似明文機密檔" in sent["body"]
+    assert "password.txt" not in json.dumps(sent, ensure_ascii=False)  # lock screens show the body
+
+
+def _fingerprinted_target(isolated_runtime, consent):
+    fingerprint = save_item({"url": "watch://fixture", "origin": "watch", "title_l1": "fp",
+                             "tech_tags": ["Python", "SQLite"]})
+    target = add_watch_target("DemoOS", str(isolated_runtime), "folder", "custom",
+                              read_scope={"filenames": True}, outbound_consent=consent)
+    update_watch_target(target["id"], {"fingerprint_item_id": fingerprint})
+    return get_item_by_id(save_item({"url": "https://example.com/news", "title_l1": "SQLite 3.50 發布",
+                                     "tech_tags": ["Python", "SQLite", "新聞"]}))
+
+
+async def test_relevance_proposal_is_pushed_once(vapid, monkeypatch, isolated_runtime):
+    browser = Browser()
+    _subscribe(browser)
+    seen = _mock_push_service(monkeypatch)
+    news = _fingerprinted_target(isolated_runtime, {"summary": False})
+
+    proposal = await relevance.maybe_propose_for_item(news)
+    assert await relevance.maybe_propose_for_item(news) is None  # 30-day dedup
+
+    assert len(seen) == 1
+    sent = browser.decrypt(seen[0].content)
+    assert sent["tag"] == f"proposal-{proposal['id']}" and sent["url"] == "/?open=proposals"
+    assert "SQLite 3.50 發布" in sent["body"]
+
+
+async def test_rejected_relevance_is_not_pushed(vapid, monkeypatch, isolated_runtime):
+    _subscribe(Browser())
+    seen = _mock_push_service(monkeypatch)
+    news = _fingerprinted_target(isolated_runtime, {"summary": True})
+    provider = Mock(generate_json=AsyncMock(return_value={"relevant": False}))
+    monkeypatch.setattr(relevance, "get_primary_provider", lambda: provider)
+
+    assert await relevance.maybe_propose_for_item(news) is None
+    assert seen == [] and get_proposals() == []

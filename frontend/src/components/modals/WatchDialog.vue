@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import {
   ScanEye, Plus, Loader2, RefreshCw, ShieldCheck, Trash2, Power,
   ChevronDown, ChevronRight, CheckCircle2, XCircle, HardDriveDownload,
@@ -14,7 +15,8 @@ import { toast } from 'vue-sonner'
 
 const ui = useUiStore()
 
-const tab = ref<'targets' | 'proposals' | 'backup'>('targets')
+// In the store so a 新提案 notification can open this dialog on its 提案 tab.
+const { watchTab: tab } = storeToRefs(ui)
 const targets = ref<WatchTarget[]>([])
 const proposals = ref<Proposal[]>([])
 const backup = ref<BackupStatus | null>(null)
@@ -79,7 +81,8 @@ async function refresh() {
   }
 }
 
-watch(() => ui.showWatchModal, (open) => { if (open) refresh() })
+// immediate: a 新提案 link can open the dialog during login, before this component mounts.
+watch(() => ui.showWatchModal, (open) => { if (open) refresh() }, { immediate: true })
 
 async function addTarget() {
   if (!newName.value.trim() || !newPath.value.trim()) {

@@ -79,6 +79,17 @@ test('sameKey compares a subscription key buffer with the server key', () => {
   assert.equal(push.sameKey(null, key), false)
 })
 
+test('linkedPanel opens the 提案 tab only for the 新提案 notification link', () => {
+  assert.equal(push.linkedPanel('/?open=proposals'), 'proposals')
+  assert.equal(push.linkedPanel('https://desktop.tailnet-name.ts.net/?open=proposals'), 'proposals')
+  assert.equal(push.linkedPanel('/'), null)
+  assert.equal(push.linkedPanel('/?open=backup'), null)
+  assert.equal(push.linkedPanel('/?url=https%3A%2F%2Fexample.com%2F%3Fopen%3Dproposals'), null)
+  assert.equal(push.linkedPanel('http://['), null)
+  // push-sw.js posts this exact type (frontend/tests/push-sw.test.mjs).
+  assert.equal(push.OPEN_LINK_MESSAGE, 'omnikeep-open-link')
+})
+
 function fakeEnv({ ua, platform = 'Win32', touch = 0, standalone = false, push = true }) {
   const nav = { userAgent: ua, platform, maxTouchPoints: touch, ...(push ? { serviceWorker: {} } : {}) }
   const win = {
