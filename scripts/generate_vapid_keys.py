@@ -1,4 +1,8 @@
-"""Add a Web Push (VAPID) key pair to .env without displaying or replacing keys."""
+"""Add a Web Push (VAPID) key pair to .env without displaying or replacing keys.
+
+Optional: OmniKeep generates a pair on first start and keeps it in the app's
+settings (app/vapid.py). Use this only to keep the pair in .env instead.
+"""
 import argparse
 import base64
 import os

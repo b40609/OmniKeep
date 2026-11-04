@@ -24,8 +24,12 @@ function sessionStorageGet() {
 const problem = computed(() => {
   const s = status.value
   if (!s) return null
+  const unreadable = s.undecryptable.filter((k) => !k.startsWith('VAPID_'))
+  if (unreadable.length) {
+    return { text: `有 ${unreadable.length} 個金鑰無法解密，目前改用 .env 的值，請到設定重新輸入。`, action: '重新輸入', tab: 'ai' }
+  }
   if (s.undecryptable.length) {
-    return { text: `有 ${s.undecryptable.length} 個金鑰無法解密，目前改用 .env 的值，請到設定重新輸入。`, action: '重新輸入' }
+    return { text: '推播金鑰無法解密（主金鑰和當初加密時不同），推播暫停。請還原主金鑰檔，或到設定重新產生。', action: '查看', tab: 'push' }
   }
   const failing = (Object.entries(s.services) as [keyof typeof LABELS, { ok: boolean; status: number | null; message: string }][])
     .filter(([, o]) => o && !o.ok)
@@ -33,9 +37,9 @@ const problem = computed(() => {
     const [name, outcome] = failing[0]
     const code = outcome.status ? `HTTP ${outcome.status}` : '連線失敗'
     const names = failing.map(([n]) => LABELS[n]).join('、')
-    return { text: `${names}目前無法使用（${LABELS[name]}：${code}${outcome.message ? `，${outcome.message}` : ''}）。`, action: '檢查設定' }
+    return { text: `${names}目前無法使用（${LABELS[name]}：${code}${outcome.message ? `，${outcome.message}` : ''}）。`, action: '檢查設定', tab: 'ai' }
   }
-  if (s.needs_setup) return { text: '還沒設定 AI 服務商，新收藏不會經過 AI 分析。', action: '前往設定' }
+  if (s.needs_setup) return { text: '還沒設定 AI 服務商，新收藏不會經過 AI 分析。', action: '開始設定', tab: 'wizard' }
   return null
 })
 
@@ -47,6 +51,12 @@ async function refresh() {
   } catch {
     /* offline or signed out: keep the last state */
   }
+}
+
+function act() {
+  const tab = problem.value?.tab ?? 'ai'
+  if (tab === 'wizard') ui.showSetupWizard = true
+  else ui.openSettings(tab)
 }
 
 function dismiss() {
@@ -80,7 +90,7 @@ watch(() => ui.settingsVersion, refresh)
   >
     <TriangleAlert class="size-4 shrink-0 text-warning" />
     <p class="min-w-0 flex-1 truncate" :title="problem.text">{{ problem.text }}</p>
-    <Button size="sm" variant="secondary" class="shrink-0" @click="ui.openSettings('ai')">{{ problem.action }}</Button>
+    <Button size="sm" variant="secondary" class="shrink-0" @click="act">{{ problem.action }}</Button>
     <button type="button" class="shrink-0 cursor-pointer rounded p-1 text-muted-foreground hover:text-foreground" aria-label="暫時隱藏" @click="dismiss">
       <X class="size-3.5" />
     </button>

@@ -38,6 +38,8 @@ export const useUiStore = defineStore('ui', () => {
   const settingsTab = ref('ai')
   /** Bumped after settings are saved, so the service-status banner re-checks. */
   const settingsVersion = ref(0)
+  /** First-run guide shown while no AI provider is usable. */
+  const showSetupWizard = ref(false)
 
   function openSettings(tab = 'ai') {
     settingsTab.value = tab
@@ -53,7 +55,7 @@ export const useUiStore = defineStore('ui', () => {
     activeItem, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
     showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal, showDeckModal, showPushModal,
     showDailyDeckModal, showBrainModal, showCommandPalette,
-    showSettingsModal, settingsTab, settingsVersion, openSettings,
+    showSettingsModal, settingsTab, settingsVersion, openSettings, showSetupWizard,
     watchTab,
     isIngesting,
   }

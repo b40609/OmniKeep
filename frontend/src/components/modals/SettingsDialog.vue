@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
-import { Settings, PlugZap, ShieldAlert, X, Loader2, CircleCheck, CircleAlert } from 'lucide-vue-next'
+import { Settings, PlugZap, ShieldAlert, X, Loader2, CircleCheck, CircleAlert, BellRing } from 'lucide-vue-next'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import Button from '@/components/ui/button/Button.vue'
 import {
-  checkConnection, getSettings, importEnvSettings, saveSettings,
-  type CheckService, type ConnectionCheck, type SettingField, type SettingValue, type SettingsSnapshot,
+  checkConnection, getSettings, getSettingsAudit, importEnvSettings, regeneratePushKeys, saveSettings,
+  type CheckService, type ConnectionCheck, type SettingField, type SettingValue, type SettingsAuditEntry,
+  type SettingsSnapshot,
 } from '@/lib/api'
 import { useUiStore } from '@/stores/ui'
 import TelegramPairing from './TelegramPairing.vue'
@@ -40,6 +41,19 @@ const CHECKS_BY_GROUP: Record<string, { service: CheckService; label: string }[]
   github: [{ service: 'github', label: '測試 Token' }],
 }
 const SOURCE_LABEL = { app: 'App 設定', env: '.env', default: '預設值' } as const
+/** Settings OmniKeep creates itself: never a form field, but named in lists. */
+const GENERATED_LABEL: Record<string, string> = { VAPID_PUBLIC_KEY: '推播公鑰', VAPID_PRIVATE_KEY: '推播私鑰' }
+const ACTION_LABEL: Record<string, string> = {
+  set: '修改', clear: '清除', reset: '改回 .env／預設值', import: '從 .env 匯入', pair: 'Telegram 配對',
+  generate: '自動產生', regenerate: '重新產生', rotate: '輪替',
+}
+
+const audit = ref<SettingsAuditEntry[]>([])
+const auditMore = ref(false)
+const auditLoading = ref(false)
+const auditError = ref('')
+const auditLoaded = ref(false)
+const regenerating = ref(false)
 
 const tabs = computed(() => [
   ...(snapshot.value?.groups.map((g) => ({ id: g.id, label: g.label })) ?? []),
@@ -51,6 +65,13 @@ const byKey = computed(() => {
   snapshot.value?.groups.forEach((g) => g.fields.forEach((f) => map.set(f.key, f)))
   return map
 })
+
+function labelOf(key: string) {
+  return byKey.value.get(key)?.label ?? GENERATED_LABEL[key] ?? key
+}
+
+/** Unreadable keys the owner can type again; an unreadable push key is regenerated instead. */
+const retypeable = computed(() => snapshot.value?.secret_key.undecryptable.filter((k) => !(k in GENERATED_LABEL)) ?? [])
 
 function same(a: SettingValue | undefined, b: SettingValue | undefined) {
   return JSON.stringify(a) === JSON.stringify(b)
@@ -155,6 +176,7 @@ async function save() {
     resetDrafts()
     ui.settingsVersion++
     telegram.value?.refresh()
+    if (auditLoaded.value) loadAudit()
     toast.success('設定已儲存，立即生效')
   } catch (e) {
     errors.value = (e as { fieldErrors?: Record<string, string> }).fieldErrors ?? {}
@@ -193,6 +215,52 @@ async function importEnv() {
   }
 }
 
+async function loadAudit(more = false) {
+  auditLoading.value = true
+  auditError.value = ''
+  try {
+    const before = more ? audit.value[audit.value.length - 1]?.id : undefined
+    const page = await getSettingsAudit(before)
+    audit.value = more ? [...audit.value, ...page.entries] : page.entries
+    auditMore.value = page.has_more
+    auditLoaded.value = true
+  } catch (e) {
+    auditError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    auditLoading.value = false
+  }
+}
+
+function auditTime(iso: string) {
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+async function regeneratePush() {
+  const devices = snapshot.value?.push.subscriptions ?? 0
+  const warning = devices
+    ? `重新產生後，目前已開啟推播的 ${devices} 台裝置都會停止收到通知，要在每台裝置重新開啟。確定嗎？`
+    : '要產生新的推播金鑰嗎？'
+  if (!window.confirm(warning)) return
+  regenerating.value = true
+  try {
+    const result = await regeneratePushKeys()
+    snapshot.value = result
+    resetDrafts()
+    ui.settingsVersion++
+    if (auditLoaded.value) loadAudit()
+    toast.success('已產生新的推播金鑰', {
+      description: result.removed_subscriptions ? `已移除 ${result.removed_subscriptions} 個舊裝置訂閱，請在各裝置重新開啟推播。` : undefined,
+    })
+  } catch (e) {
+    toast.error('產生推播金鑰失敗', { description: e instanceof Error ? e.message : String(e) })
+  } finally {
+    regenerating.value = false
+  }
+}
+
 /** A pairing finished while this dialog is open: show the new owner unless the user is mid-edit. */
 function onTelegramRefreshed(boundIds: number[]) {
   const shown = byKey.value.get('TELEGRAM_ALLOWED_USER_IDS')?.value
@@ -209,8 +277,18 @@ watch(
   (open) => {
     if (open) {
       for (const key of Object.keys(checks)) delete checks[key as CheckService]
+      audit.value = []
+      auditLoaded.value = false
       refresh()
+      if (ui.settingsTab === 'system') loadAudit()
     }
+  },
+)
+
+watch(
+  () => ui.settingsTab,
+  (tab) => {
+    if (tab === 'system' && ui.showSettingsModal && !auditLoaded.value && !auditLoading.value) loadAudit()
   },
 )
 
@@ -254,13 +332,13 @@ const inputClass =
 
         <template v-else>
           <div
-            v-if="snapshot.secret_key.undecryptable.length"
+            v-if="retypeable.length"
             role="alert"
             class="flex gap-2 rounded-lg border border-danger/30 bg-danger-soft p-3 text-xs text-danger"
           >
             <ShieldAlert class="mt-0.5 size-4 shrink-0" />
             <p>
-              有 {{ snapshot.secret_key.undecryptable.length }} 個金鑰無法解密（{{ snapshot.secret_key.changed ? '主金鑰和當初加密時不同' : '找不到主金鑰' }}），目前改用 .env 的值。請重新輸入：{{ snapshot.secret_key.undecryptable.map((k) => byKey.get(k)?.label ?? k).join('、') }}。
+              有 {{ retypeable.length }} 個金鑰無法解密（{{ snapshot.secret_key.exists ? '主金鑰和當初加密時不同' : '找不到主金鑰' }}），目前改用 .env 的值。請重新輸入：{{ retypeable.map(labelOf).join('、') }}。
             </p>
           </div>
 
@@ -286,12 +364,19 @@ const inputClass =
               <p v-if="snapshot.secret_key.path" class="break-all rounded-lg border border-border px-3 py-2 font-mono text-2xs">
                 {{ snapshot.secret_key.path }}{{ snapshot.secret_key.exists ? '' : '（第一次儲存金鑰時建立）' }}
               </p>
+              <ul class="list-disc space-y-1 pl-5 text-2xs text-muted-foreground">
+                <li>搬機：停止舊主機的服務，把資料庫和這個檔案一起複製到新主機的同一個資料夾（或用 OMNIKEEP_SECRET_KEY_FILE 指到它的位置）。</li>
+                <li>
+                  更換主金鑰：在伺服器專案資料夾執行 <code>python scripts/rotate_secret_key.py</code>。所有金鑰會改用新的主金鑰重新加密，不必停止服務；
+                  舊主金鑰另存成同資料夾的 <code>.bak</code> 檔，還原更換前的資料庫備份時會用到。
+                </li>
+              </ul>
             </section>
             <section class="space-y-2">
               <h3 class="text-xs font-semibold">從 .env 匯入</h3>
               <template v-if="snapshot.env_importable.length">
                 <p class="text-2xs text-muted-foreground">
-                  這些設定目前來自 .env：{{ snapshot.env_importable.map((k) => byKey.get(k)?.label ?? k).join('、') }}。
+                  這些設定目前來自 .env：{{ snapshot.env_importable.map(labelOf).join('、') }}。
                   匯入後改由 App 管理，之後可以把 .env 裡對應的行刪掉。
                 </p>
                 <Button variant="secondary" size="sm" :disabled="importing" @click="importEnv">
@@ -300,6 +385,38 @@ const inputClass =
                 </Button>
               </template>
               <p v-else class="text-2xs text-muted-foreground">沒有需要匯入的設定。</p>
+            </section>
+            <section class="space-y-2">
+              <h3 class="text-xs font-semibold">變更紀錄</h3>
+              <p class="text-2xs text-muted-foreground">哪個設定在什麼時候被修改、清除或匯入。只記欄位名稱和動作，不記錄任何值。</p>
+              <p v-if="auditError" class="text-2xs text-danger">無法讀取變更紀錄：{{ auditError }}</p>
+              <p v-else-if="auditLoaded && !audit.length" class="text-2xs text-muted-foreground">還沒有任何變更。</p>
+              <div v-if="audit.length" class="overflow-hidden rounded-lg border border-border">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-muted text-2xs text-muted-foreground">
+                    <tr>
+                      <th scope="col" class="px-3 py-1.5 font-medium">時間</th>
+                      <th scope="col" class="px-3 py-1.5 font-medium">設定</th>
+                      <th scope="col" class="px-3 py-1.5 font-medium">動作</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-border">
+                    <tr v-for="entry in audit" :key="entry.id">
+                      <td class="whitespace-nowrap px-3 py-1.5 font-mono text-2xs text-muted-foreground">{{ auditTime(entry.created_at) }}</td>
+                      <td class="px-3 py-1.5">
+                        {{ entry.label }}
+                        <span v-if="entry.group" class="text-2xs text-subtle-foreground">· {{ entry.group }}</span>
+                      </td>
+                      <td class="whitespace-nowrap px-3 py-1.5">{{ ACTION_LABEL[entry.action] ?? entry.action }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <Button v-if="auditMore" variant="ghost" size="sm" :disabled="auditLoading" @click="loadAudit(true)">
+                <Loader2 v-if="auditLoading" class="size-3 animate-spin" />
+                載入更早的紀錄
+              </Button>
+              <p v-else-if="auditLoading && !audit.length" class="text-2xs text-muted-foreground">讀取中…</p>
             </section>
           </template>
 
@@ -428,6 +545,32 @@ const inputClass =
                 更換向量模型後，既有收藏的向量要重建才查得到（伺服器執行 <code>scripts/rebuild_embeddings.py</code>）。
               </p>
             </template>
+
+            <section v-if="ui.settingsTab === 'push'" class="space-y-2 border-t border-border pt-3">
+              <h3 class="flex items-center gap-1.5 text-xs font-semibold"><BellRing class="size-3.5" /> 推播金鑰</h3>
+              <p v-if="snapshot.push.undecryptable" class="rounded-lg border border-danger/30 bg-danger-soft p-2.5 text-2xs text-danger">
+                推播金鑰無法解密：主金鑰和當初加密時不同，推播暫停中。把原本的主金鑰檔放回去就會恢復；找不回來的話，重新產生一組，各裝置再重新開啟推播。
+              </p>
+              <p v-else-if="snapshot.push.ready" class="text-2xs text-muted-foreground">
+                已就緒（{{ snapshot.push.source === 'env' ? '來自 .env' : 'OmniKeep 自動產生，加密存放' }}）。目前 {{ snapshot.push.subscriptions }} 台裝置開啟推播，各裝置在「推播通知」開關。
+              </p>
+              <p v-else class="text-2xs text-muted-foreground">
+                還沒有推播金鑰。伺服器啟動時會自動產生；也可以現在產生。
+              </p>
+              <p v-if="snapshot.push.source === 'env'" class="text-2xs text-subtle-foreground">
+                想把 .env 裡的推播金鑰移進 App：到「系統」按「從 .env 匯入」，已開啟推播的裝置不受影響。
+              </p>
+              <Button
+                v-if="!snapshot.push.ready"
+                variant="secondary"
+                size="sm"
+                :disabled="regenerating"
+                @click="regeneratePush"
+              >
+                <Loader2 v-if="regenerating" class="size-3 animate-spin" />
+                {{ snapshot.push.undecryptable ? '重新產生推播金鑰' : '產生推播金鑰' }}
+              </Button>
+            </section>
 
             <TelegramPairing v-if="ui.settingsTab === 'telegram'" ref="telegram" in-settings @refreshed="onTelegramRefreshed" />
 

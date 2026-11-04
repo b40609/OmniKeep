@@ -1,6 +1,6 @@
 # App 內設定（取代手改 .env）提案
 
-日期：2026-11-04　狀態：已決定採用方案 3，優先順序「App > .env > 預設」；第一階段已實作（見第 8 節）
+日期：2026-11-04　狀態：已決定採用方案 3，優先順序「App > .env > 預設」；第一、二階段已實作（見第 8 節）
 
 ## 1. 問題
 
@@ -138,6 +138,45 @@
 - **稽核紀錄**：第一階段就寫入 `app_settings_audit`（欄位名稱、動作、時間，不含值），檢視頁面留到第二階段。
 
 順手修正：`RadarScheduler` 的 `asyncio.Event` 原本在模組載入時建立，會綁定第一次等待它的 event loop。現在每次 `start()` 都重新建立，避免重啟排程器後在另一個 loop 出錯（測試中可重現）。
+
+### 第二階段（2026-11-04）
+
+| 項目 | 位置 |
+|---|---|
+| 首次啟動精靈 | 前端 `SetupWizard.vue`、預設清單與要存的值 `frontend/src/lib/setup.ts`；`ServiceStatusBanner.vue` 的「開始設定」改開精靈 |
+| VAPID 自動產生 | `app/vapid.py`（`ensure`、`regenerate`、`status`）；啟動點在 `app/main.py` lifespan；`SPECS` 新增 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`（`generated=True`） |
+| 推播金鑰 API | `POST /api/settings/push/regenerate`；`GET /api/settings` 多一個 `push` 狀態區塊 |
+| 稽核紀錄 | `app_settings.audit_log()`、`GET /api/settings/audit?limit=&before=`；「設定 › 系統」的「變更紀錄」 |
+| 主金鑰輪替 | `app_settings.rotate_master_key()`、`scripts/rotate_secret_key.py`；`secret_box` 改成多把金鑰的 keyring（`MultiFernet`） |
+| 搬機與還原說明 | `docs/backup_restore.md` 第 1 節「主金鑰」、第 3 節「換到新機器」；`docs/tailscale_pwa_deploy.md` 第 8 節 |
+| 測試 | `tests/test_vapid_auto.py`、`tests/test_secret_rotation.py`、`tests/test_settings_audit.py`；前端 `tests/setup-wizard.test.mjs`、`tests/settings-api.test.mjs` |
+
+設計決定：
+
+- **精靈何時出現**：登入後 `/api/settings/status` 的 `needs_setup` 為真、而且沒有「無法解密」的金鑰時自動打開（無法解密是另一個問題，由橫幅處理）。「稍後再說」只在這個瀏覽器分頁的工作階段內有效，下次開啟還會再問；橫幅的「開始設定」隨時可以再開。
+- **精靈的流程**：仿 AnythingLLM OnboardingFlow 的 LLMPreference 步驟，分「選服務商 → 連線與測試 → 完成」。預設有 OpenAI、本機 Ollama、Google Gemini、OpenRouter、DeepSeek、其他 OpenAI 相容服務。**測試成功、而且測試的值和要存的值完全相同**才能儲存；測試後再改任何欄位，就要重新測試。
+- **本機伺服器不需要金鑰**：精靈選 OpenAI 相容服務時一定會送出 `OPENAI_API_KEY`（Ollama 送空字串）。空字串代表「這台不需要金鑰」，也讓伺服器知道舊金鑰不該跟著換到新位址。測試連線配合調整：位址不是 `api.openai.com` 而且沒有金鑰時，改用 provider 原本就在用的佔位值 `dummy-key`；只有「已經存了金鑰、而且這次沒有送 `OPENAI_API_KEY`」時，才擋下換位址的測試。
+- **VAPID 什麼時候產生**：只在執行背景服務的主程序啟動時產生（`BACKGROUND_SERVICES_ENABLED`），另外跑的 Bot、MCP 程序只讀不產生，避免兩邊各產一組。
+- **`.env` 優先沿用**：`.env` 有完整的一組就不產生，也不寫進資料庫；只有半組（只有公鑰或只有私鑰）時視同沒有，直接產生完整的一組。想讓 `.env` 不再放金鑰，用「從 .env 匯入」整組搬進 App，訂閱不受影響；只有半組時不匯入。
+- **兩把推播金鑰只能一起生效**：任何一把解不開或缺一把，兩把都不套用，避免瀏覽器訂閱到伺服器無法簽章的公鑰。
+- **解不開時不自動重產**：主金鑰換過時，推播私鑰解不開。OmniKeep 不會自動換一組，因為原本的主金鑰檔可能找得回來，一換就讓所有訂閱失效。介面上提供「重新產生推播金鑰」，同時刪掉綁在舊公鑰上的訂閱。設定頁的推播區在金鑰正常時不顯示這個按鈕，避免誤按。
+- **推播金鑰不出現在表單**：`generated=True` 的欄位不出現在 `describe()` 的欄位清單，`PUT /api/settings` 設定或改回都會被拒絕；只有 `save(..., system=True)` 能寫入。
+- **主金鑰輪替的順序**：(1) 舊金鑰檔另存 `.bak`；(2) 金鑰檔改成「新金鑰、舊金鑰」兩行，所有值都還讀得到，執行中的伺服器也開始用新金鑰加密；(3) 一個交易內（`BEGIN IMMEDIATE`）把所有加密欄位改用新金鑰重新加密，並更新指紋、寫稽核紀錄；(4) 金鑰檔只留新金鑰。任一步驟中斷都還讀得到所有值，再執行一次即可。
+- **不重啟就換金鑰**：`secret_box` 的快取除了路徑，也比對金鑰檔的 inode、修改時間與大小，檔案一換就重新載入。
+- **只輪替金鑰檔**：主金鑰來自 `OMNIKEEP_SECRET_KEY` 環境變數時，指令拒絕執行，因為它改不了環境變數。
+- **稽核紀錄**：沿用第一階段的 `app_settings_audit`，動作有 `set`、`clear`、`reset`、`import`、`pair`（Telegram 配對）、`generate`、`regenerate`、`rotate`（欄位名稱記為 `_secret_key`，顯示為「主金鑰」）。API 只回欄位、群組、動作、時間，最新的在前，用 `before` 往前翻頁。
+
+順手修正：
+
+- **沒設 `VAPID_SUBJECT` 時每則推播都送不出去**：py-vapid 1.9.6 的 `sub` 檢查只接受不帶路徑的 `https://` 網址，預設值 `https://github.com/b40609/OmniKeep` 會被拒絕，簽章直接丟例外，推播計為失敗。RFC 8292 允許任何 https URI，設定頁也已經檢查只能填 `mailto:` 或 `https://`，所以簽章時關掉 py-vapid 自己的檢查（`app/push.py`）。之前的測試都有設 `VAPID_SUBJECT`，所以沒抓到。
+- **「無法解密」的原因說錯**：重新輸入其中一把金鑰後，指紋會更新成目前的主金鑰，提示就變成「找不到主金鑰」，但金鑰檔其實在。改成依金鑰檔是否存在來判斷。
+- `.gitignore`、`.dockerignore` 加上 `*.secret.key.*`，輪替留下的 `.bak` 也不會被 commit 或打包進映像。
+
+沒有做的：
+
+- 主金鑰來自 `OMNIKEEP_SECRET_KEY` 環境變數時的輪替。
+- 從網頁觸發輪替。輪替會在伺服器上留下舊金鑰備份檔，放在指令裡比較清楚；網頁只有說明。
+- `scripts/generate_vapid_keys.py` 沒有刪除，改成「選用」：想把推播金鑰放在 `.env` 的人仍然可以用。
 
 ## 9. 來源
 

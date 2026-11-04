@@ -1,7 +1,8 @@
 """Try a provider or bot credential from the settings page, before or after saving it.
 
-Values typed in the form are tested as typed; fields left blank fall back to
-what is in effect now. Nothing here changes settings or the service status.
+Values typed in the form are tested as typed; fields left out fall back to
+what is in effect now (a credential sent as "" means "test without a key").
+Nothing here changes settings or the service status.
 """
 from typing import Any, Callable, Dict, List, Optional
 
@@ -19,6 +20,8 @@ def _candidate(values: Dict[str, Any], key: str) -> Any:
     raw = values.get(key)
     if raw not in (None, ""):
         return app_settings.normalize(spec, raw)
+    if spec.secret and raw == "":
+        return ""  # sent empty on purpose: test without any key (a local server)
     return getattr(settings, spec.field)
 
 
@@ -55,7 +58,8 @@ def _fail(status: Optional[int], detail: str = "", secrets: Optional[List[str]] 
 
 def _guard_base_url(values: Dict[str, Any], base_url: str) -> Optional[Dict[str, Any]]:
     """Never send the saved key to an address it was not saved for."""
-    if base_url.rstrip("/") != settings.OPENAI_BASE_URL.rstrip("/") and not values.get("OPENAI_API_KEY"):
+    moved = base_url.rstrip("/") != settings.OPENAI_BASE_URL.rstrip("/")
+    if moved and settings.OPENAI_API_KEY and "OPENAI_API_KEY" not in values:
         return _fail(None, message="更換 API 位址時，請一併輸入要測試的 API 金鑰")
     return None
 
@@ -68,7 +72,10 @@ async def _check_llm(values: Dict[str, Any]) -> Dict[str, Any]:
     key = _candidate(values, "OPENAI_API_KEY")
     model = _candidate(values, "PRIMARY_MODEL")
     if not key:
-        return _fail(None, message="還沒有設定 API 金鑰")
+        if "api.openai.com" in base_url:
+            return _fail(None, message="還沒有設定 API 金鑰")
+        # Local servers such as Ollama take any key; the provider sends the same placeholder.
+        key = "dummy-key"
     client = AsyncOpenAI(base_url=base_url, api_key=key, timeout=TIMEOUT, max_retries=0)
     try:
         listed: List[str] = []

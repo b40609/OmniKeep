@@ -69,3 +69,22 @@ test('import and status use their own endpoints', async () => {
   await api.getServiceStatus()
   assert.deepEqual([calls[0].url, calls[0].method], ['/api/settings/status', 'GET'])
 })
+
+test('getSettingsAudit pages backwards by id', async () => {
+  api.setApiKey('settings-token')
+  let calls = captureFetch({ entries: [], has_more: false })
+  await api.getSettingsAudit()
+  assert.deepEqual([calls[0].url, calls[0].method], ['/api/settings/audit?limit=50', 'GET'])
+  assert.equal(calls[0].headers.Authorization, 'Bearer settings-token')
+  calls = captureFetch({ entries: [], has_more: false })
+  await api.getSettingsAudit(41, 20)
+  assert.equal(calls[0].url, '/api/settings/audit?limit=20&before=41')
+})
+
+test('regeneratePushKeys posts to its own endpoint', async () => {
+  api.setApiKey('settings-token')
+  const calls = captureFetch({ groups: [], push: { ready: true, source: 'app', undecryptable: false, subscriptions: 0 }, removed_subscriptions: 2 })
+  const result = await api.regeneratePushKeys()
+  assert.deepEqual([calls[0].url, calls[0].method], ['/api/settings/push/regenerate', 'POST'])
+  assert.equal(result.removed_subscriptions, 2)
+})

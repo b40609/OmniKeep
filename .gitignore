@@ -12,6 +12,7 @@ venv/
 *.worker.lock
 # Master key that decrypts credentials saved in the app (app/secret_box.py)
 *.secret.key
+*.secret.key.*
 .DS_Store
 dist/
 build/

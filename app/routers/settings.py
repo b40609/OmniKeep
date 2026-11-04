@@ -3,13 +3,13 @@
 Credentials are write-only: responses carry "configured" and the last four
 characters, never the value. Every route sits behind the API key gate.
 """
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app import ai_status, app_settings, services
+from app import ai_status, app_settings, services, vapid
 from app.config import settings
 from app.connection_checks import CHECKS, run_check
 
@@ -52,6 +52,19 @@ async def update_settings(body: SettingsUpdate):
 async def import_env_values():
     imported = app_settings.import_env()
     return {**app_settings.describe(), "imported": imported}
+
+
+@router.get("/audit")
+async def settings_audit(limit: int = Query(50, ge=1, le=200), before: Optional[int] = Query(None, ge=1)):
+    """Which setting changed, how and when; values are never recorded."""
+    return app_settings.audit_log(limit, before)
+
+
+@router.post("/push/regenerate")
+async def regenerate_push_keys():
+    """New Web Push key pair; every device has to switch push on again."""
+    removed = vapid.regenerate()
+    return {**app_settings.describe(), "removed_subscriptions": removed}
 
 
 @router.post("/check/{service}")

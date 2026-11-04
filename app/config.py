@@ -59,8 +59,9 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_ALLOWED_USER_IDS_RAW: str = Field(default="", validation_alias="TELEGRAM_ALLOWED_USER_IDS")
 
-    # PWA Web Push (VAPID, RFC 8292). Generate once with scripts/generate_vapid_keys.py;
-    # replacing the pair invalidates every existing browser subscription.
+    # PWA Web Push (VAPID, RFC 8292). Generated on first start and stored in the app's
+    # settings (app/vapid.py); a pair set in .env is used instead. Replacing the pair
+    # invalidates every existing browser subscription.
     VAPID_PUBLIC_KEY: str = ""
     VAPID_PRIVATE_KEY: str = ""
     # Contact for push services: mailto: address or https URL (Apple rejects anything else).

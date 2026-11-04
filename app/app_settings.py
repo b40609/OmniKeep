@@ -57,6 +57,7 @@ class Spec:
     optional: bool = False  # a url that may be left empty (switches that service off)
     hook: str = ""  # llm | limiter | telegram: what must be rebuilt after a change
     check: Optional[Callable[[Any], Optional[str]]] = None
+    generated: bool = False  # created by OmniKeep itself (app/vapid.py), never typed in the form
 
     @property
     def field(self) -> str:
@@ -137,9 +138,14 @@ SPECS: Tuple[Spec, ...] = (
 
     Spec("VAPID_SUBJECT", "push", "推播聯絡資訊", "text", check=_vapid_subject,
          help="mailto: 信箱或 https 網址，推播服務商用來聯絡你。留空則用專案網址。"),
+    # A pair: both are written together by app/vapid.py and applied only together.
+    Spec("VAPID_PUBLIC_KEY", "push", "推播公鑰", "text", generated=True),
+    Spec("VAPID_PRIVATE_KEY", "push", "推播私鑰", "secret", generated=True),
 )
 
 SPEC_BY_KEY: Dict[str, Spec] = {spec.key: spec for spec in SPECS}
+GENERATED_KEYS = frozenset(spec.key for spec in SPECS if spec.generated)
+MASTER_KEY_AUDIT = "_secret_key"  # audit rows about the master key itself
 
 _lock = threading.RLock()
 _baseline: Dict[str, Any] = {}  # Settings field -> its .env/default value while overridden
@@ -303,6 +309,10 @@ def _run_sync_hooks(keys: Iterable[str]) -> None:
 def apply_overrides() -> List[str]:
     """Make the running settings match the database; returns the keys whose value changed."""
     values, broken, _ = _stored_values()
+    if broken & GENERATED_KEYS or not GENERATED_KEYS <= set(values):
+        # Half a key pair is worse than none: a public key without its private
+        # key would make browsers subscribe to something the server cannot sign for.
+        values = {key: value for key, value in values.items() if key not in GENERATED_KEYS}
     changed: List[str] = []
     with _lock:
         _undecryptable.clear()
@@ -337,8 +347,13 @@ def restore_baseline() -> None:
     _run_sync_hooks(restored)
 
 
-def save(values: Optional[Dict[str, Any]] = None, reset: Iterable[str] = (), action: str = "set") -> List[str]:
-    """Validate, store and apply. `reset` drops the app's value so .env/default applies again."""
+def save(values: Optional[Dict[str, Any]] = None, reset: Iterable[str] = (), action: str = "set",
+         system: bool = False) -> List[str]:
+    """Validate, store and apply. `reset` drops the app's value so .env/default applies again.
+
+    `system` lets OmniKeep itself write the generated settings (the push key pair),
+    which the settings page can never set or reset.
+    """
     values = dict(values or {})
     reset = list(dict.fromkeys(reset))
     errors: Dict[str, str] = {}
@@ -348,6 +363,9 @@ def save(values: Optional[Dict[str, Any]] = None, reset: Iterable[str] = (), act
         if spec is None:
             errors[key] = "這個設定不能在 App 內修改"
             continue
+        if spec.generated and not system:
+            errors[key] = "這個設定由 OmniKeep 自動產生，不能手動修改"
+            continue
         try:
             typed[key] = normalize(spec, raw)
         except ValueError as exc:
@@ -355,6 +373,8 @@ def save(values: Optional[Dict[str, Any]] = None, reset: Iterable[str] = (), act
     for key in reset:
         if key not in SPEC_BY_KEY:
             errors[key] = "這個設定不能在 App 內修改"
+        elif SPEC_BY_KEY[key].generated and not system:
+            errors[key] = "這個設定由 OmniKeep 自動產生，不能手動修改"
         elif key in typed:
             errors[key] = "不能同時修改又改回 .env"
     if "OPENAI_BASE_URL" in typed or "OPENAI_BASE_URL" in reset:
@@ -403,14 +423,22 @@ def save(values: Optional[Dict[str, Any]] = None, reset: Iterable[str] = (), act
     return sorted(set(changed) | touched)
 
 
+def _importable(saved: Iterable[str]) -> List[str]:
+    saved = set(saved)
+    keys = [spec.key for spec in SPECS if spec.key not in saved and _env_provides(spec)]
+    if not GENERATED_KEYS <= set(keys):
+        # The push key pair moves only as a pair, and only while the app holds none.
+        keys = [key for key in keys if key not in GENERATED_KEYS]
+    return keys
+
+
 def import_env() -> List[str]:
     """Copy every value .env currently provides into the app, so .env can be emptied."""
     with closing(get_db_connection()) as conn:
         saved = set(_read_rows(conn))
-    values = {spec.key: baseline_value(spec) for spec in SPECS
-              if spec.key not in saved and _env_provides(spec)}
+    values = {key: baseline_value(SPEC_BY_KEY[key]) for key in _importable(saved)}
     if values:
-        save(values, action="import")
+        save(values, action="import", system=True)
     return sorted(values)
 
 
@@ -429,7 +457,7 @@ def describe() -> Dict[str, Any]:
     groups = []
     for group_id, group_label in GROUPS:
         fields = []
-        for spec in (s for s in SPECS if s.group == group_id):
+        for spec in (s for s in SPECS if s.group == group_id and not s.generated):
             source = "app" if spec.key in values else ("env" if _env_provides(spec) else "default")
             field: Dict[str, Any] = {
                 "key": spec.key, "label": spec.label, "kind": spec.kind, "help": spec.help,
@@ -454,6 +482,7 @@ def describe() -> Dict[str, Any]:
             fields.append(field)
         groups.append({"id": group_id, "label": group_label, "fields": fields})
 
+    from app import vapid
     from app.security import configured_key
     current_fingerprint = secret_box.fingerprint(create=False)
     key_path = secret_box.key_file_path()
@@ -466,7 +495,8 @@ def describe() -> Dict[str, Any]:
             "changed": bool(saved_fingerprint and current_fingerprint and saved_fingerprint != current_fingerprint),
             "undecryptable": sorted(broken),
         },
-        "env_importable": [spec.key for spec in SPECS if spec.key not in values and _env_provides(spec)],
+        "env_importable": _importable(set(values) | broken),
+        "push": vapid.status(),
         "bootstrap": [
             {"key": "HOST", "value": settings.HOST},
             {"key": "PORT", "value": settings.PORT},
@@ -475,3 +505,102 @@ def describe() -> Dict[str, Any]:
             {"key": "LOCAL_AUTO_LOGIN", "value": settings.LOCAL_AUTO_LOGIN},
         ],
     }
+
+
+# ── Audit log ───────────────────────────────────────────────────
+
+def label_for(key: str) -> str:
+    if key == MASTER_KEY_AUDIT:
+        return "主金鑰"
+    spec = SPEC_BY_KEY.get(key)
+    return spec.label if spec else key
+
+
+def audit_log(limit: int = 50, before_id: Optional[int] = None) -> Dict[str, Any]:
+    """Newest first: which setting, what happened, when. The table never holds values."""
+    limit = max(1, min(int(limit), 200))
+    query = "SELECT id, key, action, created_at FROM app_settings_audit"
+    params: List[Any] = []
+    if before_id is not None:
+        query += " WHERE id < ?"
+        params.append(int(before_id))
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(limit + 1)
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(query, params).fetchall()
+    group_labels = dict(GROUPS)
+    entries = []
+    for row in rows[:limit]:
+        spec = SPEC_BY_KEY.get(row["key"])
+        if spec:
+            group = group_labels.get(spec.group, "")
+        else:
+            group = "系統" if row["key"] == MASTER_KEY_AUDIT else ""
+        entries.append({
+            "id": row["id"], "key": row["key"], "label": label_for(row["key"]), "group": group,
+            "action": row["action"], "created_at": row["created_at"],
+        })
+    return {"entries": entries, "has_more": len(rows) > limit}
+
+
+# ── Master key rotation ─────────────────────────────────────────
+
+class RotationError(RuntimeError):
+    pass
+
+
+def rotate_master_key() -> Dict[str, Any]:
+    """Re-encrypt every stored credential under a fresh master key.
+
+    1. The key file is copied to <key file>.<UTC time>.bak.
+    2. The key file becomes [new key, old keys...]: everything stays readable,
+       and a running server (it reloads the file when the file changes) already
+       encrypts new values with the new key.
+    3. Every encrypted row is re-encrypted in one transaction.
+    4. The key file is cut down to the new key; the old ones live on only in the backup.
+    A crash between steps leaves a keyring that still reads every value; run it again.
+    """
+    if secret_box.key_source() == "env":
+        raise RotationError("The master key comes from OMNIKEEP_SECRET_KEY; only a key file can be rotated")
+    path = secret_box.key_file_path()
+    if not path.is_file():
+        raise RotationError("There is no master key file yet; it is created when a credential is first saved")
+    old_keys = secret_box.read_keyring(path)
+    if not old_keys:
+        raise RotationError("The master key file is empty")
+    backup = secret_box.backup_keyring(path)
+    fresh = secret_box.new_key()
+    secret_box.write_keyring(path, [fresh, *old_keys])
+    secret_box.clear_cache()
+    keyring = secret_box.keyring_of([fresh, *old_keys])
+
+    rotated: List[str] = []
+    failed: List[str] = []
+    now = _now()
+    with _lock, closing(get_db_connection()) as conn:
+        conn.execute("BEGIN IMMEDIATE")  # no other writer between reading and rewriting
+        try:
+            rows = conn.execute("SELECT key, value FROM app_settings WHERE is_secret = 1").fetchall()
+            for row in rows:
+                try:
+                    token = secret_box.reencrypt(row["value"], keyring)
+                except secret_box.SecretUnavailable:
+                    failed.append(row["key"])  # already unreadable before the rotation
+                    continue
+                conn.execute("UPDATE app_settings SET value = ? WHERE key = ?", (token, row["key"]))
+                rotated.append(row["key"])
+            conn.execute(
+                "INSERT INTO app_settings (key, value, is_secret, updated_at) VALUES (?, ?, 0, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (META_FINGERPRINT, secret_box.key_fingerprint(fresh), now),
+            )
+            conn.execute("INSERT INTO app_settings_audit (key, action, created_at) VALUES (?, 'rotate', ?)",
+                         (MASTER_KEY_AUDIT, now))
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+    secret_box.write_keyring(path, [fresh])
+    secret_box.clear_cache()
+    logger.info("Master key rotated: %d values re-encrypted, %d could not be read", len(rotated), len(failed))
+    return {"rotated": sorted(rotated), "failed": sorted(failed), "backup": str(backup), "key_file": str(path)}

@@ -23,6 +23,7 @@ import ImportDialog from '@/components/modals/ImportDialog.vue'
 import DeckDialog from '@/components/modals/DeckDialog.vue'
 import PushDialog from '@/components/modals/PushDialog.vue'
 import SettingsDialog from '@/components/modals/SettingsDialog.vue'
+import SetupWizard from '@/components/modals/SetupWizard.vue'
 import ServiceStatusBanner from '@/components/layout/ServiceStatusBanner.vue'
 import DailyDeckDialog from '@/components/modals/DailyDeckDialog.vue'
 import BrainDialog from '@/components/modals/BrainDialog.vue'
@@ -335,6 +336,7 @@ onUnmounted(() => {
     <DeckDialog />
     <PushDialog />
     <SettingsDialog />
+    <SetupWizard />
     <DailyDeckDialog />
     <BrainDialog />
     <CommandPalette />

@@ -6,11 +6,27 @@ OmniKeep 每天自動備份一次，必要時用 `scripts/restore_backup.py` 還
 
 | 有備份 | 沒有備份，請自己另外保存 |
 |---|---|
-| SQLite 資料庫：收藏、分析結果、全文索引、向量、提案、行為紀錄、推播訂閱 | `.env`：`API_KEY`、VAPID 金鑰、各家 AI 金鑰、Telegram token |
+| SQLite 資料庫：收藏、分析結果、全文索引、向量、提案、行為紀錄、推播訂閱 | 主金鑰檔 `omnikeep.secret.key`（資料庫旁邊） |
+| 在 App「設定」輸入的值：AI 金鑰、Bot token、推播金鑰等，**加密後**存在資料庫裡 | `.env`：`API_KEY`，以及還留在 `.env` 的舊設定 |
 | HTML 抗腐快照：`SNAPSHOT_DIR/<項目 id>.html` | 平台登入狀態：cookie 檔、CDP 瀏覽器設定檔 |
 
-- `.env` 建議放在密碼管理器。在新機器還原時要用**同一組** `API_KEY` 與 VAPID 金鑰。VAPID 金鑰一換，資料庫裡所有裝置的推播訂閱都會失效。
-- 備份 zip **沒有加密**，裡面是你的全部資料。放到雲端時，建議使用 rclone 的 [crypt](https://rclone.org/crypt/) 遠端。
+- 備份裡的金鑰只有加密後的內容，解密要靠主金鑰檔，而主金鑰檔刻意**不放進備份**。請把它和 `.env` 一起放在密碼管理器或另一個安全的地方。
+- 只有備份、沒有主金鑰檔：收藏都還在，只是 App 內輸入的金鑰解不開。設定頁會列出哪些要重新輸入，推播金鑰則要重新產生（各裝置重新開啟推播）。
+- 在新機器還原時要用**同一組** `API_KEY` 與主金鑰檔。VAPID 金鑰一換，資料庫裡所有裝置的推播訂閱都會失效。
+- 備份 zip **沒有加密**（金鑰欄位除外），裡面是你的全部資料。放到雲端時，建議使用 rclone 的 [crypt](https://rclone.org/crypt/) 遠端。
+
+### 主金鑰
+
+- 位置：預設在資料庫旁的 `omnikeep.secret.key`，「設定 › 系統」會顯示完整路徑。可以用環境變數 `OMNIKEEP_SECRET_KEY_FILE` 指到別處，或用 `OMNIKEEP_SECRET_KEY` 直接提供（這種方式不能用下面的輪替指令）。
+- 第一次在 App 儲存金鑰時自動建立。Linux、macOS 上檔案權限只限擁有者；Windows 沿用所在資料夾的權限。
+- **更換（輪替）**：在伺服器的專案目錄執行
+
+  ```bash
+  python scripts/rotate_secret_key.py
+  ```
+
+  它會先把舊金鑰檔另存成 `omnikeep.secret.key.<UTC 時間>.bak`，再用新的主金鑰重新加密所有金鑰，最後把舊金鑰從金鑰檔移除。執行中的伺服器會自己偵測金鑰檔變了，不必停止或重啟。指令只印路徑和數量，不會印出任何金鑰。中途當掉的話，金鑰檔仍然讀得到所有值，再執行一次即可。
+- **還原輪替之前的備份**：那份備份是用舊主金鑰加密的。把對應的 `.bak` 檔內容貼到 `omnikeep.secret.key` 的**第二行**（第一行保持現在的金鑰），還原後再執行一次 `rotate_secret_key.py`，就會全部改用新金鑰。`.bak` 要保留到比它舊的備份都不需要為止。
 
 ## 2. 什麼時候、備份到哪裡
 
@@ -81,7 +97,7 @@ python scripts/restore_backup.py backups/omnikeep-prerestore-20261104-101500-000
 
 確認不需要之後，這些資料夾可以自己刪除，程式不會自動清理。
 
-**換到新機器**：先放好原本的 `.env`，安裝依賴並建置前端（見 README 與 `docs/tailscale_pwa_deploy.md`），再照上面的步驟還原。
+**換到新機器**：先放好原本的 `.env`，把舊主機的 `omnikeep.secret.key` 複製到新主機資料庫所在的資料夾（還原指令放資料庫的位置，也就是 `DATABASE_PATH` 的資料夾），安裝依賴並建置前端（見 README 與 `docs/tailscale_pwa_deploy.md`），再照上面的步驟還原。啟動後到「設定 › 系統」確認沒有「無法解密」的提示。
 
 **Docker**：資料在 `omnikeep_data` volume 的 `/data`。先 `docker compose stop`，再用 `docker compose run --rm omnikeep python scripts/restore_backup.py --latest --yes` 還原；服務名稱以你的 `docker-compose.yml` 為準。
 

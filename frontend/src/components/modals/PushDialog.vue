@@ -100,6 +100,11 @@ async function test() {
   }
 }
 
+function openPushSettings() {
+  ui.showPushModal = false
+  ui.openSettings('push')
+}
+
 watch(
   () => ui.showPushModal,
   (open) => {
@@ -134,9 +139,12 @@ watch(
           Service Worker 尚未啟用。請用建置後的版本（<code>npm run build</code>），並透過 HTTPS 或 localhost 開啟。
         </p>
 
-        <p v-else-if="state === 'unconfigured'" class="text-muted-foreground">
-          伺服器還沒設定推播金鑰。請在伺服器執行 <code>python scripts/generate_vapid_keys.py</code>，再重新啟動 OmniKeep。
-        </p>
+        <div v-else-if="state === 'unconfigured'" class="space-y-2">
+          <p class="text-muted-foreground">
+            伺服器還沒有可用的推播金鑰。OmniKeep 啟動時會自動產生；如果一直看到這段，可能是主金鑰換過而無法解密，請到「設定 › 推播」查看或重新產生。
+          </p>
+          <Button variant="secondary" size="sm" @click="openPushSettings">開啟推播設定</Button>
+        </div>
 
         <p v-else-if="state === 'denied'" class="text-muted-foreground">
           這個網站的通知已被封鎖。請到瀏覽器或系統的通知設定允許 OmniKeep 後再試。

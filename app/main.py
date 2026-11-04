@@ -41,6 +41,13 @@ async def lifespan(app: FastAPI):
     if not settings.BACKGROUND_SERVICES_ENABLED:
         yield
         return
+    try:
+        # Only the instance that runs background services (and so sends pushes)
+        # creates the pair; a pair from .env is kept as it is.
+        from app import vapid
+        vapid.ensure()
+    except Exception as exc:  # push being off must not keep the service from starting
+        logger.error("Could not prepare the Web Push key pair (%s)", type(exc).__name__)
     from app.background import follow_up_pool
     from app.backup import backup_loop
     from app.parsers.cookie_manager import sweep_cookie_exports

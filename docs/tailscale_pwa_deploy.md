@@ -108,11 +108,13 @@ curl https://<主機名>.<tailnet 名>.ts.net/api/session/local-auth
 
 ## 8. 推播通知（Web Push）
 
-**伺服器（一次性）**
-1. 在主機的專案目錄執行 `python scripts/generate_vapid_keys.py`。它會把 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY` 寫進既有的 `.env`，不會印出金鑰；若已有金鑰則拒絕覆寫。之後不要重產，換金鑰會讓所有裝置的訂閱失效。
-2. 選填 `VAPID_SUBJECT`：推播服務的聯絡方式，必須是 `mailto:` 或 `https://` 開頭；沒設就用專案網址。
-3. 重新啟動 OmniKeep。
-4. 主機要能以 HTTPS 連到各家推播服務，例如 Chrome 的 `fcm.googleapis.com`、Apple 的 `*.push.apple.com`。
+**伺服器**
+1. 推播金鑰（VAPID）不用自己產生：OmniKeep 第一次啟動時會自動產生一組，私鑰用主金鑰加密後存在 App 設定裡。狀態在「設定 › 推播」。
+   - `.env` 已經有 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY` 的話會照用，不會另外產生，既有裝置的訂閱不受影響。想讓 `.env` 不再放這兩行，到「設定 › 系統」按「從 .env 匯入」，再刪掉 `.env` 裡那兩行。
+   - 主金鑰換過或遺失、推播私鑰解不開時，OmniKeep 不會自動換一組（原本的主金鑰檔放回去就會恢復）；確定找不回來，到「設定 › 推播」按「重新產生推播金鑰」，各裝置再重新開啟推播。
+   - `scripts/generate_vapid_keys.py` 只有想把金鑰放在 `.env` 時才需要。
+2. 選填「推播聯絡資訊」（`VAPID_SUBJECT`）：在「設定 › 推播」填，必須是 `mailto:` 或 `https://` 開頭；沒填就用專案網址。
+3. 主機要能以 HTTPS 連到各家推播服務，例如 Chrome 的 `fcm.googleapis.com`、Apple 的 `*.push.apple.com`。
 
 **每台裝置各自開啟**
 - iPhone、iPad：需要 iOS／iPadOS 16.4 以上，而且**一定要先照第 6 節加到主畫面**，再從主畫面圖示開啟。Safari 分頁裡收不到推播。

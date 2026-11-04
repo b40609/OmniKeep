@@ -77,7 +77,12 @@ def vapid_headers(endpoint: str) -> Dict[str, str]:
         "exp": int(time.time()) + 12 * 3600,
         "sub": settings.VAPID_SUBJECT or DEFAULT_SUBJECT,
     }
-    return Vapid02.from_string(settings.VAPID_PRIVATE_KEY).sign(claims)
+    signer = Vapid02.from_string(settings.VAPID_PRIVATE_KEY)
+    # py-vapid's own check accepts an https subject only without a path, so it
+    # refused DEFAULT_SUBJECT and failed every push sent without VAPID_SUBJECT.
+    # RFC 8292 allows any https URI; the settings page already insists on mailto:/https:.
+    signer.conf["no-strict"] = True
+    return signer.sign(claims)
 
 
 async def _deliver(client, sub: Dict[str, Any], payload: bytes, ttl: int, topic: Optional[str]) -> str:
