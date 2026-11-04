@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     # Personalisation for analysis prompts (entered in the app; empty keeps prompts neutral)
     USER_BACKGROUND: str = ""
     LOCAL_HARDWARE: str = ""
+    ANALYSIS_DEPTH: str = "standard"  # standard | concise | technical | actionable (app/pipeline.py)
 
     # Storage (Always absolute path anchored to Hub root)
     DATABASE_PATH: str = str(BASE_DIR / "omnikeep.db")

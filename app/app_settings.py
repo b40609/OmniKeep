@@ -114,6 +114,12 @@ SPECS: Tuple[Spec, ...] = (
     Spec("LOCAL_HARDWARE", "profile", "本機硬體", "text",
          help="例如「Ryzen 7 / RTX 4070 12GB / 32GB RAM」。分析 AI 模型時會評估能否在這台機器上跑；"
               "留空則只列出不同顯存大小的需求。"),
+    Spec("ANALYSIS_DEPTH", "profile", "分析深度", "choice",
+         choices=(("standard", "標準"),
+                  ("concise", "重點摘要：深度剖析只留 3 到 5 個重點"),
+                  ("technical", "技術細節：完整列出架構、規格與限制"),
+                  ("actionable", "含落地建議：落地建議擴充為 3 點，附做法與驗證方式")),
+         help="只影響之後的新分析；已分析過的內容不會重跑。"),
 
     Spec("TELEGRAM_BOT_TOKEN", "telegram", "Bot Token", "secret", hook="telegram",
          help="向 @BotFather 建立 Bot 後取得。儲存後 Bot 立即重新連線。"),

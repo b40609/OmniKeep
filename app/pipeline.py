@@ -79,6 +79,19 @@ _ANALYSIS_PROMPT_TEMPLATE = """你是一位客觀、專業的技術情報與全�
 - 若內容為單一主題或貼文提及特定開源專案/GitHub 倉庫，is_composite 設為 false，並於 sub_entities 記錄該專案名稱（若完全未提及任何開源專案或軟體工具，sub_entities 設為空陣列 []）。"""
 
 
+# Extra rule appended to the analysis prompt per the ANALYSIS_DEPTH setting; "standard" leaves it unchanged.
+ANALYSIS_DEPTH_RULES = {
+    "standard": "",
+    "concise": ("- 分析深度（使用者設定：重點摘要）：deep_analysis 只保留 3 到 5 個最重要的條列，每條一到兩句；"
+                "不附最小可執行驗證代碼，硬體需求只寫一行結論；落地啟發最多 1 點。"
+                "這一條優先於上面對 deep_analysis 長度與段落的要求。"),
+    "technical": ("- 分析深度（使用者設定：技術細節）：deep_analysis 盡量完整列出架構、關鍵參數與數據規模、"
+                  "限制與已知問題、與同類方案的差異；原文有的規格不要為了精簡而省略。"),
+    "actionable": ("- 分析深度（使用者設定：含落地建議）：工程架構、技術工具或策略類內容，"
+                   "「### 💡 專屬決策評估與落地啟發」擴充為 3 點，每點寫明要做什麼、怎麼驗證是否有效。"),
+}
+
+
 def hardware_heading() -> str:
     """Heading of the AI-model hardware section; names the machine only if the owner entered it."""
     hardware = (settings.LOCAL_HARDWARE or "").strip()
@@ -114,7 +127,9 @@ def analysis_system_prompt() -> str:
         "HARDWARE_VERDICT": verdict,
     }
     # One pass, so text the owner typed is never scanned for placeholders.
-    return re.sub(r"<<([A-Z_]+)>>", lambda m: parts[m.group(1)], _ANALYSIS_PROMPT_TEMPLATE)
+    prompt = re.sub(r"<<([A-Z_]+)>>", lambda m: parts[m.group(1)], _ANALYSIS_PROMPT_TEMPLATE)
+    depth_rule = ANALYSIS_DEPTH_RULES.get((settings.ANALYSIS_DEPTH or "").strip(), "")
+    return f"{prompt}\n{depth_rule}" if depth_rule else prompt
 
 
 def interest_profile_block() -> str:
