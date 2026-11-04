@@ -374,6 +374,62 @@ def test_embeddings_check_explains_a_revoked_key(fake_http, monkeypatch):
     assert "This token status is unavailable" in res["detail"]
 
 
+def test_ollama_address_can_be_blanked_and_brain_settings_apply():
+    with TestClient(app) as client:
+        res = _put(client, {"OLLAMA_BASE_URL": "", "BRAIN_PROVIDER": "cloud", "BRAIN_MODEL": "qwen3:14b",
+                            "BRAIN_MAX_CITATIONS": 8})
+        assert res.status_code == 200, res.text
+        assert _put(client, {"BRAIN_BASE_URL": ""}).status_code == 400  # only the vector runner may be off
+    assert settings.OLLAMA_BASE_URL == ""
+    assert (settings.BRAIN_PROVIDER, settings.BRAIN_MODEL, settings.BRAIN_MAX_CITATIONS) == ("cloud", "qwen3:14b", 8)
+
+
+def _fake_ollama(monkeypatch, handler):
+    calls = []
+
+    async def fake(method, url, **kwargs):
+        calls.append((method, url, kwargs.get("json")))
+        return handler(method, url, kwargs)
+
+    monkeypatch.setattr(connection_checks, "_ollama", fake)
+    return calls
+
+
+def test_ollama_check_explains_a_stopped_runner_and_a_missing_model(monkeypatch):
+    def down(method, url, kwargs):
+        raise httpx.ConnectError("refused")
+
+    _fake_ollama(monkeypatch, down)
+    with TestClient(app) as client:
+        res = client.post("/api/settings/check/ollama", headers=HEADERS, json={"values": {}}).json()
+    assert res["ok"] is False and "Ollama 是否已啟動" in res["message"]
+
+    _fake_ollama(monkeypatch, lambda m, u, k: httpx.Response(404, json={"error": "model not found"}))
+    with TestClient(app) as client:
+        res = client.post("/api/settings/check/ollama", headers=HEADERS, json={"values": {}}).json()
+    assert res["ok"] is False and "ollama pull embeddinggemma-2" in res["message"]
+
+    calls = _fake_ollama(monkeypatch, lambda m, u, k: httpx.Response(200, json={"embeddings": [[0.1] * 768]}))
+    with TestClient(app) as client:
+        res = client.post("/api/settings/check/ollama", headers=HEADERS,
+                          json={"values": {"OLLAMA_BASE_URL": "http://127.0.0.1:11500/"}}).json()
+    assert res["ok"] is True and "768" in res["message"]
+    assert calls[0][1] == "http://127.0.0.1:11500/api/embed"
+
+
+def test_brain_check_looks_for_the_configured_model(monkeypatch):
+    _fake_ollama(monkeypatch, lambda m, u, k: httpx.Response(200, json={"models": [{"name": "qwen3:8b"}]}))
+    with TestClient(app) as client:
+        ok = client.post("/api/settings/check/brain", headers=HEADERS, json={"values": {}}).json()
+        missing = client.post("/api/settings/check/brain", headers=HEADERS,
+                              json={"values": {"BRAIN_MODEL": "llama3.1"}}).json()
+        cloud = client.post("/api/settings/check/brain", headers=HEADERS,
+                            json={"values": {"BRAIN_PROVIDER": "cloud"}}).json()
+    assert ok["ok"] is True and "qwen3:8b" in ok["message"]
+    assert missing["ok"] is False and "ollama pull llama3.1" in missing["message"]
+    assert cloud["ok"] is True and "主要服務商" in cloud["message"]
+
+
 def test_unknown_check_is_404():
     with TestClient(app) as client:
         assert client.post("/api/settings/check/nope", headers=HEADERS, json={}).status_code == 404

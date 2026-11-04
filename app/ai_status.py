@@ -8,7 +8,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-SERVICES = ("llm", "embeddings", "gemini")
+SERVICES = ("llm", "embeddings", "gemini", "ollama")
 
 _lock = threading.Lock()
 _state: Dict[str, Dict[str, Any]] = {}

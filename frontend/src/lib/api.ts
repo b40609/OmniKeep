@@ -24,6 +24,40 @@ export interface SubEntity {
   tech_tags?: string[] | null
 }
 
+export interface RelatedItem {
+  id: number | string
+  title_l1: string
+  summary_l1: string
+  category_name: string
+  source_type: string
+  tech_tags: string[] | null
+  similarity: number
+  relation_type?: string
+}
+
+export interface GraphNode {
+  id: string | number
+  label: string
+  type: 'center' | 'backlink' | 'entity' | 'semantic'
+  category: string
+  url?: string
+  similarity?: number
+  is_internal?: boolean
+}
+
+export interface GraphEdge {
+  source: string | number
+  target: string | number
+  relation: string
+  context?: string
+  weight?: number
+}
+
+export interface KnowledgeGraph {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
+
 export interface Item {
   id: number
   title_l1: string
@@ -44,6 +78,8 @@ export interface Item {
   content_raw?: string | null
   citations?: Citation[]
   sub_entities?: SubEntity[]
+  related_items?: RelatedItem[]
+  graph?: KnowledgeGraph
 }
 
 export interface Category {
@@ -56,6 +92,7 @@ export interface Stats {
   inbox: number
   starred: number
   archived: number
+  radar: number
   total: number
 }
 
@@ -154,6 +191,7 @@ export interface ItemFilters {
   q?: string
   read?: 'true' | 'false'
   starred?: 'true'
+  origin?: 'manual' | 'radar' | 'all' | string
 }
 
 export function getItems(filters: ItemFilters = {}): Promise<Item[]> {
@@ -162,11 +200,12 @@ export function getItems(filters: ItemFilters = {}): Promise<Item[]> {
   if (filters.q) params.append('q', filters.q)
   if (filters.read) params.append('read', filters.read)
   if (filters.starred) params.append('starred', filters.starred)
+  if (filters.origin) params.append('origin', filters.origin)
   const qs = params.toString()
   return request<Item[]>(`/api/items${qs ? `?${qs}` : ''}`)
 }
 
-export function getItem(id: number): Promise<Item> {
+export function getItem(id: number | string): Promise<Item> {
   return request<Item>(`/api/items/${id}`)
 }
 
@@ -254,7 +293,7 @@ export interface ConnectionCheck {
   detail: string
 }
 
-export type CheckService = 'llm' | 'embeddings' | 'gemini' | 'telegram' | 'line' | 'github'
+export type CheckService = 'llm' | 'embeddings' | 'ollama' | 'gemini' | 'brain' | 'telegram' | 'line' | 'github'
 
 export interface ServiceOutcome {
   ok: boolean
@@ -264,7 +303,7 @@ export interface ServiceOutcome {
 }
 
 export interface ServiceStatus {
-  services: Partial<Record<'llm' | 'embeddings' | 'gemini', ServiceOutcome>>
+  services: Partial<Record<'llm' | 'embeddings' | 'gemini' | 'ollama', ServiceOutcome>>
   needs_setup: boolean
   undecryptable: string[]
 }
@@ -711,6 +750,27 @@ export function runBackupNow(): Promise<{ success: boolean }> {
 
 /* ---------------- Behavior events & swipe deck (P1) ---------------- */
 
+export interface DeckCard extends Item {
+  deck_score?: number
+  reasons?: string[]
+  is_exploration?: boolean
+  is_resurfaced?: boolean
+  resurfaced_reason?: string
+  deck_type?: 'unread' | 'resurface'
+}
+
+/** Daily review deck: curated unread items plus resurfaced ones (not the radar swipe deck). */
+export function getDailyDeck(limit = 10): Promise<{ count: number; items: DeckCard[] }> {
+  return request(`/api/behavior/deck?mode=daily&limit=${limit}`)
+}
+
+export function submitSwipeAction(itemId: string, action: 'swipe_up' | 'swipe_down' | 'swipe_star' | 'snooze'): Promise<{ success: boolean }> {
+  return request('/api/behavior/event', {
+    method: 'POST',
+    body: JSON.stringify({ event_type: action, item_id: itemId, source: 'pwa' })
+  })
+}
+
 export interface BehaviorEventPayload {
   event_type: string
   item_id?: string
@@ -825,4 +885,46 @@ export async function checkLocalAuth(): Promise<LocalAuthResult> {
   } catch {
     return { authenticated: false, api_key: '' }
   }
+}
+
+/* ---------------- Ask Brain Grounded Citations (E3) ---------------- */
+
+export interface BrainCitation {
+  citation_index: number
+  id: string | number
+  title: string
+  url: string
+  category_name: string
+  summary: string
+  rrf_score: number
+  similarity: number
+}
+
+export interface AskBrainResponse {
+  question: string
+  answer: string
+  citations: BrainCitation[]
+  model: string
+  provider: string
+}
+
+export interface BrainStatusResponse {
+  configured_model: string
+  configured_provider: string
+  ollama_ready: boolean
+  available_models: string[]
+  embedding_model: string
+  sqlite_vec_available: boolean
+  device_acceleration: string
+}
+
+export function askBrain(question: string, history?: { role: string; content: string }[], forceCloud = false): Promise<AskBrainResponse> {
+  return request<AskBrainResponse>('/api/brain/ask', {
+    method: 'POST',
+    body: JSON.stringify({ question, history, force_cloud: forceCloud }),
+  })
+}
+
+export function getBrainStatus(): Promise<BrainStatusResponse> {
+  return request<BrainStatusResponse>('/api/brain/status')
 }

@@ -20,6 +20,8 @@ from app.vector import (
     item_embedding_text,
     load_vec_extension,
     local_embedding,
+    ollama_embedding_enabled,
+    remote_embedding_model,
     store_item_embedding,
 )
 
@@ -29,8 +31,12 @@ MAX_FALLBACKS_IN_A_ROW = 3
 
 
 def target_model() -> str:
-    """The model queries embed with now, so the one the index has to hold."""
-    return settings.EMBEDDING_MODEL if settings.OPENAI_API_KEY else LOCAL_EMBEDDING_MODEL
+    """The model queries embed with when every configured service is up, so the
+    one the index has to hold: the local Ollama runner first, then the
+    OpenAI-compatible endpoint, then the local hash."""
+    if ollama_embedding_enabled():
+        return settings.EMBEDDING_MODEL
+    return remote_embedding_model() if settings.OPENAI_API_KEY else LOCAL_EMBEDDING_MODEL
 
 
 def audit_embeddings() -> Dict[str, Any]:

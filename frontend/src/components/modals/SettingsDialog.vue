@@ -30,9 +30,11 @@ const telegram = ref<InstanceType<typeof TelegramPairing> | null>(null)
 const CHECKS_BY_GROUP: Record<string, { service: CheckService; label: string }[]> = {
   ai: [
     { service: 'llm', label: '測試 OpenAI 相容服務' },
-    { service: 'embeddings', label: '測試向量模型' },
+    { service: 'ollama', label: '測試 Ollama 向量' },
+    { service: 'embeddings', label: '測試雲端向量' },
     { service: 'gemini', label: '測試 Gemini' },
   ],
+  brain: [{ service: 'brain', label: '測試 Ollama 模型' }],
   telegram: [{ service: 'telegram', label: '測試 Bot' }],
   line: [{ service: 'line', label: '測試 LINE Bot' }],
   github: [{ service: 'github', label: '測試 Token' }],

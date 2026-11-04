@@ -5,5 +5,12 @@ const props = defineProps<{ class?: string }>()
 </script>
 
 <template>
-  <div :class="cn('animate-pulse rounded-md bg-white/60 dark:bg-white/10', props.class)" />
+  <div
+    :class="
+      cn(
+        'relative overflow-hidden rounded-md bg-muted/60 dark:bg-white/[0.06] before:absolute before:inset-0 before:-translate-x-full before:animate-shimmer before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
+        props.class,
+      )
+    "
+  />
 </template>

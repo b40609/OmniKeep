@@ -89,6 +89,12 @@ export function sourceMeta(source: SourceType | null | undefined): SourceMeta {
         label: 'Reel',
         badgeClass: 'bg-info-soft text-info',
       }
+    case 'threads':
+      return {
+        variant: 'web',
+        label: 'Threads',
+        badgeClass: 'bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900',
+      }
     case 'google_news':
       return {
         variant: 'rss',

@@ -100,6 +100,9 @@ async def _check_embeddings(values: Dict[str, Any]) -> Dict[str, Any]:
         return blocked
     key = _candidate(values, "OPENAI_API_KEY")
     model = _candidate(values, "EMBEDDING_MODEL")
+    # Same substitution as app.vector.remote_embedding_model(): the Ollama-only
+    # model is replaced by OpenAI's when the cloud endpoint is used.
+    model = "text-embedding-3-small" if model == "embeddinggemma-2" else model
     if not key:
         return _fail(None, message="還沒有設定 API 金鑰；語意搜尋會改用本機向量")
     dim = int(settings.EMBEDDING_DIM)
@@ -192,9 +195,60 @@ async def _check_github(values: Dict[str, Any]) -> Dict[str, Any]:
     return _ok(f"GitHub Token 有效：{resp.json().get('login', '')}")
 
 
+async def _ollama(method: str, url: str, **kwargs):
+    """The operator's own local runner: plain httpx, like app.vector and app.brain."""
+    import httpx
+    async with httpx.AsyncClient(timeout=TIMEOUT, trust_env=False) as client:
+        return await client.request(method, url, **kwargs)
+
+
+async def _check_ollama(values: Dict[str, Any]) -> Dict[str, Any]:
+    base_url = str(_candidate(values, "OLLAMA_BASE_URL")).rstrip("/")
+    model = _candidate(values, "EMBEDDING_MODEL")
+    if not base_url:
+        return _fail(None, message="Ollama 位址是空的：向量會改用 OpenAI 相容服務或本機雜湊")
+    try:
+        resp = await _ollama("POST", f"{base_url}/api/embed", json={"model": model, "input": "ping"})
+    except Exception as exc:
+        return _fail(None, f"{type(exc).__name__}: {exc}", message=f"連不上 {base_url}，Ollama 是否已啟動？")
+    if resp.status_code == 404:
+        return _fail(404, resp.text[:300], message=f"Ollama 找不到模型 {model}，請先執行 ollama pull {model}")
+    if resp.status_code != 200:
+        return _fail(resp.status_code, resp.text[:300])
+    try:
+        size = len((resp.json().get("embeddings") or [[]])[0])
+    except (ValueError, IndexError, TypeError, AttributeError):
+        size = 0
+    dim = int(settings.EMBEDDING_DIM)
+    if size < dim:
+        return _fail(200, resp.text[:300], message=f"{model} 回傳 {size} 維，少於需要的 {dim} 維")
+    return _ok(f"Ollama 向量模型 {model} 可用（{size} 維，取前 {dim} 維）")
+
+
+async def _check_brain(values: Dict[str, Any]) -> Dict[str, Any]:
+    provider = _candidate(values, "BRAIN_PROVIDER")
+    if provider not in ("ollama", "strata"):
+        return _ok("Ask Brain 直接使用主要服務商，請用「AI 服務商」頁的測試")
+    base_url = str(_candidate(values, "BRAIN_BASE_URL")).rstrip("/")
+    model = _candidate(values, "BRAIN_MODEL")
+    try:
+        resp = await _ollama("GET", f"{base_url}/api/tags")
+    except Exception as exc:
+        return _fail(None, f"{type(exc).__name__}: {exc}",
+                     message=f"連不上 {base_url}，Ollama 是否已啟動？（連不上時會改用主要服務商回答）")
+    if resp.status_code != 200:
+        return _fail(resp.status_code, resp.text[:300])
+    names = [m.get("name", "") for m in resp.json().get("models", [])]
+    if model in names or f"{model}:latest" in names:
+        return _ok(f"Ollama 正常，找到模型 {model}")
+    return _fail(404, "、".join(names)[:300], message=f"Ollama 沒有模型 {model}，請先執行 ollama pull {model}")
+
+
 CHECKS: Dict[str, Callable] = {
     "llm": _check_llm,
     "embeddings": _check_embeddings,
+    "ollama": _check_ollama,
+    "brain": _check_brain,
     "gemini": _check_gemini,
     "telegram": _check_telegram,
     "line": _check_line,

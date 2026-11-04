@@ -2,15 +2,20 @@
 
 每個項目收錄時，會由「標題＋摘要＋標籤」算出一個向量存在 `item_embeddings`（有 sqlite-vec 時同步到 `vec_items`）。查詢時用同一種方法算出查詢向量再比對。兩邊必須是**同一個模型**算出的，否則語意搜尋不會命中，只剩全文搜尋在運作。
 
+依序嘗試，第一個成功的就是這個向量的來源，標記一律寫實際算出它的模型：
+
 | 設定 | 向量來源 | 標記 |
 |---|---|---|
-| 有 `OPENAI_API_KEY` | `OPENAI_BASE_URL` 的 embeddings 端點、`EMBEDDING_MODEL` | 例如 `text-embedding-3-small` |
-| 沒有，或端點失敗 | 本機雜湊投影 | `local-hash-v1` |
+| `OLLAMA_BASE_URL` 非空白（預設 `http://127.0.0.1:11434`） | 本機 Ollama 的 `/api/embed`、`EMBEDDING_MODEL` | 例如 `embeddinggemma-2` |
+| Ollama 不通，且有 `OPENAI_API_KEY` | `OPENAI_BASE_URL` 的 embeddings 端點；`EMBEDDING_MODEL` 是 `embeddinggemma-2` 時改用 `text-embedding-3-small` | 例如 `text-embedding-3-small` |
+| 都沒有，或端點失敗 | 本機雜湊投影 | `local-hash-v1` |
+
+查詢時只比對和查詢向量同一個標記的列。Ollama 暫時不通、查詢退到雲端模型時，語意搜尋只會命中雲端模型算的列，其餘交給全文搜尋。
 
 ## 什麼時候需要處理
 
 - **從 2026-11-03（`a7954f4`）之前的版本升級**：舊版遇到沒金鑰或端點失敗時，會用本機雜湊算向量，卻標成 `text-embedding-3-small`。舊版的端點又固定是 `api.openai.com`，用 DeepSeek、Ollama 等相容服務時一律失敗，所以舊資料很可能全是這種向量。
-- 改了 `OPENAI_API_KEY`、`EMBEDDING_MODEL`、`OPENAI_BASE_URL` 或 `EMBEDDING_DIM` 之後。
+- 改了 `OLLAMA_BASE_URL`、`OPENAI_API_KEY`、`EMBEDDING_MODEL`、`OPENAI_BASE_URL` 或 `EMBEDDING_DIM` 之後。
 - 伺服器日誌出現 `Query embeddings use model … stored vector(s) were indexed with …`。
 
 ## 指令

@@ -10,7 +10,7 @@ const ui = useUiStore()
 const status = ref<ServiceStatus | null>(null)
 const dismissed = ref(sessionStorageGet())
 
-const LABELS = { llm: 'AI 分析', embeddings: '語意搜尋向量', gemini: 'Gemini' } as const
+const LABELS = { llm: 'AI 分析', embeddings: '雲端向量', gemini: 'Gemini', ollama: '本機 Ollama 向量' } as const
 const POLL_MS = 120_000
 
 function sessionStorageGet() {

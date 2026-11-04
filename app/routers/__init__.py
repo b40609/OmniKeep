@@ -10,3 +10,4 @@ from app.routers.rules import router as rules_router
 from app.routers.push import router as push_router
 from app.routers.telegram import router as telegram_router
 from app.routers.settings import router as settings_router
+from app.routers.brain import router as brain_router

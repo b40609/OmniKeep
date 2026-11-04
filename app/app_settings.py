@@ -54,6 +54,7 @@ class Spec:
     maximum: Optional[float] = None
     multi: bool = False  # a secret holding several comma-separated keys
     numeric_ids: bool = False
+    optional: bool = False  # a url that may be left empty (switches that service off)
     hook: str = ""  # llm | limiter | telegram: what must be rebuilt after a change
     check: Optional[Callable[[Any], Optional[str]]] = None
 
@@ -68,6 +69,7 @@ class Spec:
 
 GROUPS: Tuple[Tuple[str, str], ...] = (
     ("ai", "AI 服務商"),
+    ("brain", "Ask Brain"),
     ("telegram", "Telegram"),
     ("line", "LINE"),
     ("github", "GitHub"),
@@ -85,13 +87,24 @@ SPECS: Tuple[Spec, ...] = (
          help="分析與語意搜尋都用這把金鑰。"),
     Spec("PRIMARY_MODEL", "ai", "分析模型", "text", hook="llm"),
     Spec("EMBEDDING_MODEL", "ai", "向量模型", "text",
-         help="語意搜尋用。更換後，既有向量要重建才查得到。"),
+         help="語意搜尋用，先交給本機 Ollama 計算；Ollama 連不上時改用上面的 OpenAI 相容服務"
+              "（embeddinggemma-2 會改送 text-embedding-3-small）。更換後，既有向量要重建才查得到。"),
+    Spec("OLLAMA_BASE_URL", "ai", "本機 Ollama 位址（向量）", "url", optional=True,
+         help="例如 http://127.0.0.1:11434。留空表示不用 Ollama 算向量。"),
     Spec("GEMINI_API_KEYS", "ai", "Gemini API 金鑰", "secret", attr="GEMINI_API_KEYS_RAW",
          multi=True, hook="llm", help="多把金鑰用逗號分隔，會輪流使用。影片解析也會用到。"),
     Spec("GEMINI_MODEL", "ai", "Gemini 模型", "text", hook="llm"),
     Spec("LLM_MIN_REQUEST_INTERVAL", "ai", "請求最小間隔（秒）", "float", minimum=0.05, maximum=60,
          hook="limiter", help="兩次 AI 請求之間至少等待的秒數；遇到 429 會自動放慢。"),
     Spec("LLM_MAX_CONCURRENCY", "ai", "同時請求數", "int", minimum=1, maximum=16, hook="limiter"),
+
+    Spec("BRAIN_PROVIDER", "brain", "回答來源", "choice",
+         choices=(("ollama", "本機 Ollama，失敗時改用主要服務商"),
+                  ("strata", "Strata（Ollama 相容），失敗時改用主要服務商"),
+                  ("cloud", "直接用主要服務商"))),
+    Spec("BRAIN_BASE_URL", "brain", "Ollama 位址", "url", help="例如 http://127.0.0.1:11434"),
+    Spec("BRAIN_MODEL", "brain", "本機模型", "text", help="要先在 Ollama 下載，例如 ollama pull qwen3:8b"),
+    Spec("BRAIN_MAX_CITATIONS", "brain", "引用筆數上限", "int", minimum=1, maximum=20),
 
     Spec("TELEGRAM_BOT_TOKEN", "telegram", "Bot Token", "secret", hook="telegram",
          help="向 @BotFather 建立 Bot 後取得。儲存後 Bot 立即重新連線。"),
@@ -156,7 +169,7 @@ def normalize(spec: Spec, raw: Any) -> Any:
     elif kind == "url":
         value = _text(spec, raw, 2000).rstrip("/")
         parsed = urlsplit(value)
-        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        if not (spec.optional and value == "") and (parsed.scheme not in ("http", "https") or not parsed.hostname):
             raise ValueError("請填 http:// 或 https:// 開頭的完整網址")
     elif kind == "choice":
         value = raw if isinstance(raw, str) else ""
