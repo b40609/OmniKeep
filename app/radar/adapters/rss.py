@@ -1,3 +1,4 @@
+import logging
 from app.network import public_http_client
 import feedparser
 import httpx
@@ -5,6 +6,8 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from app.radar.adapters.base import BaseSourceAdapter, RawFeedItem
 from app.database import update_radar_source_fetch_meta
+
+logger = logging.getLogger("omnikeep.radar.rss")
 
 class RSSAdapter(BaseSourceAdapter):
     source_type = "rss"
@@ -28,7 +31,7 @@ class RSSAdapter(BaseSourceAdapter):
             try:
                 resp = await client.get(source_url, headers=headers)
             except Exception as e:
-                print(f"[Radar:RSS] Network error for {source_url}: {e}")
+                logger.warning(f"[Radar:RSS] Network error for {source_url}: {e}")
                 update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 
@@ -37,7 +40,7 @@ class RSSAdapter(BaseSourceAdapter):
                 return []
 
             if resp.status_code != 200:
-                print(f"[Radar:RSS] HTTP {resp.status_code} for {source_url}")
+                logger.warning(f"[Radar:RSS] HTTP {resp.status_code} for {source_url}")
                 update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 

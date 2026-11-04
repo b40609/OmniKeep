@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import time
@@ -15,6 +16,8 @@ import httpx
 import psutil
 import yt_dlp.cookies
 from app.config import settings
+
+logger = logging.getLogger("omnikeep.cookie_bridge")
 
 _cached_jar: Optional[http.cookiejar.CookieJar] = None
 _cached_jar_time: float = 0
@@ -100,14 +103,14 @@ def _close_managed_browser(process: psutil.Process) -> bool:
             browser.new_browser_cdp_session().send("Browser.close")
     except Exception as exc:
         # Closing the browser can disconnect CDP before it returns a response.
-        print(f"[Cookie Bridge] Chrome shutdown notice: {type(exc).__name__}")
+        logger.info(f"[Cookie Bridge] Chrome shutdown notice: {type(exc).__name__}")
     try:
         process.wait(timeout=8)
         return True
     except (psutil.NoSuchProcess,):
         return True
     except psutil.TimeoutExpired:
-        print("[Cookie Bridge] Chrome did not exit; mode switch skipped.")
+        logger.warning("[Cookie Bridge] Chrome did not exit; mode switch skipped.")
         return False
 
 
@@ -143,7 +146,7 @@ def _ensure_cdp_browser_locked(*, visible: bool) -> bool:
             return True
         process = _managed_cdp_browser()
         if process is None:
-            print("[Cookie Bridge] CDP port is used by another browser; cannot open login window safely.")
+            logger.warning("[Cookie Bridge] CDP port is used by another browser; cannot open login window safely.")
             return False
         try:
             if not any(a.startswith("--headless") for a in process.cmdline()):
@@ -158,7 +161,7 @@ def _ensure_cdp_browser_locked(*, visible: bool) -> bool:
 
     chrome = next((p for p in _CDP_LAUNCH_PATHS if Path(p).is_file()), None)
     if not chrome:
-        print("[Cookie Bridge] CDP port closed and chrome.exe not found for auto-launch.")
+        logger.warning("[Cookie Bridge] CDP port closed and chrome.exe not found for auto-launch.")
         return False
 
     profile_dir = str(Path(settings.BROWSER_CDP_PROFILE_DIR).expanduser())
@@ -181,18 +184,18 @@ def _ensure_cdp_browser_locked(*, visible: bool) -> bool:
             close_fds=True,
         )
     except Exception as e:
-        print(f"[Cookie Bridge] Chrome auto-launch failed: {e}")
+        logger.warning(f"[Cookie Bridge] Chrome auto-launch failed: {e}")
         return False
 
     for _ in range(24):  # up to ~12s cold start
         time.sleep(0.5)
         if _cdp_reachable(port):
-            print(
+            logger.info(
                 f"[Cookie Bridge] Launched {'visible' if visible else 'background'} Chrome "
                 f"(CDP :{port}, profile {profile_dir})."
             )
             return True
-    print("[Cookie Bridge] Chrome launched but CDP port did not open in time.")
+    logger.warning("[Cookie Bridge] Chrome launched but CDP port did not open in time.")
     return False
 
 
@@ -258,7 +261,7 @@ def get_cookies_via_cdp(force_refresh: bool = False) -> Optional[http.cookiejar.
         if jar and len(jar) > 0:
             return jar
     except Exception as e:
-        print(f"[Cookie Bridge] CDP cookie fetch failed: {type(e).__name__}: {e}")
+        logger.warning(f"[Cookie Bridge] CDP cookie fetch failed: {type(e).__name__}: {e}")
     return None
 
 
@@ -284,17 +287,17 @@ def get_cookie_jar(force_refresh: bool = False) -> Optional[http.cookiejar.Cooki
             jar.load(ignore_discard=True, ignore_expires=True)
             _cached_jar = jar
             _cached_jar_time = now
-            print(f"[Cookie Bridge] Successfully loaded {len(jar)} cookies from file: {cookie_file}")
+            logger.info(f"[Cookie Bridge] Successfully loaded {len(jar)} cookies from file: {cookie_file}")
             return jar
         except Exception as e:
-            print(f"[Cookie Bridge] Warning: Failed to parse cookie file '{cookie_file}': {e}")
+            logger.warning(f"[Cookie Bridge] Failed to parse cookie file '{cookie_file}': {e}")
 
     # 2. CDP bridge to the automation Chrome (decrypted by Chrome itself)
     jar = get_cookies_via_cdp(force_refresh=force_refresh)
     if jar and len(jar) > 0:
         _cached_jar = jar
         _cached_jar_time = now
-        print(f"[Cookie Bridge] Extracted {len(jar)} live cookies via CDP (port {settings.BROWSER_CDP_PORT})")
+        logger.info(f"[Cookie Bridge] Extracted {len(jar)} live cookies via CDP (port {settings.BROWSER_CDP_PORT})")
         return jar
 
     # 3. Legacy live extraction (works for Firefox / browsers without ABE) —
@@ -305,11 +308,11 @@ def get_cookie_jar(force_refresh: bool = False) -> Optional[http.cookiejar.Cooki
             jar = yt_dlp.cookies.extract_cookies_from_browser(browser_source, logger=SilentYDLLogger())
             _cached_jar = jar
             _cached_jar_time = now
-            print(f"[Cookie Bridge] Successfully extracted {len(jar)} live cookies from browser '{browser_source}'")
+            logger.info(f"[Cookie Bridge] Successfully extracted {len(jar)} live cookies from browser '{browser_source}'")
             return jar
         except Exception as e:
             # Graceful warning: Windows Chrome 127+ enforces App-Bound encryption & process lock while open
-            print(f"[Cookie Bridge] Info: Live browser extraction from '{browser_source}' skipped ({type(e).__name__}). Using fallback strategy.")
+            logger.info(f"[Cookie Bridge] Live browser extraction from '{browser_source}' skipped ({type(e).__name__}). Using fallback strategy.")
             _cached_jar = http.cookiejar.CookieJar()
             # Short-TTL the empty jar so a login in the automation window is
             # picked up quickly instead of being blocked for the full 15 min.
@@ -432,7 +435,7 @@ def ytdlp_cookie_opts(url: str) -> Iterator[Dict[str, Any]]:
     try:
         folder = _private_dir()
     except (OSError, subprocess.SubprocessError) as e:
-        print(f"[Cookie Bridge] No private folder for cookies ({type(e).__name__}); downloading without them.")
+        logger.warning(f"[Cookie Bridge] No private folder for cookies ({type(e).__name__}); downloading without them.")
         yield {}
         return
     try:
@@ -490,7 +493,7 @@ async def inject_playwright_cookies(context: Any, url: str) -> int:
             await context.add_cookies(cookies_list)
             return len(cookies_list)
         except Exception as e:
-            print(f"[Cookie Bridge] Playwright add_cookies error: {e}")
+            logger.warning(f"[Cookie Bridge] Playwright add_cookies error: {e}")
             return 0
 
     return 0

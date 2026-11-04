@@ -1,3 +1,4 @@
+import logging
 import re
 import asyncio
 from typing import Dict, Any, Optional
@@ -7,6 +8,8 @@ import trafilatura
 from bs4 import BeautifulSoup
 from app.parsers.cookie_manager import inject_playwright_cookies, playwright_installed, site_cookies
 from app.network import public_http_client, validate_url
+
+logger = logging.getLogger("omnikeep.web")
 
 BROWSER_HEADERS = {
     "User-Agent": (
@@ -39,7 +42,7 @@ async def fetch_page_with_playwright(url: str) -> Optional[str]:
     if not settings.ENABLE_BROWSER_FALLBACK:
         return None
     if not playwright_installed():
-        print("[Web Parser] ENABLE_BROWSER_FALLBACK is on but playwright is not installed; skipped.")
+        logger.warning("[Web Parser] ENABLE_BROWSER_FALLBACK is on but playwright is not installed; skipped.")
         return None
     try:
         from playwright.async_api import async_playwright
@@ -77,7 +80,7 @@ async def fetch_page_with_playwright(url: str) -> Optional[str]:
             finally:
                 await browser.close()
     except Exception as e:
-        print(f"[Web Parser] Playwright dynamic render fallback notice: {e}")
+        logger.warning(f"[Web Parser] Playwright dynamic render fallback notice: {e}")
         return None
 
 async def parse_facebook_page(url: str) -> Dict[str, Any]:
@@ -101,7 +104,7 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
                     html_text = resp.text
                     used_session = True
         except Exception as e:
-            print(f"[Facebook Parser] Session request notice: {e}")
+            logger.warning(f"[Facebook Parser] Session request notice: {e}")
 
     # 2. Fallback to Facebook crawler UA for public OpenGraph metadata
     if not html_text:
@@ -110,7 +113,7 @@ async def parse_facebook_page(url: str) -> Dict[str, Any]:
                 resp = await client.get(url)
                 html_text = resp.text
         except Exception as e:
-            print(f"[Facebook Parser] Crawler fallback request error: {e}")
+            logger.warning(f"[Facebook Parser] Crawler fallback request error: {e}")
             html_text = ""
 
     soup = BeautifulSoup(html_text, "html.parser") if html_text else BeautifulSoup("", "html.parser")
@@ -197,7 +200,7 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
             if resp.status_code == 200:
                 html = resp.text
     except Exception as e:
-        print(f"[Web Parser] HTTP fetch failed ({e}), attempting Playwright fallback...")
+        logger.warning(f"[Web Parser] HTTP fetch failed ({e}), attempting Playwright fallback...")
 
     # Extract structured article using trafilatura
     extracted_text = ""

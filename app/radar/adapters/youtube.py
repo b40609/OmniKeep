@@ -1,3 +1,4 @@
+import logging
 import re
 from app.network import public_http_client, validate_url
 import xml.etree.ElementTree as ET
@@ -5,6 +6,8 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from app.radar.adapters.base import BaseSourceAdapter, RawFeedItem
 from app.database import update_radar_source_fetch_meta
+
+logger = logging.getLogger("omnikeep.radar.youtube")
 
 class YouTubeAdapter(BaseSourceAdapter):
     source_type = "youtube"
@@ -37,7 +40,7 @@ class YouTubeAdapter(BaseSourceAdapter):
                     if m2:
                         return f"https://www.youtube.com/feeds/videos.xml?channel_id={m2.group(1)}"
         except Exception as e:
-            print(f"[Radar:YouTube] Custom handle resolution notice ({url}): {e}")
+            logger.warning(f"[Radar:YouTube] Custom handle resolution notice ({url}): {e}")
             
         return url
 
@@ -57,7 +60,7 @@ class YouTubeAdapter(BaseSourceAdapter):
             try:
                 resp = await client.get(rss_url, headers=headers)
             except Exception as e:
-                print(f"[Radar:YouTube] Network error for {rss_url}: {e}")
+                logger.warning(f"[Radar:YouTube] Network error for {rss_url}: {e}")
                 update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 
@@ -67,7 +70,7 @@ class YouTubeAdapter(BaseSourceAdapter):
                 return []
 
             if resp.status_code != 200:
-                print(f"[Radar:YouTube] HTTP {resp.status_code} for {source_url}")
+                logger.warning(f"[Radar:YouTube] HTTP {resp.status_code} for {source_url}")
                 update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 
@@ -75,7 +78,7 @@ class YouTubeAdapter(BaseSourceAdapter):
             try:
                 root = ET.fromstring(resp.text)
             except Exception as e:
-                print(f"[Radar:YouTube] XML parsing error for {source_url}: {e}")
+                logger.warning(f"[Radar:YouTube] XML parsing error for {source_url}: {e}")
                 update_radar_source_fetch_meta(source_id, last_fetched_at=now_iso)
                 return []
 

@@ -1,4 +1,5 @@
-"""App log records reach stderr (app/logging_setup.py)."""
+"""App log records reach stderr (app/logging_setup.py), and radar, parsers and the cookie
+bridge log through it instead of print()."""
 import ast
 import os
 import subprocess
@@ -21,6 +22,13 @@ def _python(code):
 def _calls(path, predicate):
     tree = ast.parse(path.read_text(encoding="utf-8"))
     return [node for node in ast.walk(tree) if isinstance(node, ast.Call) and predicate(node)]
+
+
+def test_radar_parsers_and_cookie_bridge_do_not_print():
+    is_print = lambda c: isinstance(c.func, ast.Name) and c.func.id == "print"  # noqa: E731
+    files = sorted((REPO / "app/radar").rglob("*.py")) + sorted((REPO / "app/parsers").rglob("*.py"))
+    found = [f"{f.relative_to(REPO)}:{c.lineno}" for f in files for c in _calls(f, is_print)]
+    assert found == []
 
 
 def test_every_app_logger_is_under_the_configured_name():
