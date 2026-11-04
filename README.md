@@ -129,7 +129,7 @@ docker compose up -d --build
 ### 方式 B：本地環境運行 (Python + Node.js)
 
 #### 1. 安裝環境與依賴
-- **後端環境**：Python 3.12+
+- **後端環境**：Python 3.12+（CI 測試 3.12 與 3.14）
 - **前端建置**：Node.js 20.19+ 或 22.12+（Python 本地部署也必須建置一次）
 
 ```bash
@@ -283,6 +283,14 @@ npm run build     # 編譯生產環境產物 (包含型別檢查與 PWA Service 
 3. 提交變更 (`git commit -m 'feat: Add amazing feature'`)
 4. 推送分支 (`git push origin feature/amazing-feature`)
 5. 發起 Pull Request
+
+每次 push 與 Pull Request 都會由 GitHub Actions（`.github/workflows/ci.yml`）跑前端測試與建置、後端 pytest，並實際建置 Docker 映像。本機執行：
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -rs        # 沒裝 ffmpeg 時，兩個短影音測試會自動跳過
+cd frontend && npm ci && npm test && npm run build
+```
 
 ---
 

@@ -1,0 +1,3 @@
+-r requirements.txt
+pytest>=9,<10
+pytest-asyncio>=1.4,<2

@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import tempfile
 import pytest
@@ -12,6 +13,7 @@ def test_is_video_reel_url():
     assert is_video_reel_url("https://github.com/fastapi/fastapi") is False
     assert is_video_reel_url("https://www.youtube.com/watch?v=123") is False
 
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed (CI installs it)")
 def test_extract_scene_tile_and_audio():
     with tempfile.TemporaryDirectory() as td:
         vid_path = os.path.join(td, "synthetic_reel.mp4")

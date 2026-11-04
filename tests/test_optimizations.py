@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import tempfile
 import pytest
@@ -118,6 +119,7 @@ async def test_line_bot_hoarder_queueing():
             message_id=None
         )
 
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed (CI installs it)")
 def test_transcribe_local_whisper_synthetic_audio():
     """Verify local faster-whisper transcribes audio without crashing"""
     with tempfile.TemporaryDirectory() as td:
