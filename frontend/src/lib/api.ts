@@ -79,6 +79,8 @@ export interface RadarSettings {
   auto_digest_push?: boolean
   auto_star_push?: boolean
   updated_at?: string
+  /** Read-only: whether the server's scheduler task runs at all (background services on). */
+  scheduler_running?: boolean
 }
 
 export interface RadarTopic {

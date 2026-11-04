@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   Radar,
   Loader2,
@@ -32,6 +32,7 @@ import Skeleton from '@/components/ui/skeleton/Skeleton.vue'
 import * as api from '@/lib/api'
 import { sourceMeta, formatRelativeTime } from '@/lib/format'
 import { renderMarkdown } from '@/lib/markdown'
+import { radarScheduleNote } from '@/lib/radarSchedule'
 import { useUiStore } from '@/stores/ui'
 import { useRadarStore } from '@/stores/radar'
 import { useSignal } from '@/composables/useSignal'
@@ -47,7 +48,7 @@ const tab = ref<RadarTab>('settings')
 // ---------------- Radar Settings & Schedule ----------------
 const isSavingSettings = ref(false)
 const scheduleSettings = ref<api.RadarSettings>({
-  enabled: true,
+  enabled: false,
   interval_minutes: 180,
   max_analyze_per_cycle: 3,
   notification_mode: 'silent',
@@ -64,6 +65,14 @@ watch(
   },
   { immediate: true }
 )
+
+const scheduleNote = computed(() => radarScheduleNote(radar.settings, radar.sources))
+const NOTE_TONE = {
+  ok: 'text-emerald-600 dark:text-emerald-400',
+  off: 'text-muted-foreground',
+  warn: 'text-amber-600 dark:text-amber-400',
+} as const
+const scheduleUnsaved = computed(() => !!radar.settings && scheduleSettings.value.enabled !== radar.settings.enabled)
 
 async function handleSaveSettings() {
   isSavingSettings.value = true
@@ -394,6 +403,12 @@ watch(tab, (t) => {
               </div>
               <p class="text-2xs text-muted-foreground">
                 開啟後系統將在背景依照設定間隔週期自動探測來源更新。關閉時僅在點擊「立即巡檢」時觸發。
+              </p>
+              <p v-if="scheduleNote" class="text-2xs font-medium" :class="NOTE_TONE[scheduleNote.tone]">
+                {{ scheduleNote.text }}
+              </p>
+              <p v-if="scheduleUnsaved" class="text-2xs font-medium text-amber-600 dark:text-amber-400">
+                尚未儲存：按下方「儲存排程設定」後才會生效。
               </p>
             </div>
             <button

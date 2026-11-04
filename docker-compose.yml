@@ -24,6 +24,7 @@ services:
       - LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET:-}
       - LINE_CHANNEL_ACCESS_TOKEN=${LINE_CHANNEL_ACCESS_TOKEN:-}
       - LINE_ALLOWED_USER_IDS=${LINE_ALLOWED_USER_IDS:-}
+      # Radar scans are switched on in the app; this is read once, to keep an older volume's state.
       - RADAR_ENABLED=${RADAR_ENABLED:-false}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - BACKUP_SINK=${BACKUP_SINK:-local}

@@ -8,6 +8,7 @@ from app.database import (
     get_all_categories,
     get_all_radar_sources,
     get_db_connection,
+    get_radar_settings,
     init_db,
 )
 
@@ -23,6 +24,7 @@ def test_new_install_offers_neutral_categories_and_disabled_sources(isolated_run
     sources = get_all_radar_sources()
     assert len(sources) == 4
     assert all(not src["is_active"] for src in sources)
+    assert get_radar_settings()["enabled"] is False  # background scans are opt-in
 
 
 def test_restart_preserves_user_deleted_defaults(isolated_runtime):

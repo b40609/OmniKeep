@@ -53,7 +53,9 @@ class Settings(BaseSettings):
     # Contact for push services: mailto: address or https URL (Apple rejects anything else).
     VAPID_SUBJECT: str = ""
 
-    # Radar Engine Configuration
+    # Radar Engine Configuration. Whether and how often it scans is set in the radar
+    # settings UI. RADAR_ENABLED is only read once, to carry an older database's state
+    # into that toggle (app/database.py init_db).
     RADAR_ENABLED: bool = False
     GITHUB_TOKEN: str = ""
 

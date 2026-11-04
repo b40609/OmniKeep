@@ -179,9 +179,14 @@ async def toggle_source(source_id: str, req: Optional[SourceToggleRequest] = Non
 
 # ── Radar Scheduler & Notification Settings ─────────────────
 
+def _settings_with_state(saved: Dict[str, Any]) -> Dict[str, Any]:
+    # The toggle only takes effect while the scheduler task runs (background services on).
+    return {**saved, "scheduler_running": radar_scheduler.is_running}
+
+
 @router.get("/settings")
 async def get_settings():
-    return {"success": True, "settings": get_radar_settings()}
+    return {"success": True, "settings": _settings_with_state(get_radar_settings())}
 
 @router.put("/settings")
 async def update_settings(req: RadarSettingsUpdateRequest):
@@ -204,7 +209,7 @@ async def update_settings(req: RadarSettingsUpdateRequest):
         auto_star_push=req.auto_star_push,
     )
     radar_scheduler.wake()
-    return {"success": True, "settings": updated}
+    return {"success": True, "settings": _settings_with_state(updated)}
 
 # ── Scanning & Digest Endpoints ─────────────────────────────
 

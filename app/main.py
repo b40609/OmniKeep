@@ -63,9 +63,10 @@ async def lifespan(app: FastAPI):
         follow_up_pool.start()
         task_worker.start()
         worker_started = True
-        if settings.RADAR_ENABLED:
-            radar_scheduler.start()
-            radar_started = True
+        # Always running; each cycle checks the radar settings toggle, and saving the
+        # settings wakes it, so switching the radar on or off needs no restart.
+        radar_scheduler.start()
+        radar_started = True
         if settings.BACKUP_SINK != "off":
             tasks.append(asyncio.create_task(backup_loop()))
         bot = get_telegram_bot() if settings.TELEGRAM_BOT_TOKEN else None

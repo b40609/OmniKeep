@@ -375,9 +375,9 @@ class RadarScheduler:
                 cfg = get_radar_settings()
             except Exception as e:
                 print(f"[Radar:Scheduler] Error loading settings in loop: {e}")
-                cfg = {"enabled": True, "interval_minutes": 180, "max_analyze_per_cycle": 3}
+                cfg = {"enabled": False, "interval_minutes": 180, "max_analyze_per_cycle": 3}
 
-            is_enabled = cfg.get("enabled", True)
+            is_enabled = cfg.get("enabled", False)
             interval_minutes = cfg.get("interval_minutes", 180)
 
             if is_enabled and interval_minutes > 0:

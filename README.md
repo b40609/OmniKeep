@@ -245,7 +245,7 @@ npm run build     # 編譯生產環境產物 (包含型別檢查與 PWA Service 
 | `GEMINI_API_KEYS` | *(無)* | Gemini API 金鑰清單（支援多組 Key 以逗號分隔輪詢） |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | 用於 YouTube 原生多模態串流解析的模型 |
 | `DATABASE_PATH` | `omnikeep.db` | 本地 SQLite 資料庫路徑（自動開啟 WAL 模式） |
-| `RADAR_ENABLED` | `false`（新安裝範例） | 是否啟用情報雷達巡檢排程；準備好資料源後再啟用 |
+| `RADAR_ENABLED` | *(已停用)* | 背景巡檢改在介面的「雷達 › 排程與推播」開關並設定週期，新安裝預設關閉。只在升級舊資料庫時讀取一次，沿用原本實際的開關狀態 |
 | `BACKUP_SINK` | `local` | 備份方案：`local`（本機輪替）、`rclone`（雲端同步）、`git`、`off` |
 | `TELEGRAM_BOT_TOKEN` | *(無)* | Telegram Ingestion Bot Token（選填） |
 | `TELEGRAM_ALLOWED_USER_IDS` | *(無)* | 授權使用 Bot 的 Telegram 用戶數值 ID（選填） |
