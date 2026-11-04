@@ -8,7 +8,14 @@ from app.main import app
 HEADERS = {"Authorization": f"Bearer {settings.API_KEY}"}
 
 
-def test_profile_saved_in_the_app_reaches_the_next_prompt():
+def test_profile_saved_in_the_app_reaches_the_next_prompt(monkeypatch):
+    # /api/brain/status asks Ollama for its models; answer locally instead of the network.
+    import httpx
+    from app import brain
+    real_client = httpx.Client
+    ollama = httpx.MockTransport(lambda request: httpx.Response(200, json={"models": []}))
+    monkeypatch.setattr(brain.httpx, "Client", lambda **kw: real_client(transport=ollama, **kw))
+
     with TestClient(app) as client:
         res = client.put("/api/settings", headers=HEADERS, json={"values": {
             "USER_BACKGROUND": "嵌入式工程師", "LOCAL_HARDWARE": "Jetson Orin 8GB"}})
