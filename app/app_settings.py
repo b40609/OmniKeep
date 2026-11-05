@@ -107,6 +107,8 @@ SPECS: Tuple[Spec, ...] = (
     Spec("BRAIN_BASE_URL", "brain", "Ollama 位址", "url", help="例如 http://127.0.0.1:11434"),
     Spec("BRAIN_MODEL", "brain", "本機模型", "text", help="要先在 Ollama 下載，例如 ollama pull qwen3:8b"),
     Spec("BRAIN_MAX_CITATIONS", "brain", "引用筆數上限", "int", minimum=1, maximum=20),
+    Spec("BRAIN_NUM_CTX", "brain", "本機模型上下文長度（token）", "int", minimum=2048, maximum=131072,
+         help="傳給 Ollama 的 num_ctx。太小會截掉引用的文獻；越大越吃顯示卡記憶體。"),
 
     Spec("USER_BACKGROUND", "profile", "使用者背景", "text",
          help="給 AI 分析參考的身分、專長與手上的專案，例如「資料工程師，在做個人記帳 App」。"

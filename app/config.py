@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     BRAIN_MODEL: str = "qwen3:8b"
     BRAIN_API_KEY: str = ""
     BRAIN_MAX_CITATIONS: int = 5
+    # Ollama defaults to a 2048/4096-token window, which truncates the cited context.
+    BRAIN_NUM_CTX: int = 16384
     
     # Personalisation for analysis prompts (entered in the app; empty keeps prompts neutral)
     USER_BACKGROUND: str = ""

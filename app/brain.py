@@ -28,6 +28,19 @@ SYSTEM_PROMPT = """你是一個專業的個人第二大腦知識庫助手（Omni
 """
 
 
+MAX_HISTORY_TURNS = 4
+MAX_HISTORY_CHARS = 2000  # per turn, so a long earlier answer cannot crowd out the citations
+
+
+def _with_history(turns: List[Dict[str, str]], user_payload: str) -> str:
+    """The cloud fallback takes a single prompt, so earlier turns go in as text."""
+    if not turns:
+        return user_payload
+    names = {"user": "使用者", "assistant": "助手"}
+    lines = ["【先前對話】"] + [f"{names[t['role']]}：{t['content']}" for t in turns]
+    return "\n".join(lines) + "\n\n" + user_payload
+
+
 def format_citations_prompt(items: List[Dict[str, Any]]) -> str:
     """Format retrieved items into a structured citations context block."""
     if not items:
@@ -75,6 +88,8 @@ async def ask_brain(
             "provider": "none",
         }
 
+    limit = max(1, min(int(limit or 1), settings.BRAIN_MAX_CITATIONS))
+
     # 1. Hybrid Search over knowledge base
     retrieved_items = await search_hybrid(clean_q, limit=limit, vector_weight=0.55)
 
@@ -95,13 +110,15 @@ async def ask_brain(
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    # Append recent conversation history if provided (up to 4 turns)
+    # Append recent conversation history if provided (up to 4 turns, each capped)
+    recent_turns = []
     if history:
-        for turn in history[-4:]:
+        for turn in history[-MAX_HISTORY_TURNS:]:
             role = turn.get("role")
-            content = turn.get("content")
+            content = (turn.get("content") or "")[:MAX_HISTORY_CHARS]
             if role in ("user", "assistant") and content:
-                messages.append({"role": role, "content": content})
+                recent_turns.append({"role": role, "content": content})
+    messages.extend(recent_turns)
 
     # Append current question with grounded context
     user_payload = f"{context_str}\n\n【使用者問題】\n{clean_q}"
@@ -122,7 +139,7 @@ async def ask_brain(
                         "model": settings.BRAIN_MODEL,
                         "messages": messages,
                         "stream": False,
-                        "options": {"temperature": 0.25},
+                        "options": {"temperature": 0.25, "num_ctx": settings.BRAIN_NUM_CTX},
                     },
                 )
                 if res.status_code == 200:
@@ -139,7 +156,8 @@ async def ask_brain(
         try:
             from app.providers import get_primary_provider
             primary = get_primary_provider()
-            answer = await primary.generate_text(prompt=user_payload, system_prompt=SYSTEM_PROMPT)
+            answer = await primary.generate_text(
+                prompt=_with_history(recent_turns, user_payload), system_prompt=SYSTEM_PROMPT)
             provider_used = "cloud_fallback"
             model_used = getattr(settings, "PRIMARY_MODEL", "cloud-llm")
         except Exception as e:
