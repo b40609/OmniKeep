@@ -41,8 +41,12 @@ export const useUiStore = defineStore('ui', () => {
   /** First-run guide shown while no AI provider is usable. */
   const showSetupWizard = ref(false)
 
-  function openSettings(tab = 'ai') {
+  /** AI service card an agent's settings link asked to focus (`#settings=ai&card=agnes`). */
+  const settingsCard = ref('')
+
+  function openSettings(tab = 'ai', card = '') {
     settingsTab.value = tab
+    settingsCard.value = card
     showSettingsModal.value = true
     sidebarMobileOpen.value = false
   }
@@ -55,7 +59,7 @@ export const useUiStore = defineStore('ui', () => {
     activeItem, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
     showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal, showDeckModal, showPushModal,
     showDailyDeckModal, showBrainModal, showCommandPalette,
-    showSettingsModal, settingsTab, settingsVersion, openSettings, showSetupWizard,
+    showSettingsModal, settingsTab, settingsCard, settingsVersion, openSettings, showSetupWizard,
     watchTab,
     isIngesting,
   }

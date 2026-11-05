@@ -8,6 +8,7 @@ import { useUiStore } from '@/stores/ui'
 import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, checkLocalAuth, type SessionBridgeSnapshot } from '@/lib/api'
 import { linkedPanel, OPEN_LINK_MESSAGE } from '@/lib/push'
 import { readClipRequest } from '@/lib/bookmarklet'
+import { readSettingsLink } from '@/lib/settingsLink'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import MobileBottomBar from '@/components/layout/MobileBottomBar.vue'
@@ -43,6 +44,8 @@ const loginError = ref('')
 const loggingIn = ref(false)
 
 const STORAGE_KEY = 'omnikeep_api_key'
+// An agent's omnikeep_open_settings link (`#settings=ai`); read before sign-in clears the fragment.
+let pendingSettingsLink = readSettingsLink(window.location.hash)
 const rememberKey = ref(true)
 
 function requireLogin(clearSaved = false) {
@@ -84,6 +87,11 @@ async function login(explicitKey?: string, isAuto = false): Promise<boolean> {
     await checkUrlParamIngest()
     if (openLinkedPanel(window.location.href)) {
       window.history.replaceState({}, document.title, window.location.pathname)
+    }
+    if (pendingSettingsLink) {
+      ui.openSettings(pendingSettingsLink.tab, pendingSettingsLink.card)
+      pendingSettingsLink = null
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
     }
     return true
   } catch (error) {

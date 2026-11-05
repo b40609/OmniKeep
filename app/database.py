@@ -2,7 +2,8 @@ import sqlite3
 import json
 import uuid
 import re
-from contextlib import closing
+from contextlib import closing, contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
@@ -866,6 +867,21 @@ def delete_radar_source(source_id: str) -> bool:
     conn.close()
     return ok
 
+# Source checks (app.setup_flow.check_sources) run the radar adapters on candidates
+# that are not saved; inside this context the adapters' fetch bookkeeping is skipped.
+# A context variable, so a real radar cycle running at the same time still records its own.
+_fetch_meta_disabled: ContextVar[bool] = ContextVar("radar_fetch_meta_disabled", default=False)
+
+
+@contextmanager
+def radar_fetch_meta_disabled():
+    token = _fetch_meta_disabled.set(True)
+    try:
+        yield
+    finally:
+        _fetch_meta_disabled.reset(token)
+
+
 def update_radar_source_fetch_meta(
     source_id: str,
     last_fetched_at: str,
@@ -874,6 +890,8 @@ def update_radar_source_fetch_meta(
     last_modified_header: Optional[str] = None,
     hot_hours: Optional[List[int]] = None
 ):
+    if _fetch_meta_disabled.get():
+        return
     conn = get_db_connection()
     cursor = conn.cursor()
     updates = ["last_fetched_at = ?"]

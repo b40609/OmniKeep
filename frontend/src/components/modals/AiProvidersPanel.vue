@@ -60,9 +60,21 @@ async function refresh() {
     const [catalog, current] = await Promise.all([cards.value.length ? null : getAiCatalog(), getAiConnections()])
     if (catalog) cards.value = catalog.cards
     apply(current)
+    focusLinkedCard()
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
   }
+}
+
+/** An agent's settings link names a card: open its saved connection, or a new one to paste the key into. */
+function focusLinkedCard() {
+  const id = ui.settingsCard
+  if (!id) return
+  ui.settingsCard = ''
+  const saved = connections.value.find((c) => c.card === id)
+  if (saved) return startEdit(saved)
+  const card = cardOf(id)
+  if (card) startNew(card)
 }
 
 function apply(next: AiOverview) {

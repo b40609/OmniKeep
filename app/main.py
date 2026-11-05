@@ -12,9 +12,11 @@ from app.database import init_db
 from app.routers import (
     items_router, categories_router, ingest_router, line_router,
     radar_router, session_router, watch_router, behavior_router, rules_router, push_router,
-    telegram_router, settings_router, brain_router, ai_router,
+    telegram_router, settings_router, brain_router, ai_router, setup_router,
 )
 from app.mcp_server import mcp
+from app.mcp_http import STREAMABLE_HTTP_PATH, StreamableHTTPEndpoint, streamable_http_session
+from app import setup_flow
 from app.radar.scheduler import radar_scheduler
 from app.queue.worker import task_worker
 from app.security import verify_api_key
@@ -26,6 +28,20 @@ logger = logging.getLogger("omnikeep.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # MCP over Streamable HTTP runs for the whole lifespan, background services or not;
+    # setup tools served from here call the service's own routes in-process. Its task
+    # group sits inside the service lifespan, so a shutdown error there is raised as it
+    # is instead of wrapped in an ExceptionGroup.
+    async with _service_lifespan(app), streamable_http_session():
+        setup_flow.bind_in_process(app)
+        try:
+            yield
+        finally:
+            setup_flow.unbind_in_process()
+
+
+@asynccontextmanager
+async def _service_lifespan(app: FastAPI):
     init_db()
     try:
         # Once per database: the flat AI settings become connections and task slots.
@@ -131,8 +147,11 @@ app.include_router(telegram_router)
 app.include_router(settings_router)
 app.include_router(brain_router)
 app.include_router(ai_router)
+app.include_router(setup_router)
 
-# Mount Remote MCP Server (SSE Transport)
+# Remote MCP: Streamable HTTP at /mcp-http (agents on another computer, via Tailscale),
+# SSE kept at /mcp. Both sit behind verify_api_key like every other path.
+app.add_route(STREAMABLE_HTTP_PATH, StreamableHTTPEndpoint(), include_in_schema=False)
 app.mount("/mcp", mcp.sse_app(mount_path="/mcp"))
 
 # Mount Static Files for Web Dashboard & PWA

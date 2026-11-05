@@ -201,6 +201,72 @@ async def _spawn_child_entity_background(source_parent_id: str, cit_id: str, tar
     except Exception as e:
         logger.warning(f"[Entity Fan-out] Background spawn failed for {target_url}: {e}")
 
+async def parse_url(url: str, page_title: str = "", page_description: str = "",
+                    light: bool = False) -> Dict[str, Any]:
+    """Fetch and parse one URL: no AI call, nothing saved.
+
+    run_pipeline() analyzes what this returns; the setup tools (app.setup_flow)
+    use it on its own to show a link's title and text. "kind" says which parser
+    ran and so which analysis prompt fits. light=True keeps short videos to their
+    metadata: the full path downloads the clip and calls a vision model and STT.
+    """
+    from app.network import validate_url
+    validate_url(url)
+    parsed: Dict[str, Any] = {
+        "url": url, "content_raw": "", "cover_image": "", "author": "", "title": "",
+        "original_title": "", "description": "", "raw_html": "", "fallback_summary": "",
+    }
+    short_video = is_youtube_shorts_url(url) or is_video_reel_url(url)
+    if short_video and not light:
+        reel_data = await parse_video_reel(url)
+        parsed.update(kind="reel_vision", source_type="youtube" if is_youtube_url(url) else "reel",
+                      content_raw=reel_data.get("content_raw", ""),
+                      cover_image=reel_data.get("cover_image", ""),
+                      author=reel_data.get("author", ""),
+                      title=reel_data.get("title", "短影音情報"))
+    elif is_youtube_url(url):
+        meta = await fetch_youtube_metadata(url)
+        desc_text = meta.get("description", "").strip()
+        desc_part = f"\n\n## 影片說明欄\n{desc_text}" if desc_text else ""
+        parsed.update(kind="youtube", source_type="youtube",
+                      content_raw=f"# {meta['title']}\n\n頻道: {meta['author']}\nURL: {url}{desc_part}",
+                      cover_image=meta.get("cover_image", ""),
+                      author=meta.get("author", ""),
+                      title=meta.get("title", "未命名項目"),
+                      description=desc_text,
+                      raw_html=meta.get("raw_html") or "")
+    elif is_bilibili_url(url):
+        bili_data = await parse_bilibili_video(url)
+        parsed.update(kind="bilibili", source_type="bilibili",
+                      content_raw=bili_data.get("content_raw", ""),
+                      cover_image=bili_data.get("cover_image", ""),
+                      author=bili_data.get("author", ""),
+                      title=bili_data.get("title", "Bilibili 影片"))
+    elif is_threads_url(url):
+        threads_data = await parse_threads_page(url)
+        parsed.update(kind="threads", source_type="threads",
+                      url=threads_data.get("url") or url,
+                      content_raw=threads_data.get("content_raw", ""),
+                      cover_image=threads_data.get("cover_image", ""),
+                      author=threads_data.get("author", ""),
+                      title=threads_data.get("title", "Threads 貼文"),
+                      raw_html=threads_data.get("raw_html", ""))
+    else:
+        # Standard Web Page / GitHub / Article (and, when light, a reel's page metadata)
+        page_data = await parse_web_page(url)
+        # The bookmarklet sends what the user's browser shows. Prefer it: the server's
+        # own fetch may only reach a login wall ("未知標題").
+        parsed.update(kind="web", source_type="reel" if short_video else "web",
+                      content_raw=page_data.get("content_raw", ""),
+                      cover_image=page_data.get("cover_image", ""),
+                      author=page_data.get("author", ""),
+                      title=page_title or page_data.get("title", "未命名項目"),
+                      original_title=page_data.get("title", ""),
+                      fallback_summary=page_description,
+                      raw_html=page_data.get("raw_html") or (page_data.get("meta") or {}).get("raw_html") or "")
+    return parsed
+
+
 async def run_pipeline(content_input: str, manual_category: Optional[str] = None,
                        is_sub_task: bool = False, origin: str = "manual",
                        page_title: str = "", page_description: str = "") -> Dict[str, Any]:
@@ -222,18 +288,19 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     # 2. Route by input type (Pure URL / Mobile Share Snippet vs Text Note)
     detected_url = extract_target_url(clean_input)
     if detected_url:
-        url = detected_url
-        from app.network import validate_url
-        validate_url(url)
-        if is_youtube_shorts_url(url) or is_video_reel_url(url):
-            # Short Video Reel (YouTube Shorts / Facebook / Instagram Reels with Vision OCR + Whisper STT)
-            source_type = "youtube" if is_youtube_url(url) else "reel"
-            reel_data = await parse_video_reel(url)
-            content_raw = reel_data.get("content_raw", "")
-            cover_image = reel_data.get("cover_image", "")
-            author = reel_data.get("author", "")
-            default_title = reel_data.get("title", "短影音情報")
+        parsed = await parse_url(detected_url, page_title=page_title, page_description=page_description)
+        kind = parsed["kind"]
+        url = parsed["url"]
+        source_type = parsed["source_type"]
+        content_raw = parsed["content_raw"]
+        cover_image = parsed["cover_image"]
+        author = parsed["author"]
+        default_title = parsed["title"]
+        raw_html = parsed["raw_html"]
+        fallback_summary = parsed["fallback_summary"] or fallback_summary
 
+        if kind == "reel_vision":
+            # Short Video Reel (YouTube Shorts / Facebook / Instagram Reels with Vision OCR + Whisper STT)
             primary = get_primary_provider()
             prompt = f"""請深度分析以下短影音情報與畫面視覺 OCR 辨識結果：
 影片標題：{default_title}
@@ -253,20 +320,15 @@ URL：{url}
             prompt += interest_profile_block()
             ai_result = await _analyze_with_guardrails(primary, prompt)
 
-        elif is_youtube_url(url):
-            source_type = "youtube"
-            meta = await fetch_youtube_metadata(url)
-            desc_text = meta.get("description", "").strip()
-            desc_part = f"\n\n## 影片說明欄\n{desc_text}" if desc_text else ""
-            content_raw = f"# {meta['title']}\n\n頻道: {meta['author']}\nURL: {url}{desc_part}"
-            
+        elif kind == "youtube":
+            desc_text = parsed["description"]
             # If the video slot has a Gemini connection, use native YouTube video analysis
             if has_video_provider():
                 try:
                     gemini = get_gemini_provider()
                     prompt = f"""請觀看並深度分析此 YouTube 影片：{url}
-影片標題：{meta['title']}
-頻道：{meta['author']}
+影片標題：{default_title}
+頻道：{author}
 
 候選分類清單：[{cat_list_str}]
 請分析影片內容，直接輸出結構化 JSON。"""
@@ -275,8 +337,8 @@ URL：{url}
                 except Exception as e:
                     primary = get_primary_provider()
                     prompt = f"""分析此 YouTube 影片資訊：
-標題：{meta['title']}
-頻道：{meta['author']}
+標題：{default_title}
+頻道：{author}
 URL：{url}
 
 影片說明：
@@ -288,8 +350,8 @@ URL：{url}
             else:
                 primary = get_primary_provider()
                 prompt = f"""分析此 YouTube 影片資訊：
-標題：{meta['title']}
-頻道：{meta['author']}
+標題：{default_title}
+頻道：{author}
 URL：{url}
 
 影片說明：
@@ -299,18 +361,7 @@ URL：{url}
                 prompt += interest_profile_block()
                 ai_result = await _analyze_with_guardrails(primary, prompt)
 
-            cover_image = meta.get("cover_image", "")
-            author = meta.get("author", "")
-            default_title = meta.get("title", "未命名項目")
-
-        elif is_bilibili_url(url):
-            source_type = "bilibili"
-            bili_data = await parse_bilibili_video(url)
-            content_raw = bili_data.get("content_raw", "")
-            cover_image = bili_data.get("cover_image", "")
-            author = bili_data.get("author", "")
-            default_title = bili_data.get("title", "Bilibili 影片")
-
+        elif kind == "bilibili":
             primary = get_primary_provider()
             prompt = f"""深度分析以下 Bilibili 影片內容，輸出專業中文結構化總結、技術標籤與核心洞見：
 影片標題：{default_title}
@@ -325,15 +376,8 @@ URL：{url}
             prompt += interest_profile_block()
             ai_result = await _analyze_with_guardrails(primary, prompt)
 
-        elif is_video_reel_url(url):
+        elif kind == "reel":
             # Short Video Reel (Facebook / Instagram Reels with Vision OCR)
-            source_type = "reel"
-            reel_data = await parse_video_reel(url)
-            content_raw = reel_data.get("content_raw", "")
-            cover_image = reel_data.get("cover_image", "")
-            author = reel_data.get("author", "")
-            default_title = reel_data.get("title", "短影音情報")
-
             primary = get_primary_provider()
             prompt = f"""請深度分析以下短影音情報與畫面視覺 OCR 辨識結果：
 影片標題：{default_title}
@@ -353,17 +397,8 @@ URL：{url}
             prompt += interest_profile_block()
             ai_result = await _analyze_with_guardrails(primary, prompt)
 
-        elif is_threads_url(url):
+        elif kind == "threads":
             # Meta Threads Post (Threads.net / Threads.com)
-            source_type = "threads"
-            threads_data = await parse_threads_page(url)
-            url = threads_data.get("url") or url
-            content_raw = threads_data.get("content_raw", "")
-            cover_image = threads_data.get("cover_image", "")
-            author = threads_data.get("author", "")
-            default_title = threads_data.get("title", "Threads 貼文")
-            raw_html = threads_data.get("raw_html", "")
-
             primary = get_primary_provider()
             prompt = f"""請深度分析以下 Threads 社群情報與討論內容：
 貼文網址：{url}
@@ -382,23 +417,13 @@ URL：{url}
 
         else:
             # Standard Web Page / GitHub / Article
-            source_type = "web"
-            page_data = await parse_web_page(url)
-            content_raw = page_data.get("content_raw", "")
-            cover_image = page_data.get("cover_image", "")
-            author = page_data.get("author", "")
-            # The bookmarklet sends what the user's browser shows. Prefer it: the server's
-            # own fetch may only reach a login wall ("未知標題").
-            default_title = page_title or page_data.get("title", "未命名項目")
-            fallback_summary = page_description or fallback_summary
-            raw_html = page_data.get("raw_html") or (page_data.get("meta") or {}).get("raw_html") or ""
             browser_view = "".join(f"\n瀏覽器看到的{label}：{value}"
                                    for label, value in (("標題", page_title), ("描述", page_description)) if value)
 
             primary = get_primary_provider()
             prompt = f"""請深度分析以下網頁/文章內容：
 網址：{url}
-原始標題：{page_data.get('title', '')}{browser_view}
+原始標題：{parsed["original_title"]}{browser_view}
 
 候選分類清單：[{cat_list_str}]
 
@@ -483,8 +508,6 @@ URL：{url}
     item_record["id"] = item_id
 
     # 2.5 Monolith HTML Snapshot & Vector Embedding (B-full)
-    if not raw_html and "meta" in locals() and isinstance(locals().get("meta"), dict):
-        raw_html = locals()["meta"].get("raw_html") or ""
     if raw_html:
         try:
             from app.snapshot import save_html_snapshot
