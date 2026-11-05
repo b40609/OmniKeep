@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     PORT: int = 5000
     API_KEY: str = ""
     LOCAL_AUTO_LOGIN: bool = False
+    # Extra host names MCP over HTTP accepts besides loopback and the Tailscale names found at
+    # startup, comma-separated (app/mcp_http.py).
+    MCP_ALLOWED_HOSTS: str = ""
     CORS_ORIGINS: List[str] = []
     BACKGROUND_SERVICES_ENABLED: bool = True
     RELEVANCE_CONCURRENCY: int = 2

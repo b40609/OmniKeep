@@ -25,9 +25,10 @@ from app.database import (
     get_db_connection
 )
 from app.logging_setup import configure_logging
-from app.pipeline import run_pipeline
-from app.providers import get_primary_provider
-from app.vector import search_hybrid
+
+# The pipeline, the AI providers and the vector index are imported inside the tools
+# that use them: a stdio server is started by every agent session and must come up
+# in about a second (docs/agent_setup_skill_design.md §7).
 
 # Initialize FastMCP Server
 mcp = FastMCP(
@@ -91,6 +92,7 @@ async def hybrid_search_brain(
     vector semantic search (sqlite-vec) using Reciprocal Rank Fusion (RRF).
     Discovers conceptually related intelligence even when keywords do not match verbatim.
     """
+    from app.vector import search_hybrid
     fetch_limit = min(limit * 3, 50)
     raw_results = await search_hybrid(query=query, limit=fetch_limit)
 
@@ -327,6 +329,7 @@ async def save_to_brain(
     if not clean_input:
         return "錯誤：內容不能為空。"
 
+    from app.pipeline import run_pipeline
     try:
         item = await run_pipeline(clean_input, manual_category=category, origin="agent")
         tags = ", ".join(item.get("tech_tags", []))
@@ -448,6 +451,7 @@ async def ask_brain_synthesis(topic: str, top_k: int = 5) -> str:
             f"=== 項目結束 ===\n"
         )
 
+    from app.providers import get_primary_provider
     full_context = "\n".join(context_blocks)
     primary = get_primary_provider()
 
@@ -597,6 +601,147 @@ async def read_sql_query(query: str, limit: int = 50) -> str:
         conn.close()
 
 
+# ── 10c. Setup Tools (agent-driven first run) ───────────────────
+# docs/agent_setup_skill_design.md §2–§4; the logic lives in app/setup_flow.py.
+# Every tool returns JSON. None of them returns a credential: keys show only
+# "configured" and the last four characters. Tools that write go through the
+# running service so the change applies at once.
+
+def _setup_json(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+
+
+async def _setup_call(fn, *args, **kwargs) -> str:
+    from app import setup_flow
+    try:
+        result = fn(*args, **kwargs)
+        if hasattr(result, "__await__"):
+            result = await result
+        return _setup_json(result)
+    except setup_flow.SetupError as exc:
+        return _setup_json({"ok": False, "error": str(exc)})
+
+
+@mcp.tool()
+async def omnikeep_scan() -> str:
+    """Setup step 1. Scan this machine and OmniKeep without reading personal content:
+    CPU/RAM/GPU, OmniKeep version and whether its service runs, item and radar-source
+    counts, AI settings in effect (keys only as configured + last four), local Ollama,
+    the last setup answers, OmniKit profile locations, and how many Chrome/Edge bookmarks
+    and GitHub stars exist (counts only). Ask only about what the scan cannot tell."""
+    from app import setup_flow
+    return await _setup_call(setup_flow.scan)
+
+
+@mcp.tool()
+async def omnikeep_peek(url: str, max_chars: int = 3000) -> str:
+    """Fetch and parse one link with OmniKeep's parsers (Threads, YouTube, Bilibili, web
+    pages) and return its title, author and text excerpt. No AI call and nothing is saved:
+    use it on the user's seed links to refine the drafted topics."""
+    from app import setup_flow
+    return await _setup_call(setup_flow.peek, url, max_chars)
+
+
+@mcp.tool()
+async def omnikeep_check_sources(sources: List[Dict[str, Any]], recent: int = 3) -> str:
+    """Verify candidate radar sources before offering them. Each source is
+    {"url": ..., "source_type"?: youtube|github|rss|google_news|web_change, "name"?: ...};
+    a site's home page finds its RSS automatically, and a bare keyword is a Google News query.
+    Returns per source: ok, resolved feed URL, latest date, posts per week and the latest
+    titles. Trial fetch only: nothing is saved. Offer only sources with ok=true (max 20 per call)."""
+    from app import setup_flow
+    return await _setup_call(setup_flow.check_sources, sources, recent)
+
+
+@mcp.tool()
+async def omnikeep_list_provider_options() -> str:
+    """AI service options for the user to choose from (address, suggested model, limits,
+    signup link, date checked), plus what is configured now. Explain the trade-offs and
+    let the user decide; no option uses Claude, Antigravity or ChatGPT subscriptions."""
+    from app import setup_flow
+    return await _setup_call(setup_flow.list_provider_options)
+
+
+@mcp.tool()
+async def omnikeep_open_settings(card: str = "", tab: str = "ai") -> str:
+    """Link to OmniKeep's settings page on the given tab (ai, telegram, line, push, ...).
+    Give it to the user to paste a key there themselves: never ask for a key in chat.
+    Then call omnikeep_test_provider."""
+    from app import setup_flow
+    return await _setup_call(setup_flow.open_settings, card, tab)
+
+
+@mcp.tool()
+async def omnikeep_test_provider(service: str = "llm", connection_id: str = "") -> str:
+    """Test a saved credential with a small real request. service: llm, gemini, embeddings,
+    ollama, brain, telegram, line or github. Returns ok and a message that says what to fix;
+    never the key."""
+    from app import setup_flow
+    return await _setup_call(setup_flow.test_provider, service, connection_id)
+
+
+@mcp.tool()
+async def omnikeep_preview_setup(answers: Dict[str, Any]) -> str:
+    """Validate the setup answers and return what would change (before/after), with a
+    confirm_code. Nothing is written. answers (JSON):
+    first run: {"stage": "first", "about_you", "interest_profile", "topics": [...],
+      "seed_links": [...], "sources": [{"name","source_type","url","pack"}],
+      "radar": {"enabled", "interval_minutes"}};
+    second run (after the first analysis and digest): {"stage": "followup",
+      "analysis_depth": standard|concise|technical|actionable,
+      "notifications": {"mode": silent|daily_digest|vip_alert, "daily_digest_hour": 0-23,
+      "channels": [web_push|telegram|line]}}.
+    Show the changes to the user as they are and ask before applying."""
+    from app import setup_flow
+
+    async def run():
+        try:
+            return await setup_flow.call_service("POST", "/api/setup/preview", json_body={"answers": answers})
+        except setup_flow.ServiceUnavailable:
+            result = setup_flow.preview(answers)
+            result["note"] = "OmniKeep 服務沒在跑：這是直接讀資料庫的預覽；套用前要先啟動服務"
+            return result
+        except setup_flow.ServiceError as exc:
+            raise setup_flow.SetupError(str(exc)) from exc
+    return await _setup_call(run)
+
+
+@mcp.tool()
+async def omnikeep_apply_setup(answers: Dict[str, Any], confirm_code: str) -> str:
+    """Apply the setup the user approved: the same answers plus the confirm_code from
+    omnikeep_preview_setup. Refused if the answers or the settings changed since the preview."""
+    from app import setup_flow
+    return await _setup_call(setup_flow.call_service, "POST", "/api/setup/apply",
+                             json_body={"answers": answers, "confirm_code": confirm_code})
+
+
+@mcp.tool()
+async def omnikeep_ingest(url: str) -> str:
+    """Analyze one link and save it to OmniKeep (the first success: show the result and ask
+    about analysis depth). Takes as long as one AI analysis."""
+    from app import setup_flow
+    return await _setup_call(setup_flow.ingest, url)
+
+
+@mcp.tool()
+async def omnikeep_run_radar() -> str:
+    """Run one radar scan now and build a radar digest of what it found; returns the digest
+    Markdown. Can take minutes: it fetches every active source and analyzes a few items."""
+    from app import setup_flow
+    return await _setup_call(setup_flow.call_service, "POST", "/api/setup/run-radar", timeout=900.0)
+
+
+@mcp.tool()
+async def omnikeep_import(kind: str, path: str = "", browser: str = "", profile: str = "",
+                          enqueue_ai: bool = False, limit: int = 1000) -> str:
+    """Import old data. kind: "bookmarks" (path to an export file, or browser="chrome"/"edge"
+    for this machine's bookmarks; Pocket CSV works too), "github_stars" (needs `gh auth login`),
+    or "opml" (path; feeds become radar sources). Saves only title and URL unless
+    enqueue_ai=true, which queues every link for AI analysis and uses quota."""
+    from app import setup_flow
+    return await _setup_call(setup_flow.import_data, kind, path, browser, profile, enqueue_ai, limit)
+
+
 # ── 11. Resources ───────────────────────────────────────────────
 
 @mcp.resource("omnikeep://stats")
@@ -734,6 +879,23 @@ async def get_categories_resource() -> str:
 
 # ── CLI Entrypoint ──────────────────────────────────────────────
 
+def _preload_before_stdin() -> None:
+    """Load numpy before the stdio transport starts reading stdin.
+
+    On Windows, importing numpy while another thread is blocked reading the stdin
+    pipe hangs for good (measured 2026-11-05: numpy and sqlite_vec, which loads it;
+    psutil, lxml, cryptography, openai and the parsers do not). The stdio reader is
+    such a thread, and the pipeline and the vector index import numpy lazily, so the
+    first tool that needs them would never answer. Costs about 0.1 s.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import numpy  # noqa: F401
+    except ImportError:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(description="OmniKeep MCP Server")
     parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio", help="MCP transport mode")
@@ -748,6 +910,7 @@ def main():
         # A separate process from the web service: load the keys saved in the app too.
         from app.app_settings import apply_overrides
         apply_overrides()
+        _preload_before_stdin()
         mcp.run(transport="stdio")
 
 if __name__ == "__main__":
