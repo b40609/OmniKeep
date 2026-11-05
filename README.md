@@ -99,6 +99,43 @@
 
 ## 🚀 快速啟動
 
+### 交給你的 agent：一行安裝
+
+對 Claude Code、Codex 或 Antigravity 說：
+
+> 幫我安裝 OmniKeep：https://github.com/b40609/OmniKeep
+
+agent 會照 [`skills/omnikeep-setup`](skills/omnikeep-setup/SKILL.md) 安裝，再用最多 6 題帶你挑關注主題、雷達來源與 AI 管道，一路做到第一篇分析與第一份雷達摘要。AI 金鑰一律在 OmniKeep 的設定頁自己貼，不經過聊天。
+
+也可以自己執行安裝腳本：
+
+```powershell
+# Windows（PowerShell）
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/b40609/OmniKeep/main/scripts/install.ps1)))
+```
+
+```bash
+# macOS、Linux
+curl -fsSL https://raw.githubusercontent.com/b40609/OmniKeep/main/scripts/install.sh | bash
+```
+
+Claude Code 使用者也可以先裝 plugin，取得設定 Skill 後再說「幫我安裝 OmniKeep」：
+
+```bash
+claude plugin marketplace add b40609/OmniKeep
+claude plugin install omnikeep@omnikeep
+```
+
+安裝腳本會做這些事，可以重複執行，已完成的步驟會略過：
+
+1. 檢查 git、Python 3.12+、Node.js 20.19+（Windows 加 `-InstallPrereqs` 會用 winget 補裝）。
+2. clone 到 `~/OmniKeep`（從 repo 內執行時就用這個 repo），建立 `.venv` 並安裝依賴。
+3. 沒有 `.env` 時用 `scripts/bootstrap_env.py` 產生，存取金鑰隨機產生、不會顯示。
+4. 建置前端，啟動服務並設定自動重啟：Windows 是排程工作「OmniKeep Watchdog」（每分鐘檢查、登入時啟動），Linux 是 systemd 使用者服務，macOS 是 launchd。
+5. 用 `scripts/register_agents.py` 把 stdio MCP 與 `omnikeep-setup` Skill 註冊到這台電腦的 Claude Code（`claude mcp add -s user`）、Codex（`codex mcp add`）、Antigravity（`~/.gemini/config/mcp_config.json`）。agent 的設定檔裡不放任何金鑰；已經有別的 `omnikeep` 設定時不覆蓋，要加 `--force`。
+
+想先看會做什麼：Windows 加 `-DryRun`，macOS、Linux 加 `--dry-run`；`python scripts/register_agents.py --dry-run` 只看註冊的部分。裝好之後開一個新的 agent session，說「幫我設定 OmniKeep」。
+
 ### 方式 A：使用 Docker 部署 (推薦)
 
 建議以 Docker Compose 首次部署。一般書籤收藏、匯入與關鍵字搜尋不需要 GPU 或付費 AI API：

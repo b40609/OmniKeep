@@ -5,17 +5,15 @@ $ErrorActionPreference = 'Stop'
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $runScript = Join-Path $projectRoot 'run.py'
-# Auto-detect Python executable (PATH, project .venv, or local fallback)
+# Auto-detect Python executable (project .venv from install.ps1, PATH, or local fallback)
+$venvPy = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $pythonCmd = Get-Command python.exe -ErrorAction SilentlyContinue
-if ($pythonCmd -and (Test-Path $pythonCmd.Source -PathType Leaf)) {
+if (Test-Path $venvPy -PathType Leaf) {
+    $pythonExe = $venvPy
+} elseif ($pythonCmd -and (Test-Path $pythonCmd.Source -PathType Leaf)) {
     $pythonExe = $pythonCmd.Source
 } else {
-    $venvPy = Join-Path $projectRoot ".venv\Scripts\python.exe"
-    if (Test-Path $venvPy -PathType Leaf) {
-        $pythonExe = $venvPy
-    } else {
-        $pythonExe = Join-Path $env:LOCALAPPDATA "Python\pythoncore-3.14-64\python.exe"
-    }
+    $pythonExe = Join-Path $env:LOCALAPPDATA "Python\pythoncore-3.14-64\python.exe"
 }
 $logDir = Join-Path $env:LOCALAPPDATA 'OmniKeep\logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null

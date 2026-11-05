@@ -1,0 +1,18 @@
+{
+  "name": "omnikeep",
+  "description": "OmniKeep 的 Claude Code plugin marketplace。",
+  "owner": {
+    "name": "OmniKeep contributors",
+    "url": "https://github.com/b40609/OmniKeep"
+  },
+  "plugins": [
+    {
+      "name": "omnikeep",
+      "source": "./",
+      "description": "安裝與設定 OmniKeep：omnikeep-setup Skill 帶你從安裝到第一份雷達摘要。",
+      "homepage": "https://github.com/b40609/OmniKeep",
+      "license": "MIT",
+      "category": "productivity"
+    }
+  ]
+}
