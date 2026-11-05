@@ -274,6 +274,8 @@ watch(
       if (ui.settingsTab === 'system') loadAudit()
     }
   },
+  // A settings link (#settings=ai) opens the dialog before this component mounts.
+  { immediate: true },
 )
 
 watch(
