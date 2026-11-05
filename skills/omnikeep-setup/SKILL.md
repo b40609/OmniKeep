@@ -115,11 +115,13 @@ OmniKeep 的分析、Ask Brain、雷達摘要要用 AI。
 每個選中、還沒接好的管道：
 
 1. 說明申請步驟，打開卡片的申請頁。
-2. 呼叫 `omnikeep_open_settings` 取得指向那張卡片的設定頁連結，請使用者自己貼金鑰、按儲存。
-3. 使用者說貼好了，呼叫 `omnikeep_test_provider`。它會實際送一筆中文 JSON 小請求。
+2. 呼叫 `omnikeep_open_settings(card=<卡片 id>)` 取得設定頁連結。使用者打開後會直接看到那張卡片的新增表單（已經接過的就是編輯表單），請他自己貼金鑰、按儲存。
+3. 使用者說貼好了，再呼叫一次 `omnikeep_list_provider_options`，從 `current.connections` 找到新連線的 `id`，用 `omnikeep_test_provider(connection_id=<id>)` 測試。它會實際送一筆中文 JSON 小請求。
 4. 失敗時照回傳的中文說明處理（金鑰錯、被停用、限流、模型不存在……）。一直失敗就先接下一個管道，不要卡住後面的步驟。
 
 本機推論（例如 Ollama）不需要金鑰，測試通過就好。
+
+都接好之後，把「主要在前、備援依序在後」的連線 id 放進答案的 `ai_order`，在第 6 步一起預覽。Ask Brain 與雷達預設跟著分析用的順序；使用者想分開設定，請他到設定頁的「用途排序」調整。
 
 ## 6. 第一次預覽與套用
 

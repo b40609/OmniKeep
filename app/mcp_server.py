@@ -688,7 +688,8 @@ async def omnikeep_preview_setup(answers: Dict[str, Any]) -> str:
     confirm_code. Nothing is written. answers (JSON):
     first run: {"stage": "first", "about_you", "interest_profile", "topics": [...],
       "seed_links": [...], "sources": [{"name","source_type","url","pack"}],
-      "radar": {"enabled", "interval_minutes"}};
+      "radar": {"enabled", "interval_minutes"},
+      "ai_order": [connection ids for analysis, primary first, then fallbacks]};
     second run (after the first analysis and digest): {"stage": "followup",
       "analysis_depth": standard|concise|technical|actionable,
       "notifications": {"mode": silent|daily_digest|vip_alert, "daily_digest_hour": 0-23,

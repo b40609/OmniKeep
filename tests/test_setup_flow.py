@@ -495,3 +495,23 @@ async def test_stdio_server_answers_a_tool_that_loads_the_pipeline():
 
     answer = await asyncio.wait_for(run(), timeout=60)
     assert answer["ok"] is False and "http" in answer["error"]
+
+
+async def test_ai_order_is_previewed_and_applied_to_the_analysis_slot(service):
+    from app import ai_connections
+
+    first = ai_connections.create({"card": "agnes", "key": "sk-test-not-a-real-key-AAAA"}, slot="analysis")
+    second = ai_connections.create({"card": "agnes", "label": "Agnes 企業", "key": "wk-test-not-a-real-key-BBBB"})
+    answers = _first_answers(ai_order=[second.id, first.id])
+
+    preview = await setup_flow.call_service("POST", "/api/setup/preview", json_body={"answers": answers})
+    change = next(c for c in preview["changes"] if c["key"] == "ai.analysis")
+    assert change["before"] == [first.label] and change["after"] == ["Agnes 企業", first.label]
+    await setup_flow.call_service("POST", "/api/setup/apply",
+                                  json_body={"answers": answers, "confirm_code": preview["confirm_code"]})
+    assert [e["connection_id"] for e in ai_connections.slots()["analysis"]] == [second.id, first.id]
+
+    with pytest.raises(setup_flow.SetupError):
+        setup_flow.preview(_first_answers(ai_order=[999]))
+    with pytest.raises(setup_flow.SetupError):
+        setup_flow.preview({"stage": "followup", "analysis_depth": "concise", "ai_order": [first.id]})

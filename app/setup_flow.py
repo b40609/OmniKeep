@@ -690,6 +690,9 @@ class SetupAnswers(BaseModel):
     radar: Optional[RadarAnswer] = None
     analysis_depth: Optional[Literal["standard", "concise", "technical", "actionable"]] = None
     notifications: Optional[NotificationAnswer] = None
+    # Question 3: AI connection ids for analysis, primary first, then fallbacks. Ask Brain
+    # and the radar follow the analysis slot unless the user set them apart.
+    ai_order: Optional[List[int]] = Field(default=None, max_length=8)
 
     @field_validator("topics")
     @classmethod
@@ -702,7 +705,7 @@ class SetupAnswers(BaseModel):
     @model_validator(mode="after")
     def _followup_scope(self):
         if self.stage == "followup":
-            extra = [name for name in ("about_you", "interest_profile", "radar")
+            extra = [name for name in ("about_you", "interest_profile", "radar", "ai_order")
                      if getattr(self, name) is not None]
             extra += [name for name in ("topics", "seed_links", "sources") if getattr(self, name)]
             if extra:
@@ -823,6 +826,22 @@ def build_plan(answers: SetupAnswers) -> Dict[str, Any]:
             radar_changes[key] = value
             changes.append({"key": f"radar.{key}", "label": labels[key], "before": radar_before.get(key), "after": value})
 
+    ai_order = None
+    if answers.ai_order is not None:
+        from app import ai_connections
+        labels_by_id = {c.id: c.label for c in ai_connections.list_connections()}
+        unknown = [i for i in answers.ai_order if i not in labels_by_id]
+        if unknown:
+            raise SetupError(f"ai_order 裡的連線不存在：{unknown}；先用 omnikeep_list_provider_options 看 current.connections")
+        if len(set(answers.ai_order)) != len(answers.ai_order):
+            raise SetupError("ai_order 裡有重複的連線")
+        before_ids = [e["connection_id"] for e in ai_connections.slots()["analysis"]]
+        if answers.ai_order and answers.ai_order != before_ids:
+            ai_order = list(answers.ai_order)
+            changes.append({"key": "ai.analysis", "label": "分析用的 AI 管道（主要，再依序備援）",
+                            "before": [labels_by_id.get(i, str(i)) for i in before_ids],
+                            "after": [labels_by_id[i] for i in ai_order]})
+
     warnings: List[str] = []
     if answers.notifications is not None:
         state = _channel_state()
@@ -847,7 +866,8 @@ def build_plan(answers: SetupAnswers) -> Dict[str, Any]:
         "changes": changes,
         "sources": {"add": add, "reactivate": reactivate, "unchanged": unchanged},
         "warnings": warnings,
-        "_apply": {"settings": settings_values, "profile": profile_after, "radar": radar_changes},
+        "_apply": {"settings": settings_values, "profile": profile_after, "radar": radar_changes,
+                   "ai_order": ai_order},
     }
     # Same answers against the same state give the same code; any change in between does not.
     digest = hashlib.sha256(json.dumps({"answers": answers.model_dump(mode="json"), "plan": plan},
@@ -897,6 +917,12 @@ def apply(answers: Any, confirm_code: str) -> Dict[str, Any]:
         toggle_radar_source_active(src["id"], is_active=True)
     if todo["radar"]:
         update_radar_settings(**todo["radar"])
+    if todo["ai_order"]:
+        from app import ai_connections
+        try:
+            ai_connections.set_slots({"analysis": todo["ai_order"]})
+        except ai_connections.AIConfigError as exc:
+            raise SetupError("；".join(exc.errors.values()) or "AI 管道順序有誤") from exc
 
     previous = read_last_answers() or {}
     record = parsed.model_dump(mode="json", exclude_none=True)
