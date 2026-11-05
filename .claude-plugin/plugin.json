@@ -1,0 +1,21 @@
+{
+  "name": "omnikeep",
+  "displayName": "OmniKeep",
+  "description": "安裝與設定 OmniKeep（自架第二大腦與資訊雷達）。附 omnikeep-setup Skill：從安裝一路帶到第一份分析與雷達摘要。MCP 由安裝腳本註冊到這台電腦的 OmniKeep。",
+  "author": {
+    "name": "OmniKeep contributors",
+    "url": "https://github.com/b40609/OmniKeep"
+  },
+  "homepage": "https://github.com/b40609/OmniKeep",
+  "repository": "https://github.com/b40609/OmniKeep",
+  "license": "MIT",
+  "keywords": [
+    "second-brain",
+    "knowledge-base",
+    "rss",
+    "radar",
+    "mcp",
+    "self-hosted"
+  ],
+  "icon": "./frontend/public/pwa-512x512.png"
+}
