@@ -27,7 +27,7 @@ _PATTERNS: Tuple[Tuple[str, str, str, bool, Optional[str]], ...] = (
      "quota", "額度或餘額用完：到服務商後台儲值或升級方案。", True, None),
     (r"resource_exhausted|quota exceeded|exceeded.*quota", "rate_limit",
      "免費額度暫時用完（每分鐘或每日上限）：稍後會自動再試；常常發生的話，加一條備援連線。", False, None),
-    (r"incorrect api key|invalid api key|invalid_api_key|api key not valid|invalid authentication|unauthorized|authentication fails|invalid x-api-key",
+    (r"incorrect api key|invalid api key|invalid token|invalid_api_key|api key not valid|invalid authentication|unauthorized|authentication fails|invalid x-api-key",
      "auth", "金鑰錯誤：重新貼上金鑰（注意不要多複製到空白或換行），或確認這把金鑰屬於這個服務商。", False, None),
     (r"model[_ ]not[_ ]found|model .*(does not exist|not found|is not available)|no such model|unknown model|invalid model",
      "not_found", "模型名稱不存在或這把金鑰不能用：按「測試」列出可用的模型再選。", False, None),

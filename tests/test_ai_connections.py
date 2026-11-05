@@ -444,3 +444,19 @@ def test_embeddings_slot_is_used_and_local_runners_stay_off_in_tests():
         client.put("/api/ai/slots", headers=HEADERS, json={"slots": {"embeddings": [ollama["id"]]}})
     assert vector.embedding_slot()[0][1] == "embeddinggemma-2"
     assert vector.target_embedding_model() == vector.LOCAL_EMBEDDING_MODEL  # Ollama is never reached in tests
+
+
+def test_the_vector_test_uses_the_embedding_model(monkeypatch):
+    calls = []
+
+    async def fake_ollama(method, url, **kwargs):
+        calls.append((url, kwargs.get("json", {}).get("model")))
+        return httpx.Response(200, json={"embeddings": [[0.1] * 768]})
+
+    monkeypatch.setattr(connection_checks, "_ollama", fake_ollama)
+    with TestClient(app) as client:
+        ollama = client.post("/api/ai/connections", headers=HEADERS, json={"card": "ollama"}).json()["connection"]
+        res = client.post(f"/api/ai/connections/{ollama['id']}/test", headers=HEADERS,
+                          json={"purpose": "embeddings"}).json()
+    assert res["ok"] is True and "embeddinggemma-2" in res["message"]
+    assert calls == [("http://127.0.0.1:11434/api/embed", "embeddinggemma-2")]  # not the chat model qwen3:8b

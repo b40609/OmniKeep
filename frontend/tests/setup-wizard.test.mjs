@@ -12,54 +12,56 @@ const transpile = (source) => ts.transpileModule(source, {
 
 const setupSource = transpile(await readFile(new URL('../src/lib/setup.ts', import.meta.url), 'utf8'))
 const setup = await import(moduleUrl(setupSource))
-const preset = (id) => setup.presetById(id)
+
+// The shape GET /api/ai/catalog returns (app/provider_catalog.py), trimmed to what the wizard reads.
+const CARDS = [
+  { id: 'agnes', label: 'Agnes', kind: 'openai', base_url: 'https://apihub.agnes-ai.com/v1', model: 'agnes-3.0-flash',
+    models: ['agnes-3.0-flash'], key_mode: 'required', key_url: 'https://platform.agnes-ai.com/settings/apiKeys',
+    editable_url: false, cost: '免費', limits: '每分鐘約 10 次', notes: '', training_note: '', verified: '2026-11-05' },
+  { id: 'gemini', label: 'Google Gemini', kind: 'gemini', base_url: '', model: 'gemini-2.5-flash', models: [],
+    key_mode: 'required', key_url: 'https://aistudio.google.com/apikey', editable_url: false, cost: '免費層',
+    limits: '', notes: '', training_note: '免費層的內容會被拿去改進產品。', verified: '2026-11-05' },
+  { id: 'ollama', label: '本機 Ollama', kind: 'ollama', base_url: 'http://127.0.0.1:11434', model: 'qwen3:8b', models: [],
+    key_mode: 'none', key_url: '', editable_url: true, cost: '0', limits: '', notes: '', training_note: '', verified: '2026-11-05' },
+  { id: 'cloudflare', label: 'Cloudflare', kind: 'openai',
+    base_url: 'https://api.cloudflare.com/client/v4/accounts/<帳號 ID>/ai/v1', model: '@cf/openai/gpt-oss-120b', models: [],
+    key_mode: 'required', key_url: 'https://dash.cloudflare.com/profile/api-tokens', editable_url: true, cost: '免費層',
+    limits: '', notes: '', training_note: '', verified: '2026-11-05' },
+  { id: 'custom', label: '自訂 OpenAI 相容端點', kind: 'openai', base_url: '', model: '', models: [],
+    key_mode: 'optional', key_url: '', editable_url: true, cost: '', limits: '', notes: '', training_note: '', verified: '2026-11-05' },
+]
+const card = (id) => setup.cardById(CARDS, id)
 
 // ── Pure logic ────────────────────────────────────────────────────
 
-test('every preset is complete and ids are unique', () => {
-  const ids = setup.SETUP_PRESETS.map((p) => p.id)
-  assert.equal(new Set(ids).size, ids.length)
-  for (const p of setup.SETUP_PRESETS) {
-    assert.ok(p.label && p.description)
-    assert.ok(['openai_compatible', 'gemini'].includes(p.provider))
-    if (p.provider === 'openai_compatible' && p.baseUrl) assert.match(p.baseUrl, /^https?:\/\/.+\/v1$/)
-    if (p.keyUrl) assert.match(p.keyUrl, /^https:\/\//)
-  }
-})
-
-test('an OpenAI-compatible choice saves address, key and model, trimming the address', () => {
-  const values = setup.setupValues(preset('openrouter'), {
-    baseUrl: ' https://openrouter.ai/api/v1/ ', apiKey: ' sk-or-typed ', model: ' openai/gpt-4o-mini ',
+test('a card becomes a connection draft: address, key and model, trimmed', () => {
+  const draft = setup.connectionDraft(card('agnes'), {
+    baseUrl: ' https://apihub.agnes-ai.com/v1/ ', apiKey: ' sk-typed ', model: ' agnes-3.0-flash ',
   })
-  assert.deepEqual(values, {
-    PRIMARY_LLM_PROVIDER: 'openai_compatible',
-    OPENAI_BASE_URL: 'https://openrouter.ai/api/v1',
-    OPENAI_API_KEY: 'sk-or-typed',
-    PRIMARY_MODEL: 'openai/gpt-4o-mini',
-  })
-  assert.equal(setup.checkServiceFor(preset('openrouter')), 'llm')
+  assert.deepEqual(draft, { card: 'agnes', base_url: 'https://apihub.agnes-ai.com/v1', key: 'sk-typed', model: 'agnes-3.0-flash' })
 })
 
-test('a local Ollama choice always sends an empty key, so no old key follows it', () => {
-  const values = setup.setupValues(preset('ollama'), { ...setup.initialForm(preset('ollama')), apiKey: 'left-over' })
-  assert.equal(values.OPENAI_API_KEY, '')
-  assert.equal(values.OPENAI_BASE_URL, 'http://127.0.0.1:11434/v1')
-  assert.equal(setup.formProblem(preset('ollama'), setup.initialForm(preset('ollama'))), null)
+test('a card that takes no key never sends one, so no old key follows it', () => {
+  const draft = setup.connectionDraft(card('ollama'), { ...setup.initialForm(card('ollama')), apiKey: 'left-over' })
+  assert.equal('key' in draft, false)
+  assert.equal(draft.base_url, 'http://127.0.0.1:11434')
+  assert.equal(setup.formProblem(card('ollama'), setup.initialForm(card('ollama'))), null)
 })
 
-test('a Gemini choice saves only Gemini settings and is checked as Gemini', () => {
-  const values = setup.setupValues(preset('gemini'), { baseUrl: '', apiKey: 'AIzaOne, AIzaTwo', model: 'gemini-2.5-flash' })
-  assert.deepEqual(values, { PRIMARY_LLM_PROVIDER: 'gemini', GEMINI_API_KEYS: 'AIzaOne, AIzaTwo', GEMINI_MODEL: 'gemini-2.5-flash' })
-  assert.equal(setup.checkServiceFor(preset('gemini')), 'gemini')
-  assert.equal(setup.formProblem(preset('gemini'), { baseUrl: '', apiKey: 'AIzaOne, AIzaTwo', model: 'm' }), null)
+test('Gemini sends its keys without an address', () => {
+  const draft = setup.connectionDraft(card('gemini'), { baseUrl: 'x', apiKey: 'AIzaOne, AIzaTwo', model: 'gemini-2.5-flash' })
+  assert.deepEqual(draft, { card: 'gemini', key: 'AIzaOne,AIzaTwo', model: 'gemini-2.5-flash' })
+  assert.equal(setup.formProblem(card('gemini'), { baseUrl: '', apiKey: 'AIzaOne, AIzaTwo', model: 'm' }), null)
 })
 
 test('the form explains what is missing before a test is allowed', () => {
-  const openai = preset('openai')
-  assert.match(setup.formProblem(openai, setup.initialForm(openai)), /金鑰/)
-  assert.match(setup.formProblem(openai, { ...setup.initialForm(openai), apiKey: 'sk a' }), /空白/)
-  assert.match(setup.formProblem(openai, { ...setup.initialForm(openai), apiKey: 'sk-a', model: ' ' }), /模型/)
-  const custom = preset('custom')
+  const agnes = card('agnes')
+  assert.match(setup.formProblem(agnes, setup.initialForm(agnes)), /金鑰/)
+  assert.match(setup.formProblem(agnes, { ...setup.initialForm(agnes), apiKey: 'sk a' }), /空白/)
+  assert.match(setup.formProblem(agnes, { ...setup.initialForm(agnes), apiKey: 'sk-a', model: ' ' }), /模型/)
+  const cf = card('cloudflare')
+  assert.match(setup.formProblem(cf, { ...setup.initialForm(cf), apiKey: 't' }), /帳號 ID/)
+  const custom = card('custom')
   assert.match(setup.formProblem(custom, setup.initialForm(custom)), /API 位址/)
   assert.match(setup.formProblem(custom, { baseUrl: 'ftp://x.example/v1', apiKey: '', model: 'm' }), /API 位址/)
   assert.equal(setup.formProblem(custom, { baseUrl: 'http://192.168.1.5:1234/v1', apiKey: '', model: 'm' }), null)
@@ -71,6 +73,12 @@ test('sameValues compares exactly what would be saved', () => {
   assert.equal(setup.sameValues({ ...a }, a), true)
   assert.equal(setup.sameValues({ A: '1', B: '3' }, a), false)
   assert.equal(setup.sameValues({ A: '1' }, a), false)
+})
+
+test('cooldowns read as short Chinese durations', () => {
+  assert.equal(setup.formatCooldown(0), '')
+  assert.equal(setup.formatCooldown(42), '42 秒')
+  assert.equal(setup.formatCooldown(90), '2 分鐘')
 })
 
 // ── The wizard component, with the real setup.ts and a fake API ─────
@@ -119,10 +127,11 @@ function context(status = { services: {}, needs_setup: true, undecryptable: [] }
     ui: reactive({ showSetupWizard: false, showSettingsModal: false, settingsVersion: 0, openSettings(tab) { ctx.opened = tab } }),
     api: {
       getServiceStatus: async () => status,
-      checkConnection: async (service, values) => { ctx.checks.push([service, values]); return ctx.nextCheck },
-      saveSettings: async (values) => { ctx.saved.push(values); return {} },
+      getAiCatalog: async () => ({ verified: '2026-11-05', cards: CARDS }),
+      testAiDraft: async (draft) => { ctx.tests.push(draft); return ctx.nextTest },
+      createAiConnection: async (input) => { ctx.created.push(input); return {} },
     },
-    checks: [], saved: [], errors: [], nextCheck: { ok: true, status: 200, message: 'ok', detail: '' }, store,
+    tests: [], created: [], errors: [], nextTest: { ok: true, status: 200, message: 'ok', detail: '' }, store,
   }
   globalThis.__wizard = ctx
   return ctx
@@ -138,10 +147,15 @@ async function mountWizard() {
   return { state: vnode.component.setupState, unmount: () => renderer.render(null, container) }
 }
 
-test('opens by itself only while no provider is usable', async () => {
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+test('opens by itself only while no provider is usable, with nothing preselected', async () => {
   let ctx = context()
   let view = await mountWizard()
   assert.equal(ctx.ui.showSetupWizard, true)
+  await settle()
+  assert.equal(view.state.cardId, '') // the owner chooses; no default answer
+  assert.equal(view.state.cards.length, CARDS.length)
   view.unmount()
 
   ctx = context({ services: {}, needs_setup: false, undecryptable: [] })
@@ -166,39 +180,40 @@ test('"later" keeps it closed for this browser session', async () => {
   view.unmount()
 })
 
-test('saving needs a successful test of exactly the values being saved', async () => {
+test('saving needs a successful test of exactly the values being saved, then fills the analysis slot', async () => {
   const ctx = context()
   const view = await mountWizard()
   try {
+    await settle()
     const s = view.state
-    s.choose('openai')
+    s.choose('agnes')
     s.step = 'connect'
     assert.match(s.problem, /金鑰/)
     s.form.apiKey = 'sk-wizard-typed'
     await nextTick()
     assert.equal(s.canSave, false)
 
-    ctx.nextCheck = { ok: false, status: 401, message: '金鑰無效', detail: '' }
+    ctx.nextTest = { ok: false, status: 401, message: '金鑰被停用', detail: '' }
     await s.test()
     assert.equal(s.canSave, false)
 
-    ctx.nextCheck = { ok: true, status: 200, message: '連線成功', detail: '' }
+    ctx.nextTest = { ok: true, status: 200, message: '連線成功', detail: '', models: ['agnes-3.0-flash', 'agnes-3.5-flash'] }
     await s.test()
-    assert.deepEqual(ctx.checks.at(-1), ['llm', {
-      PRIMARY_LLM_PROVIDER: 'openai_compatible', OPENAI_BASE_URL: 'https://api.openai.com/v1',
-      OPENAI_API_KEY: 'sk-wizard-typed', PRIMARY_MODEL: 'gpt-4o-mini',
-    }])
+    assert.deepEqual(ctx.tests.at(-1), {
+      card: 'agnes', base_url: 'https://apihub.agnes-ai.com/v1', key: 'sk-wizard-typed', model: 'agnes-3.0-flash',
+    })
     assert.equal(s.canSave, true)
+    assert.deepEqual(s.modelChoices, ['agnes-3.0-flash', 'agnes-3.5-flash'])
 
-    s.form.model = 'gpt-4o'
+    s.form.model = 'agnes-3.5-flash'
     await nextTick()
     assert.equal(s.canSave, false) // edited after the test
     assert.equal(s.result, null)
     await s.test()
     await s.save()
-    assert.deepEqual(ctx.saved, [{
-      PRIMARY_LLM_PROVIDER: 'openai_compatible', OPENAI_BASE_URL: 'https://api.openai.com/v1',
-      OPENAI_API_KEY: 'sk-wizard-typed', PRIMARY_MODEL: 'gpt-4o',
+    assert.deepEqual(ctx.created, [{
+      card: 'agnes', base_url: 'https://apihub.agnes-ai.com/v1', key: 'sk-wizard-typed', model: 'agnes-3.5-flash',
+      slot: 'analysis',
     }])
     assert.equal(s.step, 'done')
     assert.equal(s.form.apiKey, '') // the key does not linger in the page
@@ -206,13 +221,14 @@ test('saving needs a successful test of exactly the values being saved', async (
   } finally { view.unmount() }
 })
 
-test('a Gemini choice is tested with the Gemini check', async () => {
+test('a Gemini card is tested without an address', async () => {
   const ctx = context()
   const view = await mountWizard()
   try {
+    await settle()
     view.state.choose('gemini')
     view.state.form.apiKey = 'AIzaWizard'
     await view.state.test()
-    assert.equal(ctx.checks.at(-1)[0], 'gemini')
+    assert.deepEqual(ctx.tests.at(-1), { card: 'gemini', key: 'AIzaWizard', model: 'gemini-2.5-flash' })
   } finally { view.unmount() }
 })

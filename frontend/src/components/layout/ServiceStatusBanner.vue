@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { TriangleAlert, X } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
-import { getServiceStatus, type ServiceStatus } from '@/lib/api'
+import { getServiceStatus, type ServiceOutcome, type ServiceStatus } from '@/lib/api'
 import { useUiStore } from '@/stores/ui'
 
 /** Says so when AI calls fail (a revoked key used to show up only in the server log). */
@@ -10,7 +10,7 @@ const ui = useUiStore()
 const status = ref<ServiceStatus | null>(null)
 const dismissed = ref(sessionStorageGet())
 
-const LABELS = { llm: 'AI 分析', embeddings: '雲端向量', gemini: 'Gemini', ollama: '本機 Ollama 向量' } as const
+const LEGACY_LABELS: Record<string, string> = { llm: 'AI 分析', embeddings: '雲端向量', gemini: 'Gemini', ollama: '本機 Ollama 向量' }
 const POLL_MS = 120_000
 
 function sessionStorageGet() {
@@ -26,18 +26,29 @@ const problem = computed(() => {
   if (!s) return null
   const unreadable = s.undecryptable.filter((k) => !k.startsWith('VAPID_'))
   if (unreadable.length) {
-    return { text: `有 ${unreadable.length} 個金鑰無法解密，目前改用 .env 的值，請到設定重新輸入。`, action: '重新輸入', tab: 'ai' }
+    const connections = unreadable.filter((k) => k.startsWith('ai_connection:')).length
+    const where = connections === unreadable.length ? '請到「設定 › AI 服務商」重新輸入那幾條連線的金鑰。' : '目前改用 .env 的值，請到設定重新輸入。'
+    return { text: `有 ${unreadable.length} 個金鑰無法解密（主金鑰和當初加密時不同），${where}`, action: '重新輸入', tab: 'ai' }
   }
   if (s.undecryptable.length) {
     return { text: '推播金鑰無法解密（主金鑰和當初加密時不同），推播暫停。請還原主金鑰檔，或到設定重新產生。', action: '查看', tab: 'push' }
   }
-  const failing = (Object.entries(s.services) as [keyof typeof LABELS, { ok: boolean; status: number | null; message: string }][])
-    .filter(([, o]) => o && !o.ok)
+  // One entry per connection ("c<id>", labelled), plus the older service names.
+  const failing = Object.entries(s.services).filter(([, o]) => o && !o.ok)
   if (failing.length) {
+    const label = (name: string, o: ServiceOutcome) => o.label || LEGACY_LABELS[name] || name
+    // A key that needs a person goes first: retrying will not fix it.
+    failing.sort(([, a], [, b]) => Number(!!b.action_required) - Number(!!a.action_required))
     const [name, outcome] = failing[0]
     const code = outcome.status ? `HTTP ${outcome.status}` : '連線失敗'
-    const names = failing.map(([n]) => LABELS[n]).join('、')
-    return { text: `${names}目前無法使用（${LABELS[name]}：${code}${outcome.message ? `，${outcome.message}` : ''}）。`, action: '檢查設定', tab: 'ai' }
+    const names = failing.map(([n, o]) => label(n, o)).join('、')
+    const why = outcome.hint || outcome.message
+    const backup = failing.length < Object.keys(s.services).length ? '其他連線仍可備援。' : ''
+    return {
+      text: `${names} 目前無法使用（${label(name, outcome)}：${why || code}）。${backup}`,
+      action: outcome.action_required ? '前往處理' : '檢查設定',
+      tab: 'ai',
+    }
   }
   if (s.needs_setup) return { text: '還沒設定 AI 服務商，新收藏不會經過 AI 分析。', action: '開始設定', tab: 'wizard' }
   return null

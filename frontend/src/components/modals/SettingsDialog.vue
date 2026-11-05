@@ -11,6 +11,7 @@ import {
 } from '@/lib/api'
 import { useUiStore } from '@/stores/ui'
 import TelegramPairing from './TelegramPairing.vue'
+import AiProvidersPanel from './AiProvidersPanel.vue'
 
 /** Everything that used to need .env edits: saved in the app, applied at once, keys never shown again. */
 const ui = useUiStore()
@@ -28,13 +29,8 @@ const errors = ref<Record<string, string>>({})
 const checks = reactive<Partial<Record<CheckService, ConnectionCheck | 'running'>>>({})
 const telegram = ref<InstanceType<typeof TelegramPairing> | null>(null)
 
+// The AI tab is AiProvidersPanel (connections and task slots), tested per connection there.
 const CHECKS_BY_GROUP: Record<string, { service: CheckService; label: string }[]> = {
-  ai: [
-    { service: 'llm', label: '測試 OpenAI 相容服務' },
-    { service: 'ollama', label: '測試 Ollama 向量' },
-    { service: 'embeddings', label: '測試雲端向量' },
-    { service: 'gemini', label: '測試 Gemini' },
-  ],
   brain: [{ service: 'brain', label: '測試 Ollama 模型' }],
   telegram: [{ service: 'telegram', label: '測試 Bot' }],
   line: [{ service: 'line', label: '測試 LINE Bot' }],
@@ -45,7 +41,7 @@ const SOURCE_LABEL = { app: 'App 設定', env: '.env', default: '預設值' } as
 const GENERATED_LABEL: Record<string, string> = { VAPID_PUBLIC_KEY: '推播公鑰', VAPID_PRIVATE_KEY: '推播私鑰' }
 const ACTION_LABEL: Record<string, string> = {
   set: '修改', clear: '清除', reset: '改回 .env／預設值', import: '從 .env 匯入', pair: 'Telegram 配對',
-  generate: '自動產生', regenerate: '重新產生', rotate: '輪替',
+  generate: '自動產生', regenerate: '重新產生', rotate: '輪替', sync: '由 AI 連線同步', delete: '刪除',
 }
 
 const audit = ref<SettingsAuditEntry[]>([])
@@ -59,7 +55,9 @@ const tabs = computed(() => [
   ...(snapshot.value?.groups.map((g) => ({ id: g.id, label: g.label })) ?? []),
   { id: 'system', label: '系統' },
 ])
-const fields = computed<SettingField[]>(() => snapshot.value?.groups.find((g) => g.id === ui.settingsTab)?.fields ?? [])
+// The flat AI fields (OPENAI_*, GEMINI_*, …) are replaced by AiProvidersPanel; the API still accepts them.
+const fields = computed<SettingField[]>(() =>
+  ui.settingsTab === 'ai' ? [] : snapshot.value?.groups.find((g) => g.id === ui.settingsTab)?.fields ?? [])
 const byKey = computed(() => {
   const map = new Map<string, SettingField>()
   snapshot.value?.groups.forEach((g) => g.fields.forEach((f) => map.set(f.key, f)))
@@ -115,13 +113,6 @@ const pending = computed(() => {
 })
 const changeCount = computed(() => Object.keys(pending.value.values).length + pending.value.reset.length)
 
-const baseUrlNeedsKey = computed(() => {
-  const url = byKey.value.get('OPENAI_BASE_URL')
-  const key = byKey.value.get('OPENAI_API_KEY')
-  if (!url || !key || !('OPENAI_BASE_URL' in pending.value.values)) return false
-  return !!key.configured && !('OPENAI_API_KEY' in pending.value.values)
-})
-const embeddingChanged = computed(() => 'EMBEDDING_MODEL' in pending.value.values)
 
 function toggle(set: typeof clears, key: string) {
   const next = new Set(set.value)
@@ -537,14 +528,7 @@ const inputClass =
               </p>
             </div>
 
-            <template v-if="ui.settingsTab === 'ai'">
-              <p v-if="baseUrlNeedsKey" class="rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-2xs text-warning">
-                更換 API 位址時，請一併輸入新的 API 金鑰，舊金鑰不會被送到新位址。
-              </p>
-              <p v-if="embeddingChanged" class="rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-2xs text-warning">
-                更換向量模型後，既有收藏的向量要重建才查得到（伺服器執行 <code>scripts/rebuild_embeddings.py</code>）。
-              </p>
-            </template>
+            <AiProvidersPanel v-if="ui.settingsTab === 'ai'" />
 
             <section v-if="ui.settingsTab === 'push'" class="space-y-2 border-t border-border pt-3">
               <h3 class="flex items-center gap-1.5 text-xs font-semibold"><BellRing class="size-3.5" /> 推播金鑰</h3>
@@ -613,7 +597,8 @@ const inputClass =
         </template>
       </div>
 
-      <div class="flex shrink-0 items-center justify-between gap-2 border-t border-border px-5 py-3">
+      <!-- The AI tab saves each connection and the task lists itself. -->
+      <div v-if="ui.settingsTab !== 'ai'" class="flex shrink-0 items-center justify-between gap-2 border-t border-border px-5 py-3">
         <span class="text-2xs text-muted-foreground">{{ changeCount ? `${changeCount} 項變更尚未儲存` : '沒有未儲存的變更' }}</span>
         <div class="flex gap-2">
           <Button variant="ghost" size="sm" :disabled="!changeCount || saving" @click="resetDrafts">還原</Button>

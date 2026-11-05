@@ -1,58 +1,25 @@
 /**
- * First-run setup wizard: provider presets and the values the wizard saves.
+ * Provider cards (GET /api/ai/catalog, app/provider_catalog.py) turned into the
+ * connection the first-run wizard and 設定 › AI 服務商 test and save.
  * Kept free of app imports so tests can run it directly under node.
  */
 
-export type SetupProvider = 'openai_compatible' | 'gemini'
+export type CardKind = 'openai' | 'gemini' | 'ollama'
 /** required: refuse to continue without one; optional: may be blank; none: field hidden */
 export type KeyMode = 'required' | 'optional' | 'none'
 
-export interface SetupPreset {
+/** The fields of a catalog card this module needs. */
+export interface SetupCard {
   id: string
   label: string
-  description: string
-  provider: SetupProvider
-  baseUrl: string
+  kind: CardKind
+  base_url: string
   model: string
-  keyMode: KeyMode
-  /** Where to create a key, shown next to the field. */
-  keyUrl?: string
-  /** The address can be edited (self-hosted or "other" servers). */
-  editableUrl: boolean
+  models?: string[]
+  key_mode: KeyMode
+  key_url?: string
+  editable_url?: boolean
 }
-
-export const SETUP_PRESETS: SetupPreset[] = [
-  {
-    id: 'openai', label: 'OpenAI', description: '最省事，需要付費的 API 金鑰',
-    provider: 'openai_compatible', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini',
-    keyMode: 'required', keyUrl: 'https://platform.openai.com/api-keys', editableUrl: false,
-  },
-  {
-    id: 'ollama', label: '本機 Ollama', description: '免費、資料不出這台電腦，需要先安裝 Ollama 並下載模型',
-    provider: 'openai_compatible', baseUrl: 'http://127.0.0.1:11434/v1', model: 'qwen3:8b',
-    keyMode: 'none', editableUrl: true,
-  },
-  {
-    id: 'gemini', label: 'Google Gemini', description: '有免費額度；影片解析也會用到',
-    provider: 'gemini', baseUrl: '', model: 'gemini-2.5-flash',
-    keyMode: 'required', keyUrl: 'https://aistudio.google.com/apikey', editableUrl: false,
-  },
-  {
-    id: 'openrouter', label: 'OpenRouter', description: '一把金鑰用多家模型',
-    provider: 'openai_compatible', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini',
-    keyMode: 'required', keyUrl: 'https://openrouter.ai/keys', editableUrl: false,
-  },
-  {
-    id: 'deepseek', label: 'DeepSeek', description: '價格低的雲端模型',
-    provider: 'openai_compatible', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat',
-    keyMode: 'required', keyUrl: 'https://platform.deepseek.com/api_keys', editableUrl: false,
-  },
-  {
-    id: 'custom', label: '其他 OpenAI 相容服務', description: 'Groq、LM Studio、vLLM、自架閘道…',
-    provider: 'openai_compatible', baseUrl: '', model: '',
-    keyMode: 'optional', editableUrl: true,
-  },
-]
 
 export interface SetupForm {
   baseUrl: string
@@ -60,60 +27,73 @@ export interface SetupForm {
   model: string
 }
 
-export function presetById(id: string): SetupPreset | undefined {
-  return SETUP_PRESETS.find((p) => p.id === id)
+/** What is tested and then saved as a connection (POST /api/ai/test, /api/ai/connections). */
+export interface ConnectionDraft {
+  card: string
+  base_url?: string
+  key?: string
+  model: string
 }
 
-export function initialForm(preset: SetupPreset): SetupForm {
-  return { baseUrl: preset.baseUrl, apiKey: '', model: preset.model }
+export function cardById<T extends SetupCard>(cards: T[], id: string): T | undefined {
+  return cards.find((c) => c.id === id)
 }
 
-/** Which connection check proves the choice works. */
-export function checkServiceFor(preset: SetupPreset): 'llm' | 'gemini' {
-  return preset.provider === 'gemini' ? 'gemini' : 'llm'
+export function initialForm(card: SetupCard): SetupForm {
+  return { baseUrl: card.base_url, apiKey: '', model: card.model }
+}
+
+/** The address has a part the owner must fill in, e.g. Cloudflare's <帳號 ID>. */
+export function hasPlaceholder(url: string): boolean {
+  return /[<>]/.test(url)
 }
 
 /** What is wrong with the form, or null when it can be tested. */
-export function formProblem(preset: SetupPreset, form: SetupForm): string | null {
-  if (preset.provider === 'openai_compatible') {
+export function formProblem(card: SetupCard, form: SetupForm): string | null {
+  if (card.kind !== 'gemini') {
+    const raw = form.baseUrl.trim()
+    if (hasPlaceholder(raw)) return '把 API 位址裡角括號的部分（例如 <帳號 ID>）換成你自己的值'
     let url: URL | null = null
     try {
-      url = new URL(form.baseUrl.trim())
+      url = new URL(raw)
     } catch {
       url = null
     }
     if (!url || !['http:', 'https:'].includes(url.protocol)) return '請填 http:// 或 https:// 開頭的 API 位址'
   }
-  if (preset.keyMode === 'required' && !form.apiKey.trim()) return '請輸入 API 金鑰'
-  if (/\s/.test(form.apiKey.trim()) && preset.provider !== 'gemini') return '金鑰中不能有空白'
+  if (card.key_mode === 'required' && !form.apiKey.trim()) return '請輸入 API 金鑰'
+  if (/\s/.test(form.apiKey.trim()) && card.kind !== 'gemini') return '金鑰中不能有空白'
   if (!form.model.trim()) return '請輸入模型名稱'
   return null
 }
 
 /**
- * Settings the wizard tests and then saves. An OpenAI-compatible choice always
- * sends the key, even blank: a blank key means "this server needs none", and it
- * tells the server the old key must not travel to the new address.
+ * The connection to test and save. A card that takes no key never sends one,
+ * so a key typed earlier for another card cannot follow it to a new address.
  */
-export function setupValues(preset: SetupPreset, form: SetupForm): Record<string, string> {
-  if (preset.provider === 'gemini') {
-    return {
-      PRIMARY_LLM_PROVIDER: 'gemini',
-      GEMINI_API_KEYS: form.apiKey.trim(),
-      GEMINI_MODEL: form.model.trim(),
-    }
+export function connectionDraft(card: SetupCard, form: SetupForm): ConnectionDraft {
+  const draft: ConnectionDraft = { card: card.id, model: form.model.trim() }
+  if (card.kind !== 'gemini') draft.base_url = form.baseUrl.trim().replace(/\/+$/, '')
+  if (card.key_mode !== 'none') {
+    draft.key = card.kind === 'gemini'
+      ? form.apiKey.split(',').map((k) => k.trim()).filter(Boolean).join(',')
+      : form.apiKey.trim()
   }
-  return {
-    PRIMARY_LLM_PROVIDER: 'openai_compatible',
-    OPENAI_BASE_URL: form.baseUrl.trim().replace(/\/+$/, ''),
-    OPENAI_API_KEY: preset.keyMode === 'none' ? '' : form.apiKey.trim(),
-    PRIMARY_MODEL: form.model.trim(),
-  }
+  return draft
 }
 
 /** Saving is allowed only after a successful test of exactly these values. */
-export function sameValues(a: Record<string, string> | null, b: Record<string, string>): boolean {
+export function sameValues(a: object | null, b: object): boolean {
   if (!a) return false
-  const keys = Object.keys(b)
-  return keys.length === Object.keys(a).length && keys.every((k) => a[k] === b[k])
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const keys = Object.keys(right)
+  return keys.length === Object.keys(left).length && keys.every((k) => left[k] === right[k])
+}
+
+/** Seconds as a short Chinese duration for cooldowns. */
+export function formatCooldown(seconds: number): string {
+  if (seconds <= 0) return ''
+  if (seconds < 60) return `${seconds} 秒`
+  return `${Math.ceil(seconds / 60)} 分鐘`
 }

@@ -321,12 +321,155 @@ export interface ServiceOutcome {
   at: string
   status: number | null
   message: string
+  /** What happened and what to do, in Chinese (app/error_translate.py). */
+  hint?: string
+  kind?: string
+  /** Retrying cannot help (a disabled key): the fallback chain skips it until fixed. */
+  action_required?: boolean
+  fix_url?: string | null
+  cooldown_seconds?: number
+  label?: string
 }
 
 export interface ServiceStatus {
-  services: Partial<Record<'llm' | 'embeddings' | 'gemini' | 'ollama', ServiceOutcome>>
+  /** Keyed by connection ("c<id>"), plus llm / embeddings / gemini / ollama for the older settings. */
+  services: Record<string, ServiceOutcome>
   needs_setup: boolean
   undecryptable: string[]
+}
+
+/* ---------------- AI connections (設定 › AI 服務商) ---------------- */
+
+export type AiKind = 'openai' | 'gemini' | 'ollama'
+export type AiSlotId = 'analysis' | 'brain' | 'radar' | 'embeddings' | 'video'
+
+export interface AiCaps {
+  json_mode?: boolean
+  embeddings?: boolean
+  video?: boolean
+  context?: number
+  embedding_model?: string
+}
+
+export interface AiCard {
+  id: string
+  label: string
+  kind: AiKind
+  base_url: string
+  model: string
+  models: string[]
+  embedding_model: string
+  key_mode: 'required' | 'optional' | 'none'
+  key_url: string
+  editable_url: boolean
+  cost: string
+  limits: string
+  notes: string
+  training_note: string
+  min_interval: number
+  max_concurrency: number
+  caps: AiCaps
+  verified: string
+}
+
+export interface AiConnection {
+  id: number
+  card: string
+  kind: AiKind
+  label: string
+  base_url: string
+  model: string
+  key_configured: boolean
+  key_hint: string
+  key_undecryptable: boolean
+  caps: AiCaps
+  min_interval: number | null
+  max_concurrency: number | null
+  effective_interval: number
+  origin: string
+  enabled: boolean
+  used_in: AiSlotId[]
+  status: (ServiceOutcome & { cooldown_seconds: number }) | null
+  updated_at: string
+}
+
+export interface AiSlotEntry {
+  connection_id: number
+  model: string
+}
+
+export interface AiSlot {
+  id: AiSlotId
+  label: string
+  help: string
+  entries: AiSlotEntry[]
+}
+
+export interface AiOverview {
+  connections: AiConnection[]
+  slots: AiSlot[]
+  legacy_active: boolean
+  needs_setup: boolean
+  reindex_hint?: boolean
+}
+
+/** Fields of a connection; `key` left out keeps the saved key, '' removes it. */
+export interface AiConnectionInput {
+  card?: string
+  label?: string
+  base_url?: string
+  model?: string
+  key?: string
+  caps?: AiCaps
+  min_interval?: number | null
+  max_concurrency?: number | null
+  enabled?: boolean
+}
+
+export interface AiTestResult extends ConnectionCheck {
+  models?: string[]
+  json_mode?: boolean | null
+  latency_ms?: number | null
+  hint?: string
+  action_required?: boolean
+  fix_url?: string | null
+}
+
+export function getAiCatalog(): Promise<{ verified: string; cards: AiCard[] }> {
+  return request<{ verified: string; cards: AiCard[] }>('/api/ai/catalog')
+}
+
+export function getAiConnections(): Promise<AiOverview> {
+  return request<AiOverview>('/api/ai/connections')
+}
+
+export function createAiConnection(input: AiConnectionInput & { slot?: AiSlotId }): Promise<AiOverview & { connection: AiConnection }> {
+  return request<AiOverview & { connection: AiConnection }>('/api/ai/connections', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateAiConnection(id: number, input: AiConnectionInput): Promise<AiOverview & { connection: AiConnection }> {
+  return request<AiOverview & { connection: AiConnection }>(`/api/ai/connections/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+}
+
+export function deleteAiConnection(id: number): Promise<AiOverview> {
+  return request<AiOverview>(`/api/ai/connections/${id}`, { method: 'DELETE' })
+}
+
+/** Test a saved connection; typed fields in `draft` are tested instead of the saved ones. */
+export function testAiConnection(
+  id: number,
+  draft: { base_url?: string; model?: string; key?: string; purpose?: 'chat' | 'embeddings' } = {},
+): Promise<AiTestResult> {
+  return request<AiTestResult>(`/api/ai/connections/${id}/test`, { method: 'POST', body: JSON.stringify(draft) })
+}
+
+/** Test values typed for a new connection, before anything is saved. */
+export function testAiDraft(draft: { card: string; base_url?: string; model?: string; key?: string; purpose?: 'chat' | 'embeddings' }): Promise<AiTestResult> {
+  return request<AiTestResult>('/api/ai/test', { method: 'POST', body: JSON.stringify(draft) })
+}
+
+export function saveAiSlots(slots: Partial<Record<AiSlotId, AiSlotEntry[]>>): Promise<AiOverview> {
+  return request<AiOverview>('/api/ai/slots', { method: 'PUT', body: JSON.stringify({ slots }) })
 }
 
 export function getSettings(): Promise<SettingsSnapshot> {

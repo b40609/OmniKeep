@@ -119,6 +119,9 @@ def _draft(saved: Optional[ai_connections.Connection], body: TestBody) -> Any:
         raise AIConfigError({"model": "請填模型名稱"})
     caps = dict(card.get("caps", {}))
     caps.update(saved.caps if saved else {})
+    if body.purpose == "embeddings" and body.model is None:
+        # The vector test uses the embedding model, not the chat model.
+        model = str(caps.get("embedding_model") or card.get("embedding_model") or model)
     return SimpleNamespace(kind=kind, base_url=base_url, key=(key or "").strip(), model=model, caps=caps)
 
 
