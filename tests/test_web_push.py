@@ -339,7 +339,7 @@ async def test_risk_scan_pushes_a_new_proposal_once_without_filenames(vapid, mon
     (isolated_runtime / "password.txt").write_text("SYNTHETIC_NEVER_READ")
     target = add_watch_target("DemoOS", str(isolated_runtime), preset="strict")
     provider = Mock(generate_json=AsyncMock(return_value={"title_l1": "fingerprint"}))
-    monkeypatch.setattr(scanner, "get_primary_provider", lambda: provider)
+    monkeypatch.setattr(scanner, "radar_provider", lambda: provider)
 
     await scanner.scan_target(target)
     await scanner.scan_target(get_watch_target(target["id"]))  # same risk → deduplicated, no second push
@@ -381,7 +381,7 @@ async def test_rejected_relevance_is_not_pushed(vapid, monkeypatch, isolated_run
     seen = _mock_push_service(monkeypatch)
     news = _fingerprinted_target(isolated_runtime, {"summary": True})
     provider = Mock(generate_json=AsyncMock(return_value={"relevant": False}))
-    monkeypatch.setattr(relevance, "get_primary_provider", lambda: provider)
+    monkeypatch.setattr(relevance, "radar_provider", lambda: provider)
 
     assert await relevance.maybe_propose_for_item(news) is None
     assert seen == [] and get_proposals() == []

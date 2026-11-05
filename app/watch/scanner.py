@@ -20,7 +20,7 @@ from app.database import (
     get_watch_target,
     proposal_seen,
 )
-from app.providers import get_primary_provider
+from app.providers import get_provider
 from app.push import notify_new_proposal
 from app.config import settings
 from app.watch.redact import redact_text, find_risky_files, is_risky_filename
@@ -50,6 +50,11 @@ FINGERPRINT_SYSTEM_PROMPT = """你是一位資深技術架構偵察官。根據�
 }
 素材中出現 [REDACTED:...] 標記代表機密已被遮蔽，請忽略該處內容，不要猜測。"""
 
+
+
+def radar_provider():
+    """The radar slot (設定 › AI 服務商): falls back to the analysis chain."""
+    return get_provider("radar")
 
 def _walk_files(root: Path, max_files: int = 8000) -> List[str]:
     """Relative file paths, breadth-limited; directory names are visible too."""
@@ -218,7 +223,7 @@ async def _scan_target(target: Dict[str, Any]) -> Dict[str, Any]:
     fp: Dict[str, Any]
     if send_text:
         try:
-            provider = get_primary_provider()
+            provider = radar_provider()
             fp = await provider.generate_json(
                 send_text,
                 FINGERPRINT_SYSTEM_PROMPT,

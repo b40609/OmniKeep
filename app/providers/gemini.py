@@ -8,7 +8,7 @@ from app.providers.base import BaseLLMProvider
 from app.config import settings
 
 
-async def _generate_content(client, **kwargs):
+async def _generate_content(client, status_key: str = "gemini", label: str = "", rate_limiter=None, **kwargs):
     """Run `generate_content` without blocking the event loop.
 
     google-genai ships a native async client (`client.aio`); use it when
@@ -17,24 +17,40 @@ async def _generate_content(client, **kwargs):
     seconds) can no longer freeze every other request in the process.
     """
     from app import ai_status
-    try:
+
+    async def call():
         aio = getattr(client, "aio", None)
         if aio is not None:
-            response = await aio.models.generate_content(**kwargs)
+            return await aio.models.generate_content(**kwargs)
+        return await asyncio.to_thread(client.models.generate_content, **kwargs)
+
+    try:
+        if rate_limiter is None:
+            response = await call()
         else:
-            response = await asyncio.to_thread(client.models.generate_content, **kwargs)
+            async with rate_limiter.slot():
+                response = await call()
     except Exception as exc:
         code = getattr(exc, "code", None)
-        ai_status.record_failure("gemini", code if isinstance(code, int) else None, f"{type(exc).__name__}: {exc}")
+        if rate_limiter is not None and code == 429:
+            rate_limiter.on_rate_limited(None)
+        ai_status.record_failure(status_key, code if isinstance(code, int) else None,
+                                 f"{type(exc).__name__}: {exc}", label)
         raise
-    ai_status.record_success("gemini")
+    if rate_limiter is not None:
+        rate_limiter.on_success()
+    ai_status.record_success(status_key, label)
     return response
 
 
 class GeminiProvider(BaseLLMProvider):
-    def __init__(self, api_keys: Optional[List[str]] = None, model: Optional[str] = None):
+    def __init__(self, api_keys: Optional[List[str]] = None, model: Optional[str] = None,
+                 rate_limiter=None, status_key: str = "gemini", label: str = ""):
         self.keys = api_keys if api_keys is not None else settings.gemini_keys
         self.model = model or settings.GEMINI_MODEL
+        self.limiter = rate_limiter
+        self.status_key = status_key
+        self.label = label
         self._key_cycle = itertools.cycle(self.keys) if self.keys else None
         self._lock = threading.Lock()
 
@@ -59,7 +75,7 @@ class GeminiProvider(BaseLLMProvider):
         contents.append(prompt)
 
         response = await _generate_content(
-            client,
+            client, self.status_key, self.label, self.limiter,
             model=self.model,
             contents=contents,
             config=gtypes.GenerateContentConfig(
@@ -80,7 +96,7 @@ class GeminiProvider(BaseLLMProvider):
         full_prompt = (system_prompt + "\n\n" if system_prompt else "") + prompt + "\n\nReturn ONLY a valid JSON object."
 
         response = await _generate_content(
-            client,
+            client, self.status_key, self.label, self.limiter,
             model=self.model,
             contents=[full_prompt],
             config=gtypes.GenerateContentConfig(
@@ -106,7 +122,7 @@ class GeminiProvider(BaseLLMProvider):
         client = genai.Client(api_key=key)
 
         response = await _generate_content(
-            client,
+            client, self.status_key, self.label, self.limiter,
             model=self.model,
             contents=[
                 gtypes.Part.from_uri(

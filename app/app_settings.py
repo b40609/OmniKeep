@@ -428,6 +428,10 @@ def save(values: Optional[Dict[str, Any]] = None, reset: Iterable[str] = (), act
     from app import ai_status
     if any(SPEC_BY_KEY[k].hook == "llm" for k in touched):
         ai_status.forget("llm", "embeddings", "gemini")
+    from app import ai_connections
+    if touched & ai_connections.LEGACY_KEYS:
+        # Older clients still save the flat AI settings; carry them into the migrated connections.
+        ai_connections.sync_from_settings(touched)
     return sorted(set(changed) | touched)
 
 
@@ -520,6 +524,11 @@ def describe() -> Dict[str, Any]:
 def label_for(key: str) -> str:
     if key == MASTER_KEY_AUDIT:
         return "主金鑰"
+    if key.startswith("ai_connection:"):
+        return f"AI 連線 #{key.split(':', 1)[1]}"
+    if key.startswith("ai_slot:"):
+        from app.ai_connections import SLOT_LABELS
+        return f"AI 用途：{SLOT_LABELS.get(key.split(':', 1)[1], key)}"
     spec = SPEC_BY_KEY.get(key)
     return spec.label if spec else key
 
@@ -542,6 +551,8 @@ def audit_log(limit: int = 50, before_id: Optional[int] = None) -> Dict[str, Any
         spec = SPEC_BY_KEY.get(row["key"])
         if spec:
             group = group_labels.get(spec.group, "")
+        elif row["key"].startswith(("ai_connection:", "ai_slot:")):
+            group = group_labels["ai"]
         else:
             group = "系統" if row["key"] == MASTER_KEY_AUDIT else ""
         entries.append({
@@ -597,6 +608,10 @@ def rotate_master_key() -> Dict[str, Any]:
                     continue
                 conn.execute("UPDATE app_settings SET value = ? WHERE key = ?", (token, row["key"]))
                 rotated.append(row["key"])
+            from app.ai_connections import rotate_keys
+            more_rotated, more_failed = rotate_keys(conn, keyring)
+            rotated += more_rotated
+            failed += more_failed
             conn.execute(
                 "INSERT INTO app_settings (key, value, is_secret, updated_at) VALUES (?, ?, 0, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",

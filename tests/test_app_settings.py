@@ -181,11 +181,14 @@ def test_lost_master_key_falls_back_to_env_and_says_so(monkeypatch):
         assert body["secret_key"]["undecryptable"] == ["OPENAI_API_KEY"]
         assert body["secret_key"]["changed"] is True
         assert _field(body, "OPENAI_API_KEY")["undecryptable"] is True
-        assert client.get("/api/settings/status", headers=HEADERS).json()["undecryptable"] == ["OPENAI_API_KEY"]
+        # The connection migrated from these settings holds the same key and is flagged too.
+        assert client.get("/api/settings/status", headers=HEADERS).json()["undecryptable"] == [
+            "OPENAI_API_KEY", "ai_connection:1"]
 
         body = _put(client, {"OPENAI_API_KEY": NEW_KEY}).json()  # entering it again fixes it
         assert body["secret_key"] == {**body["secret_key"], "undecryptable": [], "changed": False}
         assert settings.OPENAI_API_KEY == NEW_KEY
+        assert client.get("/api/settings/status", headers=HEADERS).json()["undecryptable"] == []
 
 
 def test_saving_llm_settings_rebuilds_the_provider():
@@ -282,6 +285,7 @@ def test_unbinding_telegram_owner_takes_effect_at_once(monkeypatch):
 
 class FakeOpenAI:
     instances = []
+    requests = []
 
     def __init__(self, *, base_url, api_key, timeout, max_retries):
         self.base_url, self.api_key = base_url, api_key
@@ -297,7 +301,9 @@ class FakeOpenAI:
         return SimpleNamespace(data=[SimpleNamespace(id="gpt-4o-mini")])
 
     async def _create(self, **kwargs):
-        return SimpleNamespace(choices=[])
+        FakeOpenAI.requests.append(kwargs)
+        message = SimpleNamespace(content='{"回覆": "連線成功", "數字": 42}')
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
     async def close(self):
         pass
@@ -306,6 +312,7 @@ class FakeOpenAI:
 @pytest.fixture
 def fake_openai(monkeypatch):
     FakeOpenAI.instances = []
+    FakeOpenAI.requests = []
     monkeypatch.setattr(connection_checks, "AsyncOpenAI", FakeOpenAI)
     return FakeOpenAI
 
@@ -319,6 +326,10 @@ def test_llm_check_tests_the_typed_key_and_hides_it(fake_openai):
     assert bad["ok"] is False and bad["status"] == 401 and "停用" in bad["message"]
     assert "sk-bad-key" not in str(bad)
     assert good["ok"] is True and "gpt-4o-mini" in good["message"]
+    # Listing models is not enough: a small Chinese json_object request must parse.
+    sent = fake_openai.requests[-1]
+    assert sent["response_format"] == {"type": "json_object"} and "繁體中文" in sent["messages"][-1]["content"]
+    assert good["json_mode"] is True and good["models"] == ["gpt-4o-mini"]
     assert settings.OPENAI_API_KEY == ""  # testing saves nothing
 
 

@@ -11,3 +11,4 @@ from app.routers.push import router as push_router
 from app.routers.telegram import router as telegram_router
 from app.routers.settings import router as settings_router
 from app.routers.brain import router as brain_router
+from app.routers.ai import router as ai_router

@@ -34,6 +34,9 @@ def target_model() -> str:
     """The model queries embed with when every configured service is up, so the
     one the index has to hold: the local Ollama runner first, then the
     OpenAI-compatible endpoint, then the local hash."""
+    from app.vector import embedding_slot, target_embedding_model
+    if embedding_slot():
+        return target_embedding_model()
     if ollama_embedding_enabled():
         return settings.EMBEDDING_MODEL
     return remote_embedding_model() if settings.OPENAI_API_KEY else LOCAL_EMBEDDING_MODEL

@@ -22,7 +22,7 @@ from app.parsers import (
 )
 from app.parsers.reel import is_video_reel_url, parse_video_reel
 from app.parsers.threads import is_threads_url, parse_threads_page
-from app.providers import get_primary_provider, get_gemini_provider
+from app.providers import get_primary_provider, get_gemini_provider, has_video_provider
 from app.config import settings
 from app.schemas.intelligence import generate_structured_intelligence
 
@@ -260,8 +260,8 @@ URL：{url}
             desc_part = f"\n\n## 影片說明欄\n{desc_text}" if desc_text else ""
             content_raw = f"# {meta['title']}\n\n頻道: {meta['author']}\nURL: {url}{desc_part}"
             
-            # If Gemini keys are configured, use native YouTube video analysis
-            if settings.gemini_keys:
+            # If the video slot has a Gemini connection, use native YouTube video analysis
+            if has_video_provider():
                 try:
                     gemini = get_gemini_provider()
                     prompt = f"""請觀看並深度分析此 YouTube 影片：{url}

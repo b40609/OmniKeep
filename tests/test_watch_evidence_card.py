@@ -77,7 +77,7 @@ async def test_relevance_cloud_module_evidence_card():
         "verification_plan": "執行 pytest test_audit_regressions.py 驗證 DNS rebinding 防護"
     }
 
-    with patch("app.watch.relevance.get_primary_provider") as mock_prov:
+    with patch("app.watch.relevance.radar_provider") as mock_prov:
         mock_provider_instance = AsyncMock()
         mock_provider_instance.generate_json.return_value = mock_llm_judgment
         mock_prov.return_value = mock_provider_instance
@@ -179,7 +179,7 @@ async def test_watch_proposals_api_and_decision():
     # unavailable so the local-match card is built without calling a provider.
     offline = AsyncMock()
     offline.generate_json.side_effect = ConnectionError("cloud provider stubbed offline")
-    with patch("app.watch.relevance.get_primary_provider", return_value=offline):
+    with patch("app.watch.relevance.radar_provider", return_value=offline):
         proposal = await relevance.maybe_propose_for_item(item)
     assert proposal is not None
     offline.generate_json.assert_awaited_once()

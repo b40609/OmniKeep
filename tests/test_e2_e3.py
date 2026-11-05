@@ -134,7 +134,8 @@ async def test_ask_brain_grounded_answer(monkeypatch):
         async def generate_text(self, prompt, system_prompt=None):
             return answer
 
-    monkeypatch.setattr("app.providers.get_primary_provider", lambda: FakeProvider())
+    # Ask Brain takes the brain slot (which follows analysis while it is empty).
+    monkeypatch.setattr("app.providers.get_provider", lambda *a, **k: FakeProvider())
 
     res = await ask_brain("Transformer 注意力機制", limit=3, force_cloud=True)
     assert res["answer"] == answer

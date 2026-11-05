@@ -449,7 +449,8 @@ async def ask_brain_synthesis(topic: str, top_k: int = 5) -> str:
         )
 
     full_context = "\n".join(context_blocks)
-    primary = get_primary_provider()
+    from app.providers import get_provider
+    primary = get_provider("brain")
 
     system_prompt = (
         "你是一位頂尖的資深系統架構師與技術情報分析官。"

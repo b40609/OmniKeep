@@ -77,7 +77,8 @@ async def test_history_is_capped_and_kept_in_cloud_fallback(monkeypatch, stub_se
             prompts.append(prompt)
             return "雲端回答"
 
-    monkeypatch.setattr("app.providers.get_primary_provider", lambda: FakeProvider())
+    # The cloud fallback is the brain slot (it follows analysis while empty).
+    monkeypatch.setattr("app.providers.get_provider", lambda *a, **k: FakeProvider())
     history = [{"role": "user", "content": f"第{i}輪"} for i in range(6)]
     history.append({"role": "assistant", "content": "長" * 5000})
 

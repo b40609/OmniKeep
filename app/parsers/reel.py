@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 from app.network import validate_url
 from app.parsers.media_network import PublicYoutubeDL
 
-from app.providers import get_primary_provider, get_gemini_provider
+from app.providers import get_primary_provider, get_gemini_provider, has_video_provider
 from app.providers.openai_compatible import extract_completion_content
 from app.parsers.web import parse_facebook_page
 from app.parsers.cookie_manager import ytdlp_cookie_opts
@@ -254,7 +254,7 @@ async def analyze_storyboard_vision(tile_path: str) -> str:
             logger.warning(f"[Reel Vision] Primary provider vision failed: {e}")
 
     # 2. Gemini Provider Fallback
-    if settings.gemini_keys:
+    if has_video_provider():
         try:
             from google import genai
             from google.genai import types as gtypes
@@ -310,7 +310,7 @@ async def transcribe_audio_stream(audio_path: str) -> str:
             logger.debug(f"[Reel Audio] Primary audio transcription skipped/failed: {e}")
 
     # 3. Try Gemini audio multimodal understanding
-    if settings.gemini_keys:
+    if has_video_provider():
         try:
             from google import genai
             from google.genai import types as gtypes

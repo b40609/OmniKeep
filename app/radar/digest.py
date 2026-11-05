@@ -1,7 +1,12 @@
 import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from app.providers import get_primary_provider
+from app.providers import get_provider
+
+
+def radar_provider():
+    """The radar slot (設定 › AI 服務商): falls back to the analysis chain."""
+    return get_provider("radar")
 from app.database import save_radar_digest, get_item_by_id
 from app.pipeline import interest_profile_block
 
@@ -43,7 +48,7 @@ async def generate_radar_digest(item_ids: List[str], digest_type: str = "evening
     items_text = "\n".join(items_text_list)
     prompt = DIGEST_PROMPT_TEMPLATE.format(items_text=items_text) + interest_profile_block()
 
-    llm = get_primary_provider()
+    llm = radar_provider()
     system_instruction = "你是一位極簡、專注高質量技術架構的情報官。輸出乾淨的 Markdown 格式。"
     
     try:

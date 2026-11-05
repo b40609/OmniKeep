@@ -441,6 +441,45 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
+    # 26. AI provider connections (app/ai_connections.py). key_enc is encrypted with
+    #     app.secret_box like the secrets in app_settings; caps_json holds capability flags.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ai_connections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            label TEXT NOT NULL,
+            base_url TEXT NOT NULL DEFAULT '',
+            model TEXT NOT NULL DEFAULT '',
+            key_enc TEXT NOT NULL DEFAULT '',
+            caps_json TEXT NOT NULL DEFAULT '{}',
+            min_interval REAL,
+            max_concurrency INTEGER,
+            origin TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    # 27. Which connections each task uses, in fallback order (position 0 = primary).
+    #     model overrides the connection's own model for this task (empty = the connection's).
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ai_slots (
+            slot TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            connection_id INTEGER NOT NULL REFERENCES ai_connections(id) ON DELETE CASCADE,
+            model TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (slot, position)
+        )
+    """)
+    # 28. One-off markers for the AI connections (e.g. the flat settings were migrated).
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ai_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
 
     conn.commit()
     conn.close()

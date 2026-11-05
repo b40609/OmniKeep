@@ -154,8 +154,8 @@ async def ask_brain(
     # 3. Fallback: Cloud provider (Gemini / Agnes or OpenAI Compatible)
     if not answer:
         try:
-            from app.providers import get_primary_provider
-            primary = get_primary_provider()
+            from app.providers import get_provider
+            primary = get_provider("brain", skip_kinds=("ollama",))  # local Ollama was tried above
             answer = await primary.generate_text(
                 prompt=_with_history(recent_turns, user_payload), system_prompt=SYSTEM_PROMPT)
             provider_used = "cloud_fallback"

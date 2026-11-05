@@ -50,10 +50,18 @@ def extract_completion_content(response: Any) -> str:
 
 
 class OpenAICompatibleProvider(BaseLLMProvider):
-    def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None, model: Optional[str] = None):
+    def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None, model: Optional[str] = None,
+                 rate_limiter=None, status_key: str = "llm", label: str = "", json_mode: bool = True):
+        """With no arguments: the settings that predate connections (OPENAI_*), paced by the
+        shared limiter. A connection (app/ai_connections.py) passes its own address, key
+        (never empty: a keyless local server gets a placeholder), limiter and status key."""
         self.base_url = base_url or settings.OPENAI_BASE_URL
         self.api_key = api_key or settings.OPENAI_API_KEY or "dummy-key"
         self.model = model or settings.PRIMARY_MODEL
+        self.limiter = rate_limiter or limiter
+        self.status_key = status_key
+        self.label = label
+        self.json_mode = json_mode
 
         self.client = AsyncOpenAI(
             base_url=self.base_url,
@@ -68,11 +76,11 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         waits = (None, 5.0, 15.0)  # first try, then two backoff presets
         last_exc: Optional[Exception] = None
         for attempt, preset_wait in enumerate(waits):
-            async with limiter.slot():
+            async with self.limiter.slot():
                 try:
                     response = await self.client.chat.completions.create(**kwargs)
-                    limiter.on_success()
-                    ai_status.record_success("llm")
+                    self.limiter.on_success()
+                    ai_status.record_success(self.status_key, self.label)
                     return response
                 except RateLimitError as e:
                     last_exc = e
@@ -81,20 +89,21 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                         retry_after = float(e.response.headers.get("retry-after"))
                     except Exception:
                         pass
-                    limiter.on_rate_limited(retry_after)
+                    self.limiter.on_rate_limited(retry_after)
                     if attempt == len(waits) - 1:
-                        ai_status.record_failure("llm", 429, str(e))
+                        ai_status.record_failure(self.status_key, 429, str(e), self.label)
                         break
                     wait = min(max(retry_after or preset_wait or 5.0, 2.0), 90.0)
                     logger.warning(
-                        f"[Agnes] Rate limited — waiting {wait:.0f}s before retry "
+                        f"[{self.label or 'LLM'}] Rate limited — waiting {wait:.0f}s before retry "
                         f"{attempt + 1}/{len(waits) - 1}"
                     )
                 except APIStatusError as e:
-                    ai_status.record_failure("llm", e.status_code, str(e))
+                    ai_status.record_failure(self.status_key, e.status_code, str(e), self.label)
                     raise
                 except APIConnectionError as e:
-                    ai_status.record_failure("llm", None, f"連不上 {self.base_url}（{type(e).__name__}）")
+                    ai_status.record_failure(self.status_key, None, f"連不上 {self.base_url}（{type(e).__name__}）",
+                                             self.label)
                     raise
             # Backoff outside the slot so the other lane keeps working
             await asyncio.sleep(wait)
@@ -126,6 +135,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         # First attempt: Try response_format json_object. Rate limits must
         # propagate (never burn a second paced request while throttled).
         try:
+            if not self.json_mode:
+                raise ValueError("json_object is off for this connection")
             response = await self._chat(
                 model=self.model,
                 messages=messages,
@@ -138,6 +149,11 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             raise
         except ProviderUnavailableError:
             raise  # A block page cannot be fixed by changing response_format.
+        except APIConnectionError:
+            raise  # a down server: the fallback chain moves on
+        except APIStatusError as e:
+            if e.status_code in (401, 402, 403, 404) or e.status_code >= 500:
+                raise  # a dead key or a broken server: retrying without response_format cannot help
         except Exception:
             # Fallback attempt without response_format flag
             response = await self._chat(

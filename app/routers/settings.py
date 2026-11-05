@@ -75,16 +75,16 @@ async def check_connection(service: str, body: CheckRequest):
 
 
 def _needs_setup() -> bool:
-    if settings.PRIMARY_LLM_PROVIDER == "gemini":
-        return not settings.gemini_keys
-    # Local servers such as Ollama need no key; the default OpenAI address does.
-    return not settings.OPENAI_API_KEY and "api.openai.com" in settings.OPENAI_BASE_URL
+    from app.ai_connections import needs_setup
+    return needs_setup()
 
 
 @router.get("/status")
 async def service_status():
+    from app.ai_connections import undecryptable
     return {
+        # Keyed by connection ("c<id>"), plus the older names while no connection replaces them.
         "services": ai_status.snapshot(),
         "needs_setup": _needs_setup(),
-        "undecryptable": app_settings.describe()["secret_key"]["undecryptable"],
+        "undecryptable": app_settings.describe()["secret_key"]["undecryptable"] + undecryptable(),
     }

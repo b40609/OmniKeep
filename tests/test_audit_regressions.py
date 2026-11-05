@@ -323,7 +323,7 @@ async def test_summary_consent_does_not_export_docs_or_code(isolated_runtime, mo
     target = db.add_watch_target("synthetic", str(root), read_scope={
         "filenames": True, "readme": True, "code": True}, outbound_consent={"summary": True})
     provider = Mock(generate_json=AsyncMock(return_value={"title_l1": "fingerprint", "tech_tags": ["Python"]}))
-    monkeypatch.setattr(scanner, "get_primary_provider", lambda: provider)
+    monkeypatch.setattr(scanner, "radar_provider", lambda: provider)
     result = await scanner.scan_target(target)
     assert result["fingerprint_updated"]
     prompt = provider.generate_json.call_args.args[0]
@@ -343,7 +343,7 @@ async def test_concurrent_risk_scan_deduplicates_before_provider(isolated_runtim
     (isolated_runtime / "password.txt").write_text("SYNTHETIC_NEVER_READ")
     target = db.add_watch_target("risk", str(isolated_runtime), preset="strict")
     provider = Mock(generate_json=AsyncMock(return_value={"title_l1": "fingerprint"}))
-    monkeypatch.setattr(scanner, "get_primary_provider", lambda: provider)
+    monkeypatch.setattr(scanner, "radar_provider", lambda: provider)
     await asyncio.gather(scanner.scan_target(target), scanner.scan_target(target))
     assert provider.generate_json.await_count == 1
     assert len(db.get_proposals()) == 1
@@ -356,7 +356,7 @@ async def test_relevance_never_exports_historical_fingerprint_and_dedups_llm(iso
     db.update_watch_target(target["id"], {"fingerprint_item_id": fingerprint, "fingerprint_version": "test"})
     public = db.get_item_by_id(item("public", tech_tags=["Python", "SQLite"]))
     provider = Mock(generate_json=AsyncMock(return_value={"relevant": True}))
-    monkeypatch.setattr(relevance, "get_primary_provider", lambda: provider)
+    monkeypatch.setattr(relevance, "radar_provider", lambda: provider)
     results = await asyncio.gather(relevance.maybe_propose_for_item(public), relevance.maybe_propose_for_item(public))
     assert sum(result is not None for result in results) == 1
     assert provider.generate_json.await_count == 1

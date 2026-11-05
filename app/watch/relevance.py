@@ -22,10 +22,16 @@ from app.database import (
 )
 from app.watch.redact import redact_text
 from app.watch.locks import target_lock
-from app.providers import get_primary_provider
+from app.providers import get_provider
 from app.push import notify_new_proposal
 
 MIN_TAG_OVERLAP = 2
+
+
+def radar_provider():
+    """The radar slot (設定 › AI 服務商): falls back to the analysis chain."""
+    return get_provider("radar")
+
 logger = logging.getLogger("omnikeep.watch.relevance")
 
 RELEVANCE_SYSTEM_PROMPT = """你是一位高階系統架構師與專案提案評審官。
@@ -133,7 +139,7 @@ async def _propose(item):
                 f"目標專案：{target['name']}{structural_context}\n"
                 f"重疊技術標籤：{overlap_line}"
             )
-            judged = await get_primary_provider().generate_json(prompt, RELEVANCE_SYSTEM_PROMPT)
+            judged = await radar_provider().generate_json(prompt, RELEVANCE_SYSTEM_PROMPT)
             if judged.get("relevant") is False:
                 return None
             if judged.get("proposal_type") in ("synergy", "borrow", "upgrade", "monitor"):

@@ -63,9 +63,14 @@ class FakeOpenAI:
     def __init__(self, *, base_url, api_key, timeout, max_retries):
         FakeOpenAI.seen.append((base_url, api_key))
         self.models = SimpleNamespace(list=self._list)
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
     async def _list(self):
         return SimpleNamespace(data=[SimpleNamespace(id="qwen3:8b")])
+
+    async def _create(self, **kwargs):
+        message = SimpleNamespace(content='<think>想一下</think>{"回覆": "連線成功", "數字": 42}')
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
     async def close(self):
         pass

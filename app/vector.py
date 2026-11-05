@@ -167,48 +167,128 @@ def _normalized(vec: List[float], dim: int) -> List[float]:
     return v.tolist()
 
 
-async def _ollama_embedding(clean_text: str, dim: int, is_query: bool) -> Optional[List[float]]:
+async def _ollama_embedding(clean_text: str, dim: int, is_query: bool, base_url: Optional[str] = None,
+                            model: Optional[str] = None, status_key: str = "ollama",
+                            label: str = "") -> Optional[List[float]]:
     """embeddinggemma-2 (or EMBEDDING_MODEL) on the local Ollama runner.
 
-    OLLAMA_BASE_URL is the operator's own loopback service, so it does not go
+    The runner is the operator's own loopback service, so it does not go
     through public_http_client (that one refuses local addresses by design).
     embeddinggemma uses an asymmetric prompt: queries carry a task prefix,
     documents are embedded as-is. The Matryoshka vector is cut to EMBEDDING_DIM
-    and re-normalised.
+    and re-normalised. Without arguments: OLLAMA_BASE_URL and EMBEDDING_MODEL.
     """
+    base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
+    model = model or settings.EMBEDDING_MODEL
     prompt_input = f"task: search result | query: {clean_text}" if is_query else clean_text
-    url = f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/embed"
+    url = f"{base_url}/api/embed"
     try:
         import httpx
         async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
-            resp = await client.post(url, json={"model": settings.EMBEDDING_MODEL, "input": prompt_input})
+            resp = await client.post(url, json={"model": model, "input": prompt_input})
         if resp.status_code == 200:
             embs = resp.json().get("embeddings") or []
             if embs and len(embs[0]) >= dim:
-                ai_status.record_success("ollama")
+                ai_status.record_success(status_key, label)
                 return _normalized(embs[0], dim)
-            ai_status.record_failure("ollama", 200, f"{settings.EMBEDDING_MODEL} 沒有回傳 {dim} 維以上的向量")
+            ai_status.record_failure(status_key, 200, f"{model} 沒有回傳 {dim} 維以上的向量", label)
             logger.debug("[Vector] Ollama returned no usable %s-dim embedding, checking fallback...", dim)
         else:
-            ai_status.record_failure("ollama", resp.status_code, (resp.text or "")[:200])
+            ai_status.record_failure(status_key, resp.status_code, (resp.text or "")[:200], label)
             logger.debug("[Vector] Ollama embedding returned HTTP %s, checking fallback...", resp.status_code)
     except Exception as e:
-        ai_status.record_failure("ollama", None, f"連不上 {settings.OLLAMA_BASE_URL}（{type(e).__name__}）")
+        ai_status.record_failure(status_key, None, f"連不上 {base_url}（{type(e).__name__}）", label)
         logger.debug(f"[Vector] Local Ollama embedding failed ({e}), checking fallback...")
     return None
+
+
+async def _remote_embedding(clean_text: str, dim: int, api_url: str, api_key: str, model: str,
+                            status_key: str = "embeddings", label: str = "") -> Optional[List[float]]:
+    """One OpenAI-compatible /embeddings request (public addresses only)."""
+    try:
+        from app.network import public_http_client
+        async with public_http_client(timeout=15.0) as client:
+            resp = await client.post(
+                api_url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "input": clean_text,
+                    "model": model,
+                    "dimensions": dim
+                }
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                vec = data["data"][0]["embedding"]
+                ai_status.record_success(status_key, label)
+                return list(vec[:dim])
+            body = (getattr(resp, "text", "") or "")[:200]
+            ai_status.record_failure(status_key, resp.status_code, body, label)
+            logger.warning(
+                "[Vector] Embedding request to %s returned HTTP %s, using the next fallback: %s",
+                api_url, resp.status_code, body,
+            )
+    except Exception as e:
+        ai_status.record_failure(status_key, None, f"{type(e).__name__}: {e}", label)
+        logger.warning(f"[Vector] Embedding request to {api_url} failed ({e}), using the next fallback.")
+    return None
+
+
+def embedding_slot() -> List[Tuple[Any, str]]:
+    """(connection, model) pairs of the embeddings slot (設定 › AI 服務商); empty = the older settings."""
+    try:
+        from app.ai_connections import resolve
+        return resolve("embeddings")
+    except Exception:
+        return []
+
+
+def _usable_entries(entries: List[Tuple[Any, str]]) -> List[Tuple[Any, str]]:
+    """Unit tests (OMNIKEEP_TESTING=1) never reach a real Ollama runner on this machine."""
+    testing = os.environ.get("OMNIKEEP_TESTING") == "1"
+    return [(conn, model) for conn, model in entries
+            if conn.kind == "openai" or (conn.kind == "ollama" and not testing)]
+
+
+def target_embedding_model() -> str:
+    """The model queries embed with when every configured service is up."""
+    entries = embedding_slot()
+    if entries:
+        usable = _usable_entries(entries)
+        return usable[0][1] if usable else LOCAL_EMBEDDING_MODEL
+    if ollama_embedding_enabled():
+        return settings.EMBEDDING_MODEL
+    return remote_embedding_model() if settings.OPENAI_API_KEY else LOCAL_EMBEDDING_MODEL
 
 
 async def generate_embedding_with_model(text: str, is_query: bool = False) -> Tuple[List[float], str]:
     """Generates an embedding vector and returns (vector, model_label).
 
-    Tried in order: the local Ollama runner (EMBEDDING_MODEL, e.g. embeddinggemma-2),
-    the OpenAI-compatible endpoint at OPENAI_BASE_URL, then the hashed
+    With connections in the embeddings slot, they are tried in order. Otherwise
+    the older order: the local Ollama runner (EMBEDDING_MODEL, e.g. embeddinggemma-2),
+    the OpenAI-compatible endpoint at OPENAI_BASE_URL. Then the hashed
     bag-of-words fallback. The label is the model that actually produced the
     vector, so vectors from different spaces are never mistaken for each other.
     Indexing and querying both go through here; set is_query for search queries.
     """
     dim = int(settings.EMBEDDING_DIM)
     clean_text = clean_embedding_text(text)
+    entries = embedding_slot()
+    if entries:
+        if not clean_text:
+            usable = _usable_entries(entries)
+            return [0.0] * dim, (usable[0][1] if usable else LOCAL_EMBEDDING_MODEL)
+        for conn, model in _usable_entries(entries):
+            if conn.kind == "ollama":
+                vec = await _ollama_embedding(clean_text, dim, is_query, conn.base_url, model,
+                                              conn.status_key, conn.label)
+            else:
+                vec = await _remote_embedding(clean_text, dim, f"{conn.base_url.rstrip('/')}/embeddings",
+                                              conn.key or "dummy-key", model, conn.status_key, conn.label)
+            if vec is not None:
+                return vec, model
+        return _deterministic_local_embedding(clean_text, dim), LOCAL_EMBEDDING_MODEL
+
     api_key = settings.OPENAI_API_KEY
     if not clean_text:
         return [0.0] * dim, (settings.EMBEDDING_MODEL if api_key else LOCAL_EMBEDDING_MODEL)
@@ -221,34 +301,10 @@ async def generate_embedding_with_model(text: str, is_query: bool = False) -> Tu
 
     # 2. OpenAI-compatible endpoint
     if api_key and not getattr(settings, "OMNIKEEP_TESTING", False):
-        api_url = embeddings_api_url()
         remote_model = remote_embedding_model()
-        try:
-            from app.network import public_http_client
-            async with public_http_client(timeout=15.0) as client:
-                resp = await client.post(
-                    api_url,
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json={
-                        "input": clean_text,
-                        "model": remote_model,
-                        "dimensions": dim
-                    }
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    vec = data["data"][0]["embedding"]
-                    ai_status.record_success("embeddings")
-                    return list(vec[:dim]), remote_model
-                body = (getattr(resp, "text", "") or "")[:200]
-                ai_status.record_failure("embeddings", resp.status_code, body)
-                logger.warning(
-                    "[Vector] Embedding request to %s returned HTTP %s, using local projection: %s",
-                    api_url, resp.status_code, body,
-                )
-        except Exception as e:
-            ai_status.record_failure("embeddings", None, f"{type(e).__name__}: {e}")
-            logger.warning(f"[Vector] Embedding request to {api_url} failed ({e}), using local projection.")
+        vec = await _remote_embedding(clean_text, dim, embeddings_api_url(), api_key, remote_model)
+        if vec is not None:
+            return vec, remote_model
 
     # 3. Deterministic fallback
     return _deterministic_local_embedding(clean_text, dim), LOCAL_EMBEDDING_MODEL
