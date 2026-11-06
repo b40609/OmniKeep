@@ -540,6 +540,9 @@ def set_slots(mapping: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
             if slot == "video" and conn.kind != "gemini":
                 errors[slot] = f"「{conn.label}」不能解析影片：影片解析只能用 Gemini"
                 break
+            if slot == "video" and conn.caps.get("video") is False:
+                errors[slot] = f"「{conn.label}」不能解析 YouTube 影片：請用 AI Studio 的 Gemini 連線"
+                break
             if slot == "embeddings" and conn.kind == "gemini":
                 errors[slot] = f"「{conn.label}」目前不能算向量：請用 Ollama 或有向量的 OpenAI 相容服務"
                 break

@@ -58,9 +58,9 @@ CARDS: List[Dict[str, Any]] = [
         "key_mode": "required", "key_url": "https://console.cloud.google.com/apis/credentials",
         "cost": "Google Cloud 計費（Google AI Pro 每月 10 美元抵免額可以用）",
         "limits": "用量先扣付款帳戶上的抵免額，用完才扣卡。到帳單的 Budgets & caps 為 Vertex AI 設「強制執行支出上限」，金額設得比每月抵免額低。",
-        "notes": "用 Agent Platform 的 API 金鑰（express mode），不必填專案 ID。金鑰的 API 限制要允許 Agent Platform API；機構政策預設只允許 Gemini API，要先放行。步驟見 docs/gemini_pro_credit_setup.md。",
+        "notes": "用 Agent Platform 的 API 金鑰（express mode），不必填專案 ID。金鑰的 API 限制要允許 Agent Platform API；機構政策預設只允許 Gemini API，要先放行。不能解析 YouTube 影片（API 金鑰呼叫會回 401，要 OAuth），影片用途請用 AI Studio 的 Gemini 卡片。步驟見 docs/gemini_pro_credit_setup.md。",
         "min_interval": 1.0, "max_concurrency": 2,
-        "caps": {"json_mode": True, "embeddings": False, "video": True, "context": 1000000, "vertex": True},
+        "caps": {"json_mode": True, "embeddings": False, "video": False, "context": 1000000, "vertex": True},
         "verified": "2026-11-06",
     },
     {

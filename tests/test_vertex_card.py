@@ -41,6 +41,8 @@ def test_card_is_listed_as_a_gemini_kind_with_vertex_on():
     card = provider_catalog.card("vertex")
     assert card["kind"] == "gemini" and card["caps"]["vertex"] is True
     assert card["model"] in card["models"]
+    # YouTube analysis through Vertex with an API key answers 401 (needs OAuth), 2026-11-06.
+    assert card["caps"]["video"] is False
     # gemini-2.5-flash is closed to new users (404), so neither card offers it by default.
     assert provider_catalog.card("gemini")["model"] != "gemini-2.5-flash"
 
@@ -64,3 +66,10 @@ def test_connection_test_uses_vertex_and_hides_the_key(fake_genai):
     bad = asyncio.run(connection_checks.check_connection(conn))
     assert not bad["ok"] and bad["status"] == 403
     assert KEY not in bad["message"] + bad["detail"]
+
+
+def test_a_vertex_connection_cannot_take_the_video_slot():
+    vertex = ai_connections.create({"card": "vertex", "key": KEY})
+    with pytest.raises(ai_connections.AIConfigError) as exc:
+        ai_connections.set_slots({"video": [vertex.id]})
+    assert "YouTube" in exc.value.errors["video"]

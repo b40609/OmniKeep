@@ -297,7 +297,7 @@ async function remove(conn: AiConnection) {
 /* ── Slots ────────────────────────────────────────────────── */
 
 function allowed(slot: AiSlotId, conn: AiConnection) {
-  if (slot === 'video') return conn.kind === 'gemini'
+  if (slot === 'video') return conn.kind === 'gemini' && conn.caps.video !== false
   if (slot === 'embeddings') return conn.kind !== 'gemini'
   return true
 }
