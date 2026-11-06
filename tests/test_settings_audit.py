@@ -60,7 +60,7 @@ def test_telegram_pairing_shows_up_as_its_own_action():
 class FakeOpenAI:
     seen = []
 
-    def __init__(self, *, base_url, api_key, timeout, max_retries):
+    def __init__(self, *, base_url, api_key, timeout, max_retries, **_client_options):
         FakeOpenAI.seen.append((base_url, api_key))
         self.models = SimpleNamespace(list=self._list)
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))

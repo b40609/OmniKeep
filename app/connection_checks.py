@@ -98,16 +98,19 @@ def _parse_json_reply(text: str) -> Optional[Dict[str, Any]]:
 
 
 async def check_chat(base_url: str, key: str, model: str, secrets: Optional[List[str]] = None,
-                     json_mode: bool = True) -> Dict[str, Any]:
+                     json_mode: bool = True, extra_body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """List the models, then send one small Chinese json_object request and parse the answer.
+
+    `extra_body` (a connection's caps["extra_body"]) goes into the request exactly as
+    the analysis calls send it, so a reasoning switch is tested too.
 
     Returns the usual {ok, status, message, detail} plus `models` (what the
     endpoint lists), `json_mode` (whether response_format json_object worked)
     and `latency_ms` of the JSON request.
     """
-    from app.providers.openai_compatible import ProviderUnavailableError, extract_completion_content
+    from app.providers.openai_compatible import ProviderUnavailableError, client_auth, extract_completion_content
     secrets = [key, *(secrets or [])]
-    client = AsyncOpenAI(base_url=base_url, api_key=key, timeout=JSON_TIMEOUT, max_retries=0)
+    client = AsyncOpenAI(base_url=base_url, timeout=JSON_TIMEOUT, max_retries=0, **client_auth(key))
     listed: List[str] = []
     extra: Dict[str, Any] = {"models": [], "json_mode": None, "latency_ms": None}
     try:
@@ -124,18 +127,19 @@ async def check_chat(base_url: str, key: str, model: str, secrets: Optional[List
         except Exception:
             pass
         messages = [{"role": "system", "content": JSON_SYSTEM}, {"role": "user", "content": JSON_PROMPT}]
+        more = {"extra_body": dict(extra_body)} if extra_body else {}
         started = time.monotonic()
         used_json_mode = json_mode
         try:
             if not json_mode:
                 raise _NoJsonMode()
             response = await client.chat.completions.create(
-                model=model, messages=messages, temperature=0, response_format={"type": "json_object"})
+                model=model, messages=messages, temperature=0, response_format={"type": "json_object"}, **more)
         except (_NoJsonMode, APIStatusError) as exc:
             if isinstance(exc, APIStatusError) and exc.status_code != 400:
                 raise
             used_json_mode = False  # response_format refused: plain request, then parse
-            response = await client.chat.completions.create(model=model, messages=messages, temperature=0)
+            response = await client.chat.completions.create(model=model, messages=messages, temperature=0, **more)
         extra["latency_ms"] = int((time.monotonic() - started) * 1000)
         extra["json_mode"] = used_json_mode
         try:
@@ -205,7 +209,8 @@ async def check_connection(conn, model: Optional[str] = None, purpose: str = "ch
     if conn.kind == "ollama":
         base_url += "/v1"
     return await check_chat(base_url, conn.key or "dummy-key", model,
-                            json_mode=conn.caps.get("json_mode", True) is not False)
+                            json_mode=conn.caps.get("json_mode", True) is not False,
+                            extra_body=conn.caps.get("extra_body") or None)
 
 
 async def _check_connection_embeddings(conn, model: str) -> Dict[str, Any]:
