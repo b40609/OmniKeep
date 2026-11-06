@@ -1,13 +1,11 @@
 import asyncio
 import html
 import logging
-from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from app.config import settings
 from app.database import (
     get_all_radar_sources,
-    get_db_connection,
     delete_item,
     save_item,
     get_pending_analysis_items,
@@ -18,7 +16,9 @@ from app.database import (
     get_last_radar_digest_at,
     get_latest_radar_digests,
     get_radar_items_updated_since,
+    find_item_by_same_page,
 )
+from app.url_canon import canonical_url
 from app.radar.adapters import get_adapter
 from app.radar.recommender import score_item_detailed, rank_items_with_exploration
 from app.radar.clustering import cluster_item_to_event
@@ -346,6 +346,7 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
 
     # Pass 1 — fetch, pre-gate and dedupe everything locally (zero LLM cost)
     candidates = []
+    seen = set()  # canonical links already handled this cycle (the same story from two feeds)
     for src in sources:
         try:
             adapter = get_adapter(src.get("source_type"))
@@ -359,12 +360,17 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
             logger.warning(f"[Radar:Scheduler] Failed to scan source {src.get('name')}: {e}")
             continue
         for raw in raw_items or []:
-            with closing(get_db_connection()) as conn:
-                row = conn.execute(
-                    "SELECT id, analysis_status FROM items WHERE url = ?", (raw.url,)
-                ).fetchone()
+            canon = canonical_url(raw.url, repo_level=False)
+            if canon in seen:
+                continue
+            seen.add(canon)
+            # Same page under another link (tracking parameters, youtu.be vs watch?v=) counts too;
+            # another page of a known repository (a new release) does not.
+            row = find_item_by_same_page(raw.url)
             if row and row["analysis_status"] != "pending":
                 continue  # already ingested; pending stubs wait for backfill
+            if row and row["url"] != raw.url:
+                raw = raw.model_copy(update={"url": row["url"]})  # keep to the stub already saved
             pg_score, blocked = pregate_item(raw.title, raw.url, raw.content or "", weight_index)
             if blocked:
                 logger.info(f"[Radar:Scheduler] Pre-gate dropped (muted topic): {raw.title}")

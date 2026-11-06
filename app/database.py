@@ -1248,38 +1248,10 @@ def get_radar_items_updated_since(since_iso: str, limit: int = 200) -> List[Dict
 # ── Entity Fan-out & Citations DAO ──────────────────────────
 
 def normalize_canonical_url(url: str) -> str:
-    """Normalize project/repo URLs (strip trailing slashes, .git, fragments, params, comments, lower-case host/repo)"""
-    if not url:
-        return ""
-    clean = url.strip()
-    # Extract leading pure URL if text contains embedded comments or trailing annotations
-    url_match = re.search(r'https?://[^\s()<>"]+', clean)
-    if url_match:
-        clean = url_match.group(0)
-    # Strip URL fragments and query params
-    if "#" in clean:
-        clean = clean.split("#", 1)[0]
-    if "?" in clean:
-        clean = clean.split("?", 1)[0]
-    clean = clean.rstrip("/")
-    if clean.endswith(".git"):
-        clean = clean[:-4]
-    
-    # Specific GitHub regex slug normalization: https://github.com/owner/repo
-    m = re.match(r'^https?://(?:www\.)?github\.com/([^/]+)/([^/]+)', clean, re.IGNORECASE)
-    if m:
-        owner = m.group(1).lower()
-        repo = m.group(2).lower()
-        return f"https://github.com/{owner}/{repo}"
-
-    # Specific Threads URL normalization: https://www.threads.net/@user/post/id
-    m_threads = re.match(r'^https?://(?:www\.)?threads\.(?:net|com)/(@[^/]+)/post/([^/?#]+)', clean, re.IGNORECASE)
-    if m_threads:
-        user_slug = m_threads.group(1).lower()
-        post_id = m_threads.group(2)
-        return f"https://www.threads.net/{user_slug}/post/{post_id}"
-
-    return clean
+    """The canonical form of a link (app/url_canon.py): tracking parameters dropped, one form
+    per platform for YouTube, X, Threads and GitHub, other parameters kept."""
+    from app.url_canon import canonical_url
+    return canonical_url(url)
 
 def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
     """Look up an existing item by canonical URL or matching git repo slug"""
@@ -1334,6 +1306,27 @@ def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
                 except Exception:
                     d["tech_tags"] = []
                 return d
+        else:
+            # Any other link: narrow with a piece every equivalent link contains, then
+            # compare canonical forms (tracking parameters, youtu.be vs watch?v=, twitter vs x).
+            from app.url_canon import search_key
+            key = search_key(canon)
+            if key:
+                escaped = key.replace("~", "~~").replace("%", "~%").replace("_", "~_")
+                cursor.execute("SELECT * FROM items WHERE lower(url) LIKE ? ESCAPE '~'", (f"%{escaped}%",))
+                row = next(
+                    (candidate for candidate in cursor.fetchall()
+                     if normalize_canonical_url(candidate["url"]) == canon),
+                    None,
+                )
+                if row:
+                    conn.close()
+                    d = dict(row)
+                    try:
+                        d["tech_tags"] = json.loads(d["tech_tags"])
+                    except Exception:
+                        d["tech_tags"] = []
+                    return d
 
         # Check if previously cited with this canonical URL
         cursor.execute("SELECT target_item_id FROM item_citations WHERE target_canonical_url = ? AND target_item_id IS NOT NULL LIMIT 1", (canon,))
@@ -1352,6 +1345,33 @@ def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
     
     conn.close()
     return None
+
+def find_item_by_same_page(url: str) -> Optional[Dict[str, Any]]:
+    """The item stored under `url` or under another link to the same page (tracking
+    parameters, youtu.be vs watch?v=, twitter vs x). Unlike find_item_by_canonical_or_url it
+    keeps GitHub pages apart, so a repository's new release is not taken for the repository."""
+    from app.url_canon import canonical_url, search_key
+    if not url:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM items WHERE url = ? LIMIT 1", (url,)).fetchone()
+        if row is None:
+            canon = canonical_url(url, repo_level=False)
+            key = search_key(canon)
+            if key:
+                escaped = key.replace("~", "~~").replace("%", "~%").replace("_", "~_")
+                candidates = conn.execute("SELECT * FROM items WHERE lower(url) LIKE ? ESCAPE '~'",
+                                          (f"%{escaped}%",)).fetchall()
+                row = next((c for c in candidates if canonical_url(c["url"], repo_level=False) == canon), None)
+    if row is None:
+        return None
+    d = dict(row)
+    try:
+        d["tech_tags"] = json.loads(d["tech_tags"])
+    except Exception:
+        d["tech_tags"] = []
+    return d
+
 
 def save_citation(data: Dict[str, Any]) -> str:
     """Save or update citation relationship between a parent digest and a child entity"""
