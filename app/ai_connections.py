@@ -528,7 +528,7 @@ def key_hint(key: str) -> str:
 
 
 def describe_connection(conn: Connection) -> Dict[str, Any]:
-    from app import ai_status
+    from app import ai_status, ai_usage
     used_in = [slot for slot, entries in slots().items() if any(e["connection_id"] == conn.id for e in entries)]
     return {
         "id": conn.id, "card": conn.card, "kind": conn.kind, "label": conn.label, "base_url": conn.base_url,
@@ -537,6 +537,7 @@ def describe_connection(conn: Connection) -> Dict[str, Any]:
         "max_concurrency": conn.max_concurrency, "effective_interval": conn.interval(),
         "origin": conn.origin, "enabled": conn.enabled, "used_in": used_in,
         "status": ai_status.snapshot().get(conn.status_key), "updated_at": conn.updated_at,
+        "usage": ai_usage.summary(conn.id, (provider_catalog.card(conn.card) or {}).get("quota")),
     }
 
 

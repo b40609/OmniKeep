@@ -475,6 +475,19 @@ def init_db():
             updated_at TEXT NOT NULL
         )
     """)
+    # 29. Requests and tokens OmniKeep sent per connection per local day (app/ai_usage.py),
+    #     so the settings page can show what is left of a free tier's allowance.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ai_usage (
+            connection_id INTEGER NOT NULL REFERENCES ai_connections(id) ON DELETE CASCADE,
+            day TEXT NOT NULL,
+            requests INTEGER NOT NULL DEFAULT 0,
+            failures INTEGER NOT NULL DEFAULT 0,
+            prompt_tokens INTEGER NOT NULL DEFAULT 0,
+            completion_tokens INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (connection_id, day)
+        )
+    """)
 
     conn.commit()
     conn.close()

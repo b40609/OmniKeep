@@ -393,6 +393,23 @@ export interface AiConnection {
   used_in: AiSlotId[]
   status: (ServiceOutcome & { cooldown_seconds: number }) | null
   updated_at: string
+  /** what OmniKeep itself sent through this connection (app/ai_usage.py); {} when unknown */
+  usage?: AiUsage
+}
+
+export interface AiUsageTotals {
+  requests: number
+  failures: number
+  tokens: number
+  prompt_tokens: number
+  completion_tokens: number
+}
+
+export interface AiUsage {
+  today?: AiUsageTotals
+  month?: AiUsageTotals
+  total?: AiUsageTotals
+  quota?: { unit: 'tokens' | 'requests'; period: 'day' | 'month' | 'once'; limit: number; used: number; percent: number }
 }
 
 export interface AiSlotEntry {

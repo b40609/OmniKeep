@@ -103,6 +103,29 @@ function keyText(conn: AiConnection) {
   return conn.key_configured ? `金鑰 ${conn.key_hint || '已設定'}` : '沒有金鑰'
 }
 
+// Usage OmniKeep itself sent through a connection, and how much of the free allowance that is.
+function compact(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`
+  return String(n)
+}
+const QUOTA_PERIOD = { day: '今天', month: '本月', once: '一次性額度' } as const
+function usageText(conn: AiConnection) {
+  const u = conn.usage
+  if (!u?.total?.requests && !u?.total?.failures) return ''
+  const today = u.today ?? { requests: 0, tokens: 0, failures: 0 }
+  const month = u.month ?? { tokens: 0 }
+  let text = `今天 ${today.requests} 次・${compact(today.tokens)} token；本月 ${compact(month.tokens)} token`
+  if (today.failures) text += `；今天失敗 ${today.failures} 次`
+  return text
+}
+function quotaText(conn: AiConnection) {
+  const q = conn.usage?.quota
+  if (!q) return ''
+  const unit = q.unit === 'tokens' ? ' token' : ' 次'
+  return `${QUOTA_PERIOD[q.period]}已用 ${compact(q.used)} / ${compact(q.limit)}${unit}（${q.percent}%）`
+}
+
 const SLOT_SHORT: Record<AiSlotId, string> = { analysis: '分析', brain: 'Ask Brain', radar: '雷達', embeddings: '向量', video: '影片' }
 
 /* ── Testing ──────────────────────────────────────────────── */
@@ -521,6 +544,9 @@ const inputClass =
                 </p>
                 <p class="truncate text-2xs text-muted-foreground" :title="conn.base_url">
                   {{ cardOf(conn.card)?.label ?? conn.card }} · {{ conn.model }} · {{ keyText(conn) }} · 間隔 {{ conn.effective_interval }} 秒
+                </p>
+                <p v-if="usageText(conn) || quotaText(conn)" class="text-2xs text-muted-foreground" title="只算 OmniKeep 自己送出的請求，以服務商後台為準">
+                  {{ usageText(conn) }}<span v-if="usageText(conn) && quotaText(conn)"> · </span><span v-if="quotaText(conn)" :class="(conn.usage?.quota?.percent ?? 0) >= 90 ? 'text-warning' : ''">{{ quotaText(conn) }}</span>
                 </p>
                 <p class="flex flex-wrap gap-1 pt-0.5">
                   <span v-for="s in conn.used_in" :key="s" class="rounded-full border border-primary/30 px-1.5 py-px text-2xs text-primary-soft-foreground">{{ SLOT_SHORT[s] }}</span>
