@@ -73,3 +73,10 @@ def test_a_vertex_connection_cannot_take_the_video_slot():
     with pytest.raises(ai_connections.AIConfigError) as exc:
         ai_connections.set_slots({"video": [vertex.id]})
     assert "YouTube" in exc.value.errors["video"]
+
+
+def test_moving_a_connection_to_the_vertex_card_takes_the_vertex_abilities():
+    conn = ai_connections.create({"card": "gemini", "key": "AIza-test-key-1234567890"})
+    assert conn.caps["video"] is True
+    moved = ai_connections.update(conn.id, {"card": "vertex", "key": KEY})
+    assert moved.caps["vertex"] is True and moved.caps["video"] is False

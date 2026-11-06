@@ -376,7 +376,8 @@ def _validate(data: Dict[str, Any], existing: Optional[Connection]) -> Dict[str,
     out["key"] = key
 
     caps = dict(card.get("caps", {}))
-    caps.update(existing.caps if existing else {})
+    if existing and existing.card == card_id:
+        caps.update(existing.caps)  # a connection moved to another card starts from that card's abilities
     caps.update(_caps(data.get("caps"), errors))
     given_caps = data.get("caps") if isinstance(data.get("caps"), dict) else {}
     if "extra_body" not in given_caps:
