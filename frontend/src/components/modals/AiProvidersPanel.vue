@@ -43,6 +43,8 @@ interface Editor {
   extraBody: string
   /** the model extraBody was last filled for (a model with a preset fills it again) */
   extraFor: string
+  /** Gemini / Vertex thinking level; '' keeps the model's default */
+  thinkingLevel: '' | 'low' | 'medium' | 'high'
   slot: AiSlotId | ''
   errors: Record<string, string>
   models: string[]
@@ -165,6 +167,7 @@ function startNew(card: AiCard) {
     mode: 'new', cardId: card.id, label: card.label, baseUrl: card.base_url, key: '', clearKey: false,
     model: card.model, minInterval: String(card.min_interval ?? ''), maxConcurrency: String(card.max_concurrency ?? ''),
     jsonMode: card.caps.json_mode !== false, extraBody: formatExtraBody(autoExtraBody(card, card.model)), extraFor: card.model,
+    thinkingLevel: card.caps.thinking_level ?? '',
     slot: analysisEmpty ? 'analysis' : '', errors: {}, models: [],
   }
   delete tests.editor
@@ -177,6 +180,7 @@ function startEdit(conn: AiConnection) {
     model: conn.model, minInterval: conn.min_interval == null ? '' : String(conn.min_interval),
     maxConcurrency: conn.max_concurrency == null ? '' : String(conn.max_concurrency),
     jsonMode: conn.caps.json_mode !== false, extraBody: formatExtraBody(conn.caps.extra_body), extraFor: conn.model,
+    thinkingLevel: conn.caps.thinking_level ?? '',
     slot: '', errors: {}, models: [],
   }
   delete tests.editor
@@ -206,6 +210,7 @@ function editorInput(): AiConnectionInput {
     max_concurrency: e.maxConcurrency.trim() === '' ? null : Number(e.maxConcurrency),
     caps: { json_mode: e.jsonMode },
   }
+  if (card?.kind === 'gemini') input.caps = { ...input.caps, thinking_level: e.thinkingLevel }
   if (card?.kind !== 'gemini') {
     input.base_url = e.baseUrl.trim().replace(/\/+$/, '')
     const extra = parseExtraBody(e.extraBody)
@@ -514,6 +519,16 @@ const inputClass =
               <input v-model="editor.jsonMode" type="checkbox" class="size-4 accent-primary">
               支援 JSON 格式參數
             </label>
+          </div>
+
+          <div v-if="editorCard.kind === 'gemini'" class="space-y-1">
+            <label for="ai-thinking" class="text-2xs font-semibold">思考等級</label>
+            <select id="ai-thinking" v-model="editor.thinkingLevel" :class="inputClass">
+              <option value="" class="bg-popover text-foreground">模型預設</option>
+              <option value="low" class="bg-popover text-foreground">低（快、省）</option>
+              <option value="medium" class="bg-popover text-foreground">中</option>
+              <option value="high" class="bg-popover text-foreground">高（慢、用量多、分析較深入）</option>
+            </select>
           </div>
 
           <details v-if="editorCard.kind !== 'gemini'" class="group space-y-1">

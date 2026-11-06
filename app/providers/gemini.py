@@ -47,13 +47,15 @@ async def _generate_content(client, status_key: str = "gemini", label: str = "",
 
 class GeminiProvider(BaseLLMProvider):
     def __init__(self, api_keys: Optional[List[str]] = None, model: Optional[str] = None,
-                 rate_limiter=None, status_key: str = "gemini", label: str = "", vertexai: bool = False):
+                 rate_limiter=None, status_key: str = "gemini", label: str = "", vertexai: bool = False,
+                 thinking_level: Optional[str] = None):
         self.keys = api_keys if api_keys is not None else settings.gemini_keys
         self.model = model or settings.GEMINI_MODEL
         self.limiter = rate_limiter
         self.status_key = status_key
         self.label = label
         self.vertexai = vertexai  # Vertex AI (Agent Platform) express mode instead of AI Studio
+        self.thinking_level = thinking_level or None  # "low" | "medium" | "high"; None: the model's default
         self._key_cycle = itertools.cycle(self.keys) if self.keys else None
         self._lock = threading.Lock()
 
@@ -61,6 +63,13 @@ class GeminiProvider(BaseLLMProvider):
         """A google-genai client for one key: AI Studio, or Vertex AI express mode."""
         from google import genai
         return genai.Client(api_key=key, vertexai=True) if self.vertexai else genai.Client(api_key=key)
+
+    def _config(self, **kwargs):
+        """GenerateContentConfig with the connection's thinking level, when one is set."""
+        from google.genai import types as gtypes
+        if self.thinking_level:
+            kwargs["thinking_config"] = gtypes.ThinkingConfig(thinking_level=self.thinking_level)
+        return gtypes.GenerateContentConfig(**kwargs)
 
     def _get_next_key(self) -> Optional[str]:
         if not self._key_cycle:
@@ -86,7 +95,7 @@ class GeminiProvider(BaseLLMProvider):
             client, self.status_key, self.label, self.limiter,
             model=self.model,
             contents=contents,
-            config=gtypes.GenerateContentConfig(
+            config=self._config(
                 temperature=0.3,
             )
         )
@@ -107,7 +116,7 @@ class GeminiProvider(BaseLLMProvider):
             client, self.status_key, self.label, self.limiter,
             model=self.model,
             contents=[full_prompt],
-            config=gtypes.GenerateContentConfig(
+            config=self._config(
                 temperature=0.2,
                 response_mime_type="application/json"
             )
@@ -139,7 +148,7 @@ class GeminiProvider(BaseLLMProvider):
                 ),
                 prompt + "\n\nOutput ONLY a valid JSON object matching the requested schema."
             ],
-            config=gtypes.GenerateContentConfig(
+            config=self._config(
                 temperature=0.3,
                 response_mime_type="application/json"
             )

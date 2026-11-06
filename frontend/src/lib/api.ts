@@ -351,6 +351,10 @@ export interface AiCaps {
   embedding_model?: string
   /** extra request fields merged into every chat call (e.g. a reasoning switch); {} removes them */
   extra_body?: Record<string, unknown>
+  /** Gemini / Vertex thinking level; '' uses the model's default */
+  thinking_level?: '' | 'low' | 'medium' | 'high'
+  /** Vertex AI (Agent Platform) instead of AI Studio */
+  vertex?: boolean
 }
 
 export interface AiCard {

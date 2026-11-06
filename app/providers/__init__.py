@@ -44,7 +44,8 @@ def build_provider(conn, model: Optional[str] = None) -> BaseLLMProvider:
     common = {"rate_limiter": limiter_for(conn), "status_key": conn.status_key, "label": conn.label}
     if conn.kind == "gemini":
         keys = [k for k in conn.key.split(",") if k]
-        return GeminiProvider(api_keys=keys, model=model, vertexai=bool(conn.caps.get("vertex")), **common)
+        return GeminiProvider(api_keys=keys, model=model, vertexai=bool(conn.caps.get("vertex")),
+                              thinking_level=conn.caps.get("thinking_level") or None, **common)
     base_url = conn.base_url.rstrip("/")
     if conn.kind == "ollama":
         base_url += "/v1"  # Ollama's OpenAI-compatible endpoint

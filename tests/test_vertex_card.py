@@ -80,3 +80,19 @@ def test_moving_a_connection_to_the_vertex_card_takes_the_vertex_abilities():
     assert conn.caps["video"] is True
     moved = ai_connections.update(conn.id, {"card": "vertex", "key": KEY})
     assert moved.caps["vertex"] is True and moved.caps["video"] is False
+
+
+def test_thinking_level_reaches_every_gemini_request(fake_genai):
+    conn = ai_connections.create({"card": "vertex", "key": KEY, "model": "gemini-3.8-flash",
+                                  "caps": {"thinking_level": "high"}})
+    provider = build_provider(conn)
+    assert provider.thinking_level == "high"
+    assert provider._config(temperature=0.2).thinking_config.thinking_level.lower() == "high"
+    plain = ai_connections.update(conn.id, {"caps": {"thinking_level": ""}})
+    assert build_provider(plain)._config().thinking_config is None
+
+
+def test_unknown_thinking_level_is_refused():
+    with pytest.raises(ai_connections.AIConfigError) as exc:
+        ai_connections.create({"card": "vertex", "key": KEY, "caps": {"thinking_level": "max"}})
+    assert "思考等級" in exc.value.errors["caps"]

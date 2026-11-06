@@ -264,12 +264,21 @@ def _caps(value: Any, errors: Dict[str, str]) -> Dict[str, Any]:
             out["context"] = context
     if "embedding_model" in value:
         out["embedding_model"] = _text(value["embedding_model"], 200, "caps", errors)
+    if "thinking_level" in value:
+        level = value["thinking_level"] or ""
+        if level not in THINKING_LEVELS:
+            errors["caps"] = "思考等級只能是 low、medium、high，或留空用模型預設"
+        else:
+            out["thinking_level"] = level
     if "extra_body" in value:
         extra = _extra_body(value["extra_body"], errors)
         if extra is not None:
             out["extra_body"] = extra
     return out
 
+
+# Gemini thinking levels (google-genai ThinkingConfig.thinking_level); "" uses the model's default.
+THINKING_LEVELS = ("", "low", "medium", "high")
 
 # Request fields OmniKeep sets itself; extra_body may not override them.
 _RESERVED_BODY = {"model", "messages", "stream", "response_format", "tools", "tool_choice", "n"}
