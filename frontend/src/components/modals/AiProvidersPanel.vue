@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import {
   ArrowDown, ArrowUp, CircleAlert, CircleCheck, ExternalLink, Loader2, Pencil, PlugZap, Plus, Trash2, X,
@@ -10,6 +10,7 @@ import {
   updateAiConnection,
   type AiCard, type AiConnection, type AiConnectionInput, type AiOverview, type AiSlotEntry, type AiSlotId, type AiTestResult,
 } from '@/lib/api'
+import { autoExtraBody, extraBodyAfterModelChange, formatExtraBody, parseExtraBody } from '@/lib/extraBody'
 import { formatCooldown, hasPlaceholder } from '@/lib/setup'
 import { useUiStore } from '@/stores/ui'
 
@@ -38,6 +39,10 @@ interface Editor {
   minInterval: string
   maxConcurrency: string
   jsonMode: boolean
+  /** caps.extra_body as JSON text; '' sends none */
+  extraBody: string
+  /** the model extraBody was last filled for (a model with a preset fills it again) */
+  extraFor: string
   slot: AiSlotId | ''
   errors: Record<string, string>
   models: string[]
@@ -159,7 +164,8 @@ function startNew(card: AiCard) {
   editor.value = {
     mode: 'new', cardId: card.id, label: card.label, baseUrl: card.base_url, key: '', clearKey: false,
     model: card.model, minInterval: String(card.min_interval ?? ''), maxConcurrency: String(card.max_concurrency ?? ''),
-    jsonMode: card.caps.json_mode !== false, slot: analysisEmpty ? 'analysis' : '', errors: {}, models: [],
+    jsonMode: card.caps.json_mode !== false, extraBody: formatExtraBody(autoExtraBody(card, card.model)), extraFor: card.model,
+    slot: analysisEmpty ? 'analysis' : '', errors: {}, models: [],
   }
   delete tests.editor
 }
@@ -170,12 +176,26 @@ function startEdit(conn: AiConnection) {
     mode: 'edit', id: conn.id, cardId: conn.card, label: conn.label, baseUrl: conn.base_url, key: '', clearKey: false,
     model: conn.model, minInterval: conn.min_interval == null ? '' : String(conn.min_interval),
     maxConcurrency: conn.max_concurrency == null ? '' : String(conn.max_concurrency),
-    jsonMode: conn.caps.json_mode !== false, slot: '', errors: {}, models: [],
+    jsonMode: conn.caps.json_mode !== false, extraBody: formatExtraBody(conn.caps.extra_body), extraFor: conn.model,
+    slot: '', errors: {}, models: [],
   }
   delete tests.editor
 }
 
 const editorModels = computed(() => [...new Set([...(editorCard.value?.models ?? []), ...(editor.value?.models ?? [])])])
+
+// A model the card has a preset for (NVIDIA's DeepSeek) fills the extra fields, unless they were typed by hand.
+watch(() => editor.value?.model, (next) => {
+  const e = editor.value
+  if (!e || next === undefined || next === e.extraFor) return
+  e.extraBody = extraBodyAfterModelChange(editorCard.value, e.extraFor, next, e.extraBody)
+  e.extraFor = next
+})
+const editorExtra = computed(() => (editor.value ? parseExtraBody(editor.value.extraBody) : null))
+const editorPreset = computed(() => {
+  const e = editor.value
+  return e ? editorCard.value?.model_extra_body?.[e.model.trim()] : undefined
+})
 
 function editorInput(): AiConnectionInput {
   const e = editor.value!
@@ -186,7 +206,11 @@ function editorInput(): AiConnectionInput {
     max_concurrency: e.maxConcurrency.trim() === '' ? null : Number(e.maxConcurrency),
     caps: { json_mode: e.jsonMode },
   }
-  if (card?.kind !== 'gemini') input.base_url = e.baseUrl.trim().replace(/\/+$/, '')
+  if (card?.kind !== 'gemini') {
+    input.base_url = e.baseUrl.trim().replace(/\/+$/, '')
+    const extra = parseExtraBody(e.extraBody)
+    if (extra.ok) input.caps = { ...input.caps, extra_body: extra.value }
+  }
   if (e.clearKey) input.key = ''
   else if (e.key.trim()) input.key = e.key.trim()
   return input
@@ -199,6 +223,7 @@ const editorProblem = computed(() => {
   if (card.kind !== 'gemini' && hasPlaceholder(e.baseUrl)) return '把 API 位址裡角括號的部分（例如 <帳號 ID>）換成你自己的值'
   if (e.mode === 'new' && card.key_mode === 'required' && !e.key.trim()) return '請輸入 API 金鑰'
   if (!e.model.trim()) return '請填模型名稱'
+  if (card.kind !== 'gemini' && editorExtra.value && !editorExtra.value.ok) return editorExtra.value.error
   return null
 })
 
@@ -207,7 +232,7 @@ async function testEditor() {
   if (!e || editorProblem.value) return
   tests.editor = 'running'
   const input = editorInput()
-  const draft = { base_url: input.base_url, model: input.model, key: input.key }
+  const draft = { base_url: input.base_url, model: input.model, key: input.key, extra_body: input.caps?.extra_body }
   try {
     const result = e.mode === 'edit' && e.id
       ? await testAiConnection(e.id, { ...draft, key: e.key.trim() || undefined })
@@ -394,7 +419,7 @@ const inputClass =
               @click="startNew(c)"
             >
               <span class="flex items-baseline justify-between gap-2">
-                <span class="text-xs font-semibold">{{ c.label }}<span v-if="c.no_signup" class="ml-1.5 rounded bg-success/15 px-1 py-0.5 text-2xs font-normal text-success">不用註冊</span></span>
+                <span class="text-xs font-semibold">{{ c.label }}<span v-if="c.no_signup" class="ml-1.5 rounded bg-success/15 px-1 py-0.5 text-2xs font-normal text-success">不用註冊</span><span v-if="c.ended" class="ml-1.5 rounded bg-warning/15 px-1 py-0.5 text-2xs font-normal text-warning">活動已結束</span></span>
                 <span class="shrink-0 text-2xs text-muted-foreground">{{ c.cost }}</span>
               </span>
               <span class="mt-0.5 block text-2xs text-muted-foreground">{{ c.limits }}（{{ c.verified }} 查證）</span>
@@ -411,6 +436,7 @@ const inputClass =
               <p>{{ editorCard.limits }}</p>
               <p v-if="editorCard.notes">{{ editorCard.notes }}</p>
               <p v-if="editorCard.training_note" class="text-warning">提醒：{{ editorCard.training_note }}</p>
+              <p v-if="editorCard.ended" class="text-warning">限時免費活動已在 {{ editorCard.ends }} 結束，先到官網確認還能不能免費用。</p>
             </div>
             <button type="button" class="cursor-pointer text-muted-foreground hover:text-foreground" aria-label="取消" @click="editor = null">
               <X class="size-3.5" />
@@ -490,6 +516,28 @@ const inputClass =
             </label>
           </div>
 
+          <details v-if="editorCard.kind !== 'gemini'" class="group space-y-1">
+            <summary class="flex cursor-pointer items-baseline gap-2 text-2xs font-semibold">
+              進階：額外請求參數
+              <span v-if="editor.extraBody" class="min-w-0 truncate font-mono font-normal text-muted-foreground group-open:hidden">{{ editor.extraBody }}</span>
+            </summary>
+            <textarea
+              id="ai-extra"
+              v-model="editor.extraBody"
+              rows="2"
+              spellcheck="false"
+              aria-label="額外請求參數（JSON）"
+              placeholder="{&quot;reasoning&quot;: {&quot;effort&quot;: &quot;low&quot;}}"
+              class="w-full resize-y rounded-lg border border-border bg-input p-2.5 font-mono text-xs text-foreground placeholder:text-subtle-foreground focus:border-primary focus:ring-2 focus:ring-primary/25 focus:outline-none"
+            />
+            <p v-if="editorExtra && !editorExtra.ok" class="text-2xs text-danger">{{ editorExtra.error }}</p>
+            <p v-else-if="editor.errors.caps" class="text-2xs text-danger">{{ editor.errors.caps }}</p>
+            <p class="text-2xs text-muted-foreground">
+              JSON 物件，會併進每一次分析請求和連線測試，常用來關閉推理。留空表示不帶。
+              <span v-if="editorPreset">這個模型需要的參數已自動填入。</span>
+            </p>
+          </details>
+
           <div v-if="editor.mode === 'new'" class="space-y-1">
             <label for="ai-slot" class="text-2xs font-semibold">儲存後加到</label>
             <select id="ai-slot" v-model="editor.slot" :class="inputClass">
@@ -544,6 +592,9 @@ const inputClass =
                 </p>
                 <p class="truncate text-2xs text-muted-foreground" :title="conn.base_url">
                   {{ cardOf(conn.card)?.label ?? conn.card }} · {{ conn.model }} · {{ keyText(conn) }} · 間隔 {{ conn.effective_interval }} 秒
+                </p>
+                <p v-if="cardOf(conn.card)?.ended" class="text-2xs text-warning">
+                  限時免費活動已在 {{ cardOf(conn.card)?.ends }} 結束，先到官網確認還能不能免費用。
                 </p>
                 <p v-if="usageText(conn) || quotaText(conn)" class="text-2xs text-muted-foreground" title="只算 OmniKeep 自己送出的請求，以服務商後台為準">
                   {{ usageText(conn) }}<span v-if="usageText(conn) && quotaText(conn)"> · </span><span v-if="quotaText(conn)" :class="(conn.usage?.quota?.percent ?? 0) >= 90 ? 'text-warning' : ''">{{ quotaText(conn) }}</span>

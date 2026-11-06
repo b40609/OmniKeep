@@ -15,8 +15,9 @@ import os
 import re
 import sys
 import time
+from datetime import date
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
 import httpx
 
@@ -94,6 +95,21 @@ def card_hosts() -> Dict[str, str]:
     return out
 
 
+def offer_lines(today: str, within_days: int = 14) -> List[str]:
+    """Cards whose limited-time free offer (`ends`) is over or ends within `within_days`."""
+    out = []
+    for card in provider_catalog.CARDS:
+        ends = card.get("ends")
+        if not ends:
+            continue
+        left = (date.fromisoformat(ends) - date.fromisoformat(today)).days
+        if left < 0:
+            out.append(f"- **{card['label']}**：免費活動已在 {ends} 結束。查官網後更新或移除卡片 `{card['id']}`。")
+        elif left <= within_days:
+            out.append(f"- **{card['label']}**：免費活動 {ends} 結束（還有 {left} 天），到期前查官網。")
+    return out
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -139,6 +155,9 @@ def main() -> int:
         lines += sorted(set(ours)) or ["- 沒有"]
         lines += ["", "有變動時：照 docs/free_llm_channels_2026-11.md 的方法查官方頁、需要的話用 scripts/probe_saved.py 實測，"
                   "再更新 app/provider_catalog.py。"]
+    offers = offer_lines(today)
+    if offers:
+        lines += ["", "## 限時活動", *offers]
     report = "\n".join(lines)
     print(report)
     (OUT_DIR / f"report-{today}.md").write_text(report + "\n", encoding="utf-8")

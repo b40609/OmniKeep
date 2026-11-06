@@ -15,7 +15,13 @@ Limits change often; `verified` is the date they were last checked.
 ({"tokens"|"requests": n, "period": "day"|"month"|"once"}; OpenRouter's 50 a day rises to
 1,000 after a 10 USD top-up). `no_signup` marks a public service usable with no account at all (Kilo, OVHcloud): the
 wizard lists those first and the setup Skill offers them to someone with no keys yet.
+`ends` is the last day of a limited-time free offer (Itera); catalog() adds `ended` once it
+has passed, so the settings page and the setup Skill say so instead of listing it as free.
+`model_extra_body` holds extra request fields a particular model needs (NVIDIA's DeepSeek V4.1
+Flash only answers with its reasoning switched off); a connection switched to that model, or a
+task slot naming it, gets them (app/ai_connections.py extra_body_for).
 """
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 VERIFIED = "2026-11-05"
@@ -139,13 +145,14 @@ CARDS: List[Dict[str, Any]] = [
     {
         "id": "nvidia", "label": "NVIDIA NIM（Free Endpoint）", "kind": "openai",
         "base_url": "https://integrate.api.nvidia.com/v1", "model": "minimaxai/minimax-m3.1-flash",
-        "models": ["minimaxai/minimax-m3.1-flash", "mistralai/mistral-large-4-1t-a52b"],
+        "models": ["minimaxai/minimax-m3.1-flash", "mistralai/mistral-large-4-1t-a52b", "deepseek-ai/deepseek-v4.1-flash"],
         "key_mode": "required", "key_url": "https://build.nvidia.com/settings/api-keys",
         "cost": "免費（Free Endpoint 模型）",
         "limits": "約每分鐘 40 次，整個帳號共用（社群數據）。免費端點很擠：2026-11-06 實測一篇 80 到 190 秒。",
-        "notes": "條款寫明不能用在 production。免費端點很擠，時間波動大；DeepSeek V4.1 Flash 要帶 chat_template_kwargs thinking false 才有正文，其他模型帶了沒效果或更慢，所以預設不帶。",
+        "notes": "條款寫明不能用在 production。免費端點很擠，時間波動大；DeepSeek V4.1 Flash 要帶 chat_template_kwargs thinking false 才有正文，換成它時會自動帶上；其他模型帶了沒效果或更慢，所以不帶。",
         "min_interval": 2.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False},
+        "model_extra_body": {"deepseek-ai/deepseek-v4.1-flash": {"chat_template_kwargs": {"thinking": False}}},
         "verified": "2026-11-06",
     },
     {
@@ -182,6 +189,7 @@ CARDS: List[Dict[str, Any]] = [
         "cost": "免費（限時活動，到 2026-11-24）",
         "limits": "每月 30M token，超額回 429，不會自動扣款。推理型，一篇約 9,000 token（每月約 3,300 篇）；2026-11-06 實測一篇約 165 秒。",
         "notes": "活動結束後要重新確認還能不能免費用。試過用 enable_thinking false 關閉推理，反而逾時，所以不帶。",
+        "ends": "2026-11-24",
         "quota": {"tokens": 30_000_000, "period": "month"},
         "min_interval": 2.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False},
@@ -300,13 +308,20 @@ def guess_card(base_url: str, kind: str = "openai") -> str:
     return "custom"
 
 
+def ended(c: Dict[str, Any], today: Optional[str] = None) -> bool:
+    """Whether a card's limited-time offer is over (its `ends` day has passed, local time)."""
+    ends = c.get("ends") or ""
+    return bool(ends) and (today or datetime.now().astimezone().date().isoformat()) > ends
+
+
 def catalog() -> Dict[str, Any]:
     """What GET /api/ai/catalog returns."""
     cards = []
     for c in CARDS:
         cards.append({
             "editable_url": False, "embedding_model": "", "training_note": "", "no_signup": False,
-            "verified": VERIFIED,
+            "verified": VERIFIED, "ends": "", "model_extra_body": {},
             **c,  # a card checked later carries its own "verified"
+            "ended": ended(c),
         })
     return {"verified": VERIFIED, "cards": cards}

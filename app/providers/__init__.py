@@ -48,10 +48,11 @@ def build_provider(conn, model: Optional[str] = None) -> BaseLLMProvider:
     base_url = conn.base_url.rstrip("/")
     if conn.kind == "ollama":
         base_url += "/v1"  # Ollama's OpenAI-compatible endpoint
+    from app.ai_connections import extra_body_for
     # Never fall back to OPENAI_API_KEY: a keyless (local) server gets a placeholder.
     return OpenAICompatibleProvider(base_url=base_url, api_key=conn.key or "dummy-key", model=model,
                                     json_mode=conn.caps.get("json_mode", True) is not False,
-                                    extra_body=conn.caps.get("extra_body") or None, **common)
+                                    extra_body=extra_body_for(conn, model), **common)
 
 
 def _legacy(slot: str) -> Optional[BaseLLMProvider]:

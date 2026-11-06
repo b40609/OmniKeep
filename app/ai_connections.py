@@ -100,6 +100,23 @@ class Connection:
         return str(self.caps.get("embedding_model") or card.get("embedding_model") or self.model)
 
 
+def extra_body_for(conn: Any, model: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Extra request fields for a chat call to `model` through `conn`.
+
+    The connection's own model gets caps["extra_body"] (editable in 設定 › AI 服務商, filled
+    from the card's preset when that model was picked). A task slot naming another model gets
+    the card's preset for that model when there is one, else the connection's extra_body
+    (a provider-wide switch such as Kilo's low reasoning). None when there is nothing to add.
+    """
+    own = (getattr(conn, "caps", None) or {}).get("extra_body") or None
+    if not model or model == getattr(conn, "model", None):
+        return own
+    presets = (provider_catalog.card(getattr(conn, "card", "") or "") or {}).get("model_extra_body") or {}
+    if model in presets:
+        return dict(presets[model]) or None
+    return own
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -280,6 +297,31 @@ def _extra_body(value: Any, errors: Dict[str, str]) -> Optional[Dict[str, Any]]:
     return json.loads(encoded)
 
 
+def validate_extra_body(value: Any) -> Dict[str, Any]:
+    """extra_body typed in a form, checked like a saved one; raises AIConfigError."""
+    errors: Dict[str, str] = {}
+    extra = _extra_body(value, errors)
+    if errors:
+        raise AIConfigError(errors)
+    return extra or {}
+
+
+def apply_model_preset(card: Dict[str, Any], caps: Dict[str, Any], old_model: Optional[str], model: str) -> None:
+    """Moving to a model the card has extra fields for brings them along (in place); moving
+    off it puts back the card's default, unless the fields were changed by hand meanwhile."""
+    if not model or model == old_model:
+        return
+    presets = card.get("model_extra_body") or {}
+    if model in presets:
+        caps["extra_body"] = dict(presets[model])
+    elif old_model in presets and caps.get("extra_body") == presets[old_model]:
+        default = card.get("caps", {}).get("extra_body")
+        if default:
+            caps["extra_body"] = dict(default)
+        else:
+            caps.pop("extra_body", None)
+
+
 def _clean_key(raw: Any, kind: str, errors: Dict[str, str]) -> str:
     key = _text(raw, 4000, "key", errors)
     if kind == "gemini":
@@ -336,6 +378,9 @@ def _validate(data: Dict[str, Any], existing: Optional[Connection]) -> Dict[str,
     caps = dict(card.get("caps", {}))
     caps.update(existing.caps if existing else {})
     caps.update(_caps(data.get("caps"), errors))
+    given_caps = data.get("caps") if isinstance(data.get("caps"), dict) else {}
+    if "extra_body" not in given_caps:
+        apply_model_preset(card, caps, existing.model if existing else None, model)
     out["caps"] = caps
     out["min_interval"] = (_number(data["min_interval"], float, 0.05, 120, "min_interval", errors)
                            if "min_interval" in data else

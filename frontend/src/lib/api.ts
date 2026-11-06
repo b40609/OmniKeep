@@ -349,6 +349,8 @@ export interface AiCaps {
   video?: boolean
   context?: number
   embedding_model?: string
+  /** extra request fields merged into every chat call (e.g. a reasoning switch); {} removes them */
+  extra_body?: Record<string, unknown>
 }
 
 export interface AiCard {
@@ -372,6 +374,12 @@ export interface AiCard {
   max_concurrency: number
   caps: AiCaps
   verified: string
+  /** last day of a limited-time free offer (YYYY-MM-DD), '' when there is none */
+  ends?: string
+  /** the offer in `ends` is over */
+  ended?: boolean
+  /** extra request fields a particular model needs, by model name */
+  model_extra_body?: Record<string, Record<string, unknown>>
 }
 
 export interface AiConnection {
@@ -477,13 +485,13 @@ export function deleteAiConnection(id: number): Promise<AiOverview> {
 /** Test a saved connection; typed fields in `draft` are tested instead of the saved ones. */
 export function testAiConnection(
   id: number,
-  draft: { base_url?: string; model?: string; key?: string; purpose?: 'chat' | 'embeddings' } = {},
+  draft: { base_url?: string; model?: string; key?: string; extra_body?: Record<string, unknown>; purpose?: 'chat' | 'embeddings' } = {},
 ): Promise<AiTestResult> {
   return request<AiTestResult>(`/api/ai/connections/${id}/test`, { method: 'POST', body: JSON.stringify(draft) })
 }
 
 /** Test values typed for a new connection, before anything is saved. */
-export function testAiDraft(draft: { card: string; base_url?: string; model?: string; key?: string; purpose?: 'chat' | 'embeddings' }): Promise<AiTestResult> {
+export function testAiDraft(draft: { card: string; base_url?: string; model?: string; key?: string; extra_body?: Record<string, unknown>; purpose?: 'chat' | 'embeddings' }): Promise<AiTestResult> {
   return request<AiTestResult>('/api/ai/test', { method: 'POST', body: JSON.stringify(draft) })
 }
 
