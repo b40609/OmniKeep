@@ -3,13 +3,33 @@ import json
 import logging
 import re
 from typing import Optional, Dict, Any
-from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
+from openai import APIConnectionError, APIStatusError, AsyncOpenAI, DefaultAsyncHttpxClient, RateLimitError
 from app import ai_status
 from app.providers.base import BaseLLMProvider
 from app.providers.rate_limiter import limiter
 from app.config import settings
 
 logger = logging.getLogger("omnikeep.openai_provider")
+
+# What a keyless connection (a local server, or a public gateway such as Kilo) gets as its key.
+PLACEHOLDER_KEY = "dummy-key"
+
+
+async def _drop_placeholder_auth(request: Any) -> None:
+    """Request hook of the SDK's HTTP client (its own httpx build, so the type is not httpx.Request)."""
+    if request.headers.get("Authorization") == f"Bearer {PLACEHOLDER_KEY}":
+        del request.headers["Authorization"]
+
+
+def client_auth(api_key: str, **http_kwargs: Any) -> Dict[str, Any]:
+    """AsyncOpenAI auth arguments. With the placeholder no Authorization header is sent:
+    local servers ignore the header either way, while keyless public gateways (Kilo)
+    answer 401 to a bearer token they do not know. The SDK insists on an auth header
+    when it builds a request, so the header is dropped just before sending."""
+    if not api_key or api_key == PLACEHOLDER_KEY:
+        hooks = {"request": [_drop_placeholder_auth]}
+        return {"api_key": PLACEHOLDER_KEY, "http_client": DefaultAsyncHttpxClient(event_hooks=hooks, **http_kwargs)}
+    return {"api_key": api_key}
 
 
 class ProviderUnavailableError(RuntimeError):
@@ -51,21 +71,25 @@ def extract_completion_content(response: Any) -> str:
 
 class OpenAICompatibleProvider(BaseLLMProvider):
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None, model: Optional[str] = None,
-                 rate_limiter=None, status_key: str = "llm", label: str = "", json_mode: bool = True):
+                 rate_limiter=None, status_key: str = "llm", label: str = "", json_mode: bool = True,
+                 extra_body: Optional[Dict[str, Any]] = None):
         """With no arguments: the settings that predate connections (OPENAI_*), paced by the
         shared limiter. A connection (app/ai_connections.py) passes its own address, key
-        (never empty: a keyless local server gets a placeholder), limiter and status key."""
+        (never empty: a keyless local server gets a placeholder), limiter and status key.
+        `extra_body` (a connection's caps["extra_body"]) is merged into every chat request,
+        e.g. {"thinking": {"type": "disabled"}} to switch a reasoning model's thinking off."""
         self.base_url = base_url or settings.OPENAI_BASE_URL
-        self.api_key = api_key or settings.OPENAI_API_KEY or "dummy-key"
+        self.api_key = api_key or settings.OPENAI_API_KEY or PLACEHOLDER_KEY
         self.model = model or settings.PRIMARY_MODEL
         self.limiter = rate_limiter or limiter
         self.status_key = status_key
         self.label = label
         self.json_mode = json_mode
+        self.extra_body = dict(extra_body) if extra_body else None
 
         self.client = AsyncOpenAI(
             base_url=self.base_url,
-            api_key=self.api_key,
+            **client_auth(self.api_key),
         )
 
     async def _chat(self, **kwargs):
@@ -75,6 +99,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         never held across backoff sleeps."""
         waits = (None, 5.0, 15.0)  # first try, then two backoff presets
         last_exc: Optional[Exception] = None
+        if self.extra_body:
+            kwargs["extra_body"] = {**self.extra_body, **(kwargs.get("extra_body") or {})}
         for attempt, preset_wait in enumerate(waits):
             async with self.limiter.slot():
                 try:

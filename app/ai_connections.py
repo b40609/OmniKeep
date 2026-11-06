@@ -247,7 +247,37 @@ def _caps(value: Any, errors: Dict[str, str]) -> Dict[str, Any]:
             out["context"] = context
     if "embedding_model" in value:
         out["embedding_model"] = _text(value["embedding_model"], 200, "caps", errors)
+    if "extra_body" in value:
+        extra = _extra_body(value["extra_body"], errors)
+        if extra is not None:
+            out["extra_body"] = extra
     return out
+
+
+# Request fields OmniKeep sets itself; extra_body may not override them.
+_RESERVED_BODY = {"model", "messages", "stream", "response_format", "tools", "tool_choice", "n"}
+
+
+def _extra_body(value: Any, errors: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    """Extra request fields such as a reasoning switch; {} (or None) removes them."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict) or not all(isinstance(k, str) for k in value):
+        errors["caps"] = "extra_body 必須是 JSON 物件"
+        return None
+    reserved = sorted(_RESERVED_BODY.intersection(value))
+    if reserved:
+        errors["caps"] = f"extra_body 不能改 {'、'.join(reserved)}"
+        return None
+    try:
+        encoded = json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError):
+        errors["caps"] = "extra_body 必須是 JSON 物件"
+        return None
+    if len(encoded) > 2000:
+        errors["caps"] = "extra_body 太長（上限 2000 字元）"
+        return None
+    return json.loads(encoded)
 
 
 def _clean_key(raw: Any, kind: str, errors: Dict[str, str]) -> str:
