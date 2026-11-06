@@ -1,4 +1,5 @@
 import sqlite3
+import logging
 import json
 import uuid
 import re
@@ -81,18 +82,11 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_items_created ON items(created_at DESC)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_items_starred ON items(is_starred)")
 
-    # 5. FTS5 Virtual Table for full-text search
-    cursor.execute("""
-        CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
-            id UNINDEXED,
-            title_l1,
-            summary_l1,
-            tech_tags,
-            deep_analysis,
-            content_raw,
-            tokenize='unicode61'
-        )
-    """)
+    # 5. FTS5 Virtual Table for full-text search. The trigram tokenizer (SQLite >= 3.34)
+    # matches any substring of three or more characters, so Chinese words inside a
+    # sentence are found; unicode61 treated a whole run of Chinese as one token.
+    # An older unicode61 index is a derived copy of `items`: it is rebuilt once here.
+    _ensure_trigram_fts(cursor)
 
     # 6. Triggers to keep FTS in sync
     cursor.execute("""
@@ -604,6 +598,49 @@ def _save_item(conn, item_data: Dict[str, Any]) -> str:
     ))
     return item_id
 
+FTS_COLUMNS = ("title_l1", "summary_l1", "tech_tags", "deep_analysis", "content_raw")
+
+
+def _ensure_trigram_fts(cursor) -> None:
+    row = cursor.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'items_fts'").fetchone()
+    if row is not None and "trigram" in (row[0] or ""):
+        return
+    if row is not None:
+        logging.getLogger("omnikeep.database").info("Rebuilding the full-text index with the trigram tokenizer")
+        cursor.execute("DROP TABLE items_fts")
+    cursor.execute(f"""
+        CREATE VIRTUAL TABLE items_fts USING fts5(
+            id UNINDEXED, {", ".join(FTS_COLUMNS)},
+            tokenize='trigram'
+        )
+    """)
+    has_items = cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'items'").fetchone() is not None
+    if has_items:
+        cursor.execute(f"INSERT INTO items_fts(id, {', '.join(FTS_COLUMNS)}) "
+                       f"SELECT id, {', '.join(FTS_COLUMNS)} FROM items")
+
+
+def fts_filter(query: str):
+    """SQL condition and params finding items whose text contains any of the query words.
+
+    Words of three or more characters use the trigram index; shorter ones (常見的兩字中文詞、
+    "AI") cannot, so they are matched with LIKE over the same columns.
+    """
+    words = [w for w in (query or "").replace('"', " ").split() if w]
+    parts, params = [], []
+    long_words = [w for w in words if len(w) >= 3]
+    if long_words:
+        parts.append("i.id IN (SELECT id FROM items_fts WHERE items_fts MATCH ?)")
+        params.append(" OR ".join(f'"{w}"' for w in long_words))
+    for w in words:
+        if len(w) < 3:
+            pattern = f"%{w}%"
+            parts.append("(" + " OR ".join(f"i.{c} LIKE ?" for c in FTS_COLUMNS) + ")")
+            params.extend([pattern] * len(FTS_COLUMNS))
+    return ("(" + " OR ".join(parts) + ")") if parts else "1=0", params
+
+
 def get_items(
     category: Optional[str] = None,
     query: Optional[str] = None,
@@ -617,23 +654,17 @@ def get_items(
     cursor = conn.cursor()
     
     if query and query.strip():
-        # FTS query with multi-term OR search & graceful LIKE fallback
+        # Any query word as a substring (trigram index, LIKE for words under 3 characters),
+        # with the older LIKE-on-the-whole-query fallback kept below.
         clean_q = query.strip().replace('"', '')
-        words = [w.strip() for w in clean_q.split() if w.strip()]
-        if len(words) > 1:
-            fts_query = " OR ".join([f'"{w}"*' for w in words])
-        else:
-            fts_query = f'"{clean_q}"*'
-            
-        sql = """
+        condition, params = fts_filter(clean_q)
+        sql = f"""
             SELECT i.*,
                    (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
                    (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
             FROM items i
-            JOIN items_fts f ON i.id = f.id
-            WHERE items_fts MATCH ?
+            WHERE {condition}
         """
-        params = [fts_query]
         if category and category != "全部":
             sql += " AND i.category_name = ?"
             params.append(category)

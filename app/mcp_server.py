@@ -817,7 +817,7 @@ async def get_schema_resource() -> str:
                 }
             },
             "items_fts": {
-                "description": "SQLite FTS5 全文索引虛擬表 (支援 unicode61 分詞)",
+                "description": "SQLite FTS5 全文索引虛擬表（trigram 分詞：任何 3 字以上的子字串都查得到，中文也可以；少於 3 字請改用 LIKE）。用 id 欄位對回 items.id",
                 "indexed_columns": ["title_l1", "summary_l1", "tech_tags", "deep_analysis", "content_raw"]
             }
         }
@@ -855,7 +855,7 @@ async def get_golden_queries_resource() -> str:
         },
         {
             "scenario": "使用 SQLite FTS5 全文索引檢索特定關鍵字",
-            "sql": "SELECT i.id, i.title_l1, i.category_name, i.summary_l1 FROM items_fts fts JOIN items i ON fts.rowid = i.rowid WHERE items_fts MATCH 'FastAPI OR MCP' ORDER BY rank LIMIT 10;"
+            "sql": "SELECT i.id, i.title_l1, i.category_name, i.summary_l1 FROM items_fts fts JOIN items i ON fts.id = i.id WHERE items_fts MATCH '\"FastAPI\" OR \"向量檢索\"' ORDER BY rank LIMIT 10;"
         },
         {
             "scenario": "查詢目前活躍的監看目標及其指紋更新狀態",
