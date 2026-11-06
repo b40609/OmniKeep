@@ -57,7 +57,7 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r requirements-dev.txt
 
-      - name: Check that sqlite-vec loads (its tests skip otherwise)
+      - name: Check that sqlite-vec loads (its tests fail in CI otherwise)
         run: |
           python -c "import sqlite3, sqlite_vec; c = sqlite3.connect(':memory:'); c.enable_load_extension(True); sqlite_vec.load(c); print('sqlite-vec', c.execute('select vec_version()').fetchone()[0])"
 
