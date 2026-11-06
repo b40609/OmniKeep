@@ -16,7 +16,7 @@ async def _generate_content(client, status_key: str = "gemini", label: str = "",
     thread so a slow Gemini request (YouTube analysis can take tens of
     seconds) can no longer freeze every other request in the process.
     """
-    from app import ai_status
+    from app import ai_status, ai_usage
 
     async def call():
         aio = getattr(client, "aio", None)
@@ -36,10 +36,12 @@ async def _generate_content(client, status_key: str = "gemini", label: str = "",
             rate_limiter.on_rate_limited(None)
         ai_status.record_failure(status_key, code if isinstance(code, int) else None,
                                  f"{type(exc).__name__}: {exc}", label)
+        ai_usage.record_failure(status_key)
         raise
     if rate_limiter is not None:
         rate_limiter.on_success()
     ai_status.record_success(status_key, label)
+    ai_usage.record_success(status_key, response)
     return response
 
 

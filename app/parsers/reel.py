@@ -15,6 +15,8 @@ from app.parsers.media_network import PublicYoutubeDL
 
 from app.providers import get_primary_provider, get_gemini_provider, has_video_provider
 from app.providers.openai_compatible import extract_completion_content
+from app.providers.gemini import _generate_content
+from app import ai_usage
 from app.parsers.web import parse_facebook_page
 from app.parsers.cookie_manager import ytdlp_cookie_opts
 from app.config import settings
@@ -238,17 +240,22 @@ async def analyze_storyboard_vision(tile_path: str) -> str:
     if hasattr(provider, "client") and hasattr(provider.client, "chat"):
         try:
             b64 = base64.b64encode(img_bytes).decode("utf-8")
-            res = await provider.client.chat.completions.create(
-                model=provider.model,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-                    ]
-                }],
-                temperature=0.1
-            )
+            try:
+                res = await provider.client.chat.completions.create(
+                    model=provider.model,
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+                        ]
+                    }],
+                    temperature=0.1
+                )
+            except Exception:
+                ai_usage.record_failure(getattr(provider, "status_key", ""))
+                raise
+            ai_usage.record_success(getattr(provider, "status_key", ""), res)
             return extract_completion_content(res).strip()
         except Exception as e:
             logger.warning(f"[Reel Vision] Primary provider vision failed: {e}")
@@ -262,14 +269,13 @@ async def analyze_storyboard_vision(tile_path: str) -> str:
             key = gemini_prov._get_next_key()
             if key:
                 client = genai.Client(api_key=key)
-                resp = await _run_thread(
-                    lambda: client.models.generate_content(
-                        model=gemini_prov.model,
-                        contents=[
-                            gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-                            prompt
-                        ]
-                    )
+                resp = await _generate_content(
+                    client, gemini_prov.status_key, gemini_prov.label, gemini_prov.limiter,
+                    model=gemini_prov.model,
+                    contents=[
+                        gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+                        prompt
+                    ]
                 )
                 return (resp.text or "").strip()
         except Exception as e:
@@ -298,11 +304,16 @@ async def transcribe_audio_stream(audio_path: str) -> str:
     if hasattr(provider, "client") and hasattr(provider.client, "audio"):
         try:
             with open(audio_path, "rb") as af:
-                resp = await provider.client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=af,
-                    response_format="text"
-                )
+                try:
+                    resp = await provider.client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=af,
+                        response_format="text"
+                    )
+                except Exception:
+                    ai_usage.record_failure(getattr(provider, "status_key", ""))
+                    raise
+                ai_usage.record_success(getattr(provider, "status_key", ""), None)
                 if isinstance(resp, str):
                     return resp.strip()
                 return getattr(resp, "text", "").strip()
@@ -320,14 +331,13 @@ async def transcribe_audio_stream(audio_path: str) -> str:
                 client = genai.Client(api_key=key)
                 with open(audio_path, "rb") as af:
                     audio_bytes = af.read()
-                resp = await _run_thread(
-                    lambda: client.models.generate_content(
-                        model=gemini_prov.model,
-                        contents=[
-                            gtypes.Part.from_bytes(data=audio_bytes, mime_type="audio/mp3"),
-                            "請忠實將這段短影音的中文/口播語音逐字聽打轉錄為繁體中文，保持高精確度，無贅字。"
-                        ]
-                    )
+                resp = await _generate_content(
+                    client, gemini_prov.status_key, gemini_prov.label, gemini_prov.limiter,
+                    model=gemini_prov.model,
+                    contents=[
+                        gtypes.Part.from_bytes(data=audio_bytes, mime_type="audio/mp3"),
+                        "請忠實將這段短影音的中文/口播語音逐字聽打轉錄為繁體中文，保持高精確度，無贅字。"
+                    ]
                 )
                 return (resp.text or "").strip()
         except Exception as e:

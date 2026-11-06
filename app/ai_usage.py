@@ -54,9 +54,29 @@ def _add(status_key: str, ok: bool, prompt: int = 0, completion: int = 0) -> Non
         logger.debug("ai_usage record failed: %s", exc)
 
 
+def _field(obj: Any, name: str) -> Any:
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+def token_counts(response: Any) -> tuple:
+    """(prompt, completion) tokens from an OpenAI-style `usage` or Gemini's `usage_metadata`.
+
+    Gemini bills thinking tokens as output but leaves them out of candidates_token_count,
+    and counts tool-use input (e.g. search grounding) apart from the prompt.
+    """
+    usage = _field(response, "usage")
+    if usage is not None:
+        return _tokens(usage, "prompt_tokens"), _tokens(usage, "completion_tokens")
+    meta = _field(response, "usage_metadata")
+    if meta is not None:
+        return (_tokens(meta, "prompt_token_count") + _tokens(meta, "tool_use_prompt_token_count"),
+                _tokens(meta, "candidates_token_count") + _tokens(meta, "thoughts_token_count"))
+    return 0, 0
+
+
 def record_success(status_key: str, response: Any) -> None:
-    usage = response.get("usage") if isinstance(response, dict) else getattr(response, "usage", None)
-    _add(status_key, True, _tokens(usage, "prompt_tokens"), _tokens(usage, "completion_tokens"))
+    prompt, completion = token_counts(response)
+    _add(status_key, True, prompt, completion)
 
 
 def record_failure(status_key: str) -> None:

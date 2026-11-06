@@ -64,3 +64,45 @@ def test_the_connection_list_reports_usage_and_quota():
     row = next(c for c in listed if c["id"] == conn.id)
     assert row["usage"]["today"]["requests"] == 1
     assert row["usage"]["quota"]["limit"] == 200 and row["usage"]["quota"]["period"] == "day"
+
+
+# ── Gemini: usage_metadata instead of usage ──────────────────────
+
+def _gemini_reply(prompt=100, candidates=20, thoughts=30, tool=5):
+    meta = SimpleNamespace(prompt_token_count=prompt, candidates_token_count=candidates,
+                           thoughts_token_count=thoughts, tool_use_prompt_token_count=tool)
+    return SimpleNamespace(text="{}", usage_metadata=meta)
+
+
+def test_gemini_usage_counts_thinking_as_output():
+    assert ai_usage.token_counts(_gemini_reply()) == (105, 50)
+    assert ai_usage.token_counts({"usage_metadata": {"prompt_token_count": 3, "candidates_token_count": 4}}) == (3, 4)
+    assert ai_usage.token_counts(None) == (0, 0)
+    # An OpenAI-style reply without usage counts the request only.
+    assert ai_usage.token_counts(SimpleNamespace(usage=None)) == (0, 0)
+
+
+def test_gemini_calls_are_recorded_on_their_connection():
+    from app.providers.gemini import _generate_content
+
+    conn = ai_connections.create({"card": "gemini", "key": "AIza-test-key-1234567890"})
+
+    class Models:
+        def __init__(self, fail):
+            self.fail = fail
+
+        async def generate_content(self, **_):
+            if self.fail:
+                raise RuntimeError("quota")
+            return _gemini_reply()
+
+    def client(fail=False):
+        return SimpleNamespace(aio=SimpleNamespace(models=Models(fail)))
+
+    asyncio.run(_generate_content(client(), conn.status_key, "Gemini", model="m", contents=["x"]))
+    try:
+        asyncio.run(_generate_content(client(fail=True), conn.status_key, "Gemini", model="m", contents=["x"]))
+    except RuntimeError:
+        pass
+    today = ai_usage.summary(conn.id)["today"]
+    assert today == {"requests": 1, "failures": 1, "tokens": 155, "prompt_tokens": 105, "completion_tokens": 50}
