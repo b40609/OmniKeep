@@ -257,6 +257,7 @@ def ai_summary() -> Dict[str, Any]:
             "api_key": {"configured": d["key_configured"], "hint": d["key_hint"],
                         "undecryptable": d["key_undecryptable"]},
             "status": {k: state.get(k) for k in ("ok", "at", "status", "message")} if state else None,
+            "usage": d.get("usage") or {},
         })
     labels = {c["id"]: c["label"] for c in connections}
     slots = {slot: [labels.get(e["connection_id"], str(e["connection_id"])) for e in entries]

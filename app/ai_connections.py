@@ -528,7 +528,7 @@ def key_hint(key: str) -> str:
 
 
 def describe_connection(conn: Connection) -> Dict[str, Any]:
-    from app import ai_status
+    from app import ai_status, ai_usage
     used_in = [slot for slot, entries in slots().items() if any(e["connection_id"] == conn.id for e in entries)]
     return {
         "id": conn.id, "card": conn.card, "kind": conn.kind, "label": conn.label, "base_url": conn.base_url,
@@ -537,6 +537,7 @@ def describe_connection(conn: Connection) -> Dict[str, Any]:
         "max_concurrency": conn.max_concurrency, "effective_interval": conn.interval(),
         "origin": conn.origin, "enabled": conn.enabled, "used_in": used_in,
         "status": ai_status.snapshot().get(conn.status_key), "updated_at": conn.updated_at,
+        "usage": ai_usage.summary(conn.id, (provider_catalog.card(conn.card) or {}).get("quota")),
     }
 
 
@@ -563,6 +564,14 @@ def _legacy_openai_values() -> Optional[Dict[str, Any]]:
             "model": settings.PRIMARY_MODEL, "key": settings.OPENAI_API_KEY, "caps": dict(card.get("caps", {})),
             "min_interval": float(settings.LLM_MIN_REQUEST_INTERVAL),
             "max_concurrency": int(settings.LLM_MAX_CONCURRENCY), "enabled": True}
+
+
+def _legacy_can_embed(card_id: str) -> bool:
+    """Whether the old OpenAI-compatible address may serve vectors. A card that says it has
+    none (Agnes, Groq, Z.AI…) is left out of the embeddings slot; an unknown custom address
+    keeps the old behaviour of trying /embeddings there."""
+    card = provider_catalog.CARD_BY_ID.get(card_id) or {}
+    return card_id == "custom" or bool(card.get("caps", {}).get("embeddings"))
 
 
 def _legacy_gemini_values() -> Optional[Dict[str, Any]]:
@@ -632,7 +641,7 @@ def migrate_legacy() -> bool:
                 plan["brain"].append((ids["brain"], settings.BRAIN_MODEL))
             if "ollama" in ids:
                 plan["embeddings"].append((ids["ollama"], settings.EMBEDDING_MODEL))
-            if "openai" in ids and settings.OPENAI_API_KEY:
+            if "openai" in ids and settings.OPENAI_API_KEY and _legacy_can_embed(openai_values["card"]):
                 plan["embeddings"].append((ids["openai"], remote_embedding_model()))
             for slot, rows in plan.items():
                 for position, (connection_id, model) in enumerate(rows):

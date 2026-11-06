@@ -34,7 +34,7 @@ def test_deptry_finds_no_undeclared_or_unused_packages():
          "--requirements-files", "requirements.txt,requirements-stt.txt",
          "--requirements-files-dev", "requirements-dev.txt",
          "--known-first-party", "app",
-         "--extend-exclude", "frontend|static",
+         "--extend-exclude", r"frontend|static|\.agents|\.claude|\.codex|\.impeccable|_bmad.*",
          # FastAPI parses form uploads with it; nothing imports it by name.
          "--per-rule-ignores", "DEP002=python-multipart"],
         cwd=REPO, capture_output=True, text=True, timeout=120,

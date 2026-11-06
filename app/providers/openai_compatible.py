@@ -4,7 +4,7 @@ import logging
 import re
 from typing import Optional, Dict, Any
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI, DefaultAsyncHttpxClient, RateLimitError
-from app import ai_status
+from app import ai_status, ai_usage
 from app.providers.base import BaseLLMProvider
 from app.providers.rate_limiter import limiter
 from app.config import settings
@@ -107,6 +107,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     response = await self.client.chat.completions.create(**kwargs)
                     self.limiter.on_success()
                     ai_status.record_success(self.status_key, self.label)
+                    ai_usage.record_success(self.status_key, response)
                     return response
                 except RateLimitError as e:
                     last_exc = e
@@ -118,6 +119,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     self.limiter.on_rate_limited(retry_after)
                     if attempt == len(waits) - 1:
                         ai_status.record_failure(self.status_key, 429, str(e), self.label)
+                        ai_usage.record_failure(self.status_key)
                         break
                     wait = min(max(retry_after or preset_wait or 5.0, 2.0), 90.0)
                     logger.warning(
@@ -126,10 +128,12 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     )
                 except APIStatusError as e:
                     ai_status.record_failure(self.status_key, e.status_code, str(e), self.label)
+                    ai_usage.record_failure(self.status_key)
                     raise
                 except APIConnectionError as e:
                     ai_status.record_failure(self.status_key, None, f"連不上 {self.base_url}（{type(e).__name__}）",
                                              self.label)
+                    ai_usage.record_failure(self.status_key)
                     raise
             # Backoff outside the slot so the other lane keeps working
             await asyncio.sleep(wait)

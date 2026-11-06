@@ -11,6 +11,10 @@ kind is the wire protocol a connection made from the card speaks:
   ollama  a local Ollama runner (native /api/embed for vectors, /v1 for chat)
 
 Limits change often; `verified` is the date they were last checked.
+`quota` is the free allowance the settings page measures OmniKeep's own usage against
+({"tokens"|"requests": n, "period": "day"|"month"|"once"}; OpenRouter's 50 a day rises to
+1,000 after a 10 USD top-up). `no_signup` marks a public service usable with no account at all (Kilo, OVHcloud): the
+wizard lists those first and the setup Skill offers them to someone with no keys yet.
 """
 from typing import Any, Dict, List, Optional
 
@@ -48,6 +52,7 @@ CARDS: List[Dict[str, Any]] = [
         "cost": "免費層",
         "limits": "每個模型每分鐘 30 次、每日約 1,000 次、每日 20 萬 token；沒有向量。",
         "notes": "速度快，支援嚴格 JSON schema。",
+        "quota": {"requests": 1000, "period": "day"},
         "min_interval": 2.5, "max_concurrency": 2,
         "caps": {"json_mode": True, "embeddings": False, "context": 131072},
     },
@@ -73,6 +78,7 @@ CARDS: List[Dict[str, Any]] = [
         "cost": "免費（:free 模型）",
         "limits": "每分鐘 20 次；每日 50 次，累計儲值滿 10 美元後變每日 1,000 次。",
         "notes": "免費模型常替換：按「測試」會列出目前可用的模型。",
+        "quota": {"requests": 50, "period": "day"},
         "min_interval": 3.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False, "context": 131072},
     },
@@ -99,6 +105,7 @@ CARDS: List[Dict[str, Any]] = [
         "cost": "免費額度（新帳號一次送 100M token）",
         "limits": "一次性額度，用完要綁卡；沒有向量。2026-11-06 實測一篇分析約 5 秒、每秒約 430 token。",
         "notes": "目前實測最快；context 1M。標題偶爾夾簡體。",
+        "quota": {"tokens": 100_000_000, "period": "once"},
         "min_interval": 1.0, "max_concurrency": 2,
         "caps": {"json_mode": True, "embeddings": False, "context": 1000000},
         "verified": "2026-11-06",
@@ -124,6 +131,7 @@ CARDS: List[Dict[str, Any]] = [
         "cost": "免費（免費模型）",
         "limits": "每天 200 次，所有免費模型共用。2026-11-06 實測一篇約 57 秒。",
         "notes": "有公司實體與 DPA。ling-3.1-flash 不支援 JSON 格式參數，會改用一般請求再解析。",
+        "quota": {"requests": 200, "period": "day"},
         "min_interval": 3.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False},
         "verified": "2026-11-06",
@@ -148,6 +156,7 @@ CARDS: List[Dict[str, Any]] = [
         "cost": "免費（-free 模型）",
         "limits": "第三方整理：多數免費模型每分鐘 5 次、每天 100 次，glm-4.7-flash-free 每天 500 次。2026-11-06 實測（關閉推理）一篇約 43 秒。",
         "notes": "免費模型會輪替：按「測試」會列出目前的模型。預設關閉推理（thinking disabled）。",
+        "quota": {"requests": 500, "period": "day"},
         "min_interval": 12.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False, "extra_body": {"thinking": {"type": "disabled"}}},
         "verified": "2026-11-06",
@@ -173,6 +182,7 @@ CARDS: List[Dict[str, Any]] = [
         "cost": "免費（限時活動，到 2026-11-24）",
         "limits": "每月 30M token，超額回 429，不會自動扣款。推理型，一篇約 9,000 token（每月約 3,300 篇）；2026-11-06 實測一篇約 165 秒。",
         "notes": "活動結束後要重新確認還能不能免費用。試過用 enable_thinking false 關閉推理，反而逾時，所以不帶。",
+        "quota": {"tokens": 30_000_000, "period": "month"},
         "min_interval": 2.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False},
         "verified": "2026-11-06",
@@ -181,7 +191,7 @@ CARDS: List[Dict[str, Any]] = [
         "id": "kilo", "label": "Kilo Gateway（不用金鑰）", "kind": "openai",
         "base_url": "https://api.kilo.ai/api/gateway/v1", "model": "reflection/beam-free",
         "models": ["reflection/beam-free", "kilo-auto/free"],
-        "key_mode": "none", "key_url": "",
+        "key_mode": "none", "key_url": "", "no_signup": True,
         "cost": "免費（不用金鑰）",
         "limits": "每個 IP 每小時 200 次。2026-11-06 實測（低推理）：beam-free 一篇約 14 秒，kilo-auto/free 約 43 秒。",
         "notes": "預設推理設為 low。kilo-auto/free 由 Kilo 指派模型（實測是來源不明的 stealth 模型）。Nemotron 等推理型免費模型太慢，不建議。",
@@ -194,7 +204,7 @@ CARDS: List[Dict[str, Any]] = [
         "id": "ovh", "label": "OVHcloud AI Endpoints（不用金鑰）", "kind": "openai",
         "base_url": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1", "model": "gpt-oss-120b",
         "models": ["gpt-oss-120b", "Meta-Llama-3_3-70B-Instruct"],
-        "key_mode": "none", "key_url": "",
+        "key_mode": "none", "key_url": "", "no_signup": True,
         "cost": "免費（不用金鑰）",
         "limits": "每個 IP、每個模型每分鐘 2 次（回應標頭證實），適合當備援。2026-11-06 實測 gpt-oss-120b 一篇約 32 秒。",
         "notes": "法國 OVHcloud，官方說不拿來訓練、不留存資料。帶任何金鑰都會被拒，所以不用填。",
@@ -295,7 +305,8 @@ def catalog() -> Dict[str, Any]:
     cards = []
     for c in CARDS:
         cards.append({
-            "editable_url": False, "embedding_model": "", "training_note": "", "verified": VERIFIED,
+            "editable_url": False, "embedding_model": "", "training_note": "", "no_signup": False,
+            "verified": VERIFIED,
             **c,  # a card checked later carries its own "verified"
         })
     return {"verified": VERIFIED, "cards": cards}
