@@ -197,7 +197,7 @@ const inputClass =
               @click="choose(c.id)"
             >
               <span class="flex items-baseline justify-between gap-2">
-                <span class="text-xs font-semibold">{{ c.label }}<span v-if="c.no_signup" class="ml-1.5 rounded bg-success/15 px-1 py-0.5 text-2xs font-normal text-success">不用註冊</span></span>
+                <span class="text-xs font-semibold">{{ c.label }}<span v-if="c.no_signup" class="ml-1.5 rounded bg-success/15 px-1 py-0.5 text-2xs font-normal text-success">不用註冊</span><span v-if="c.ended" class="ml-1.5 rounded bg-warning/15 px-1 py-0.5 text-2xs font-normal text-warning">活動已結束</span></span>
                 <span class="shrink-0 text-2xs text-muted-foreground">{{ c.cost }}</span>
               </span>
               <span class="mt-1 block text-2xs text-muted-foreground">{{ c.limits }}（{{ c.verified }} 查證）</span>

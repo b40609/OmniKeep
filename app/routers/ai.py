@@ -40,6 +40,7 @@ class TestBody(BaseModel):
     base_url: Optional[str] = None
     model: Optional[str] = None
     key: Optional[str] = None
+    extra_body: Optional[Dict[str, Any]] = None  # {} tests without the saved extra fields
     purpose: str = "chat"  # chat | embeddings
 
 
@@ -119,10 +120,15 @@ def _draft(saved: Optional[ai_connections.Connection], body: TestBody) -> Any:
         raise AIConfigError({"model": "請填模型名稱"})
     caps = dict(card.get("caps", {}))
     caps.update(saved.caps if saved else {})
+    if body.extra_body is not None:
+        caps["extra_body"] = ai_connections.validate_extra_body(body.extra_body)
+    else:
+        ai_connections.apply_model_preset(card, caps, saved.model if saved else None, model)
     if body.purpose == "embeddings" and body.model is None:
         # The vector test uses the embedding model, not the chat model.
         model = str(caps.get("embedding_model") or card.get("embedding_model") or model)
-    return SimpleNamespace(kind=kind, base_url=base_url, key=(key or "").strip(), model=model, caps=caps)
+    return SimpleNamespace(kind=kind, card=card_id, base_url=base_url, key=(key or "").strip(), model=model,
+                           caps=caps)
 
 
 @router.post("/test")
@@ -147,7 +153,8 @@ async def test_connection(connection_id: int, body: Optional[TestBody] = None,
     except AIConfigError as exc:
         return {"ok": False, "status": None, "message": next(iter(exc.errors.values())), "detail": ""}
     result = await check_connection(draft, model=slot_model, purpose=body.purpose)
-    untouched = body.base_url is None and body.key is None and body.model is None and body.card is None
+    untouched = (body.base_url is None and body.key is None and body.model is None and body.card is None
+                 and body.extra_body is None)
     if untouched:
         # The status light follows a test of what is saved; a passing test also lifts
         # "needs a person" and the cooldown.

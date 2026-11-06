@@ -208,9 +208,10 @@ async def check_connection(conn, model: Optional[str] = None, purpose: str = "ch
         return await _check_connection_embeddings(conn, model)
     if conn.kind == "ollama":
         base_url += "/v1"
+    from app.ai_connections import extra_body_for
     return await check_chat(base_url, conn.key or "dummy-key", model,
                             json_mode=conn.caps.get("json_mode", True) is not False,
-                            extra_body=conn.caps.get("extra_body") or None)
+                            extra_body=extra_body_for(conn, model))
 
 
 async def _check_connection_embeddings(conn, model: str) -> Dict[str, Any]:

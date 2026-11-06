@@ -1,6 +1,7 @@
 import asyncio
 import os
 import struct
+import sys
 import tempfile
 import uuid
 from contextlib import closing
@@ -72,9 +73,27 @@ def test_embedding_storage_and_search():
         assert idx1 < idx2
 
 
-@pytest.mark.skipif(not is_sqlite_vec_available(), reason="sqlite-vec cannot load into this Python's sqlite3")
+def _require_sqlite_vec():
+    """Skip where sqlite-vec cannot load, except in CI: there a missing extension is a failure."""
+    if is_sqlite_vec_available():
+        return
+    if os.environ.get("CI"):
+        pytest.fail("sqlite-vec cannot load in CI; the vector KNN tests would otherwise be skipped silently")
+    pytest.skip("sqlite-vec cannot load into this Python's sqlite3")
+
+
+def test_missing_sqlite_vec_fails_in_ci_and_skips_elsewhere(monkeypatch):
+    monkeypatch.setattr(sys.modules[__name__], "is_sqlite_vec_available", lambda: False)
+    monkeypatch.setenv("CI", "true")
+    with pytest.raises(pytest.fail.Exception):
+        _require_sqlite_vec()
+    monkeypatch.delenv("CI")
+    with pytest.raises(pytest.skip.Exception):
+        _require_sqlite_vec()
+
+
 def test_sqlite_vec_mirror_answers_knn_queries():
-    # CI checks the extension loads before running the suite, so this never skips there.
+    _require_sqlite_vec()
     init_vector_db()
     item_id = f"vec_test_{uuid.uuid4().hex[:6]}"
     vec = _deterministic_local_embedding("sqlite-vec KNN mirror", dim=256)
