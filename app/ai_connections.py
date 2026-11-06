@@ -565,6 +565,14 @@ def _legacy_openai_values() -> Optional[Dict[str, Any]]:
             "max_concurrency": int(settings.LLM_MAX_CONCURRENCY), "enabled": True}
 
 
+def _legacy_can_embed(card_id: str) -> bool:
+    """Whether the old OpenAI-compatible address may serve vectors. A card that says it has
+    none (Agnes, Groq, Z.AI…) is left out of the embeddings slot; an unknown custom address
+    keeps the old behaviour of trying /embeddings there."""
+    card = provider_catalog.CARD_BY_ID.get(card_id) or {}
+    return card_id == "custom" or bool(card.get("caps", {}).get("embeddings"))
+
+
 def _legacy_gemini_values() -> Optional[Dict[str, Any]]:
     if not settings.gemini_keys:
         return None
@@ -632,7 +640,7 @@ def migrate_legacy() -> bool:
                 plan["brain"].append((ids["brain"], settings.BRAIN_MODEL))
             if "ollama" in ids:
                 plan["embeddings"].append((ids["ollama"], settings.EMBEDDING_MODEL))
-            if "openai" in ids and settings.OPENAI_API_KEY:
+            if "openai" in ids and settings.OPENAI_API_KEY and _legacy_can_embed(openai_values["card"]):
                 plan["embeddings"].append((ids["openai"], remote_embedding_model()))
             for slot, rows in plan.items():
                 for position, (connection_id, model) in enumerate(rows):

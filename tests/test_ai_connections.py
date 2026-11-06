@@ -401,12 +401,24 @@ def test_migration_turns_the_flat_settings_into_connections(monkeypatch):
     assert [e["connection_id"] for e in slots["analysis"]] == [conns["legacy_openai"].id]
     assert [e["connection_id"] for e in slots["video"]] == [conns["legacy_gemini"].id]
     assert [(e["connection_id"], e["model"]) for e in slots["brain"]] == [(conns["legacy_ollama"].id, "qwen3:8b")]
+    # Agnes has no vectors, so it is not put behind Ollama in the embeddings slot.
     assert [(e["connection_id"], e["model"]) for e in slots["embeddings"]] == [
-        (conns["legacy_ollama"].id, "embeddinggemma-2"), (conns["legacy_openai"].id, "text-embedding-3-small")]
+        (conns["legacy_ollama"].id, "embeddinggemma-2")]
     provider = providers.get_primary_provider()
     assert (provider.base_url, provider.api_key, provider.model) == (
         "https://apihub.agnes-ai.com/v1", AGNES_KEY, "agnes-3.0-flash")
     assert ai_connections.migrate_legacy() is False  # once per database
+
+
+def test_migration_keeps_a_custom_address_as_the_embeddings_fallback(monkeypatch):
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://vllm.example.test/v1")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", AGNES_KEY)
+    with TestClient(app):
+        pass
+    conns = {c.origin: c for c in ai_connections.list_connections()}
+    assert conns["legacy_openai"].card == "custom"
+    embed_ids = [e["connection_id"] for e in ai_connections.slots()["embeddings"]]
+    assert conns["legacy_openai"].id in embed_ids
 
 
 def test_a_fresh_install_gets_no_preselected_provider():
