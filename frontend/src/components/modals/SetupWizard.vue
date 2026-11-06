@@ -27,6 +27,8 @@ const result = ref<AiTestResult | null>(null)
 const testedValues = ref<ConnectionDraft | null>(null)
 
 const card = computed<AiCard | undefined>(() => cardById(cards.value, cardId.value))
+// Services usable with no account come first, so a newcomer without keys can start right away.
+const orderedCards = computed(() => [...cards.value.filter((c) => c.no_signup), ...cards.value.filter((c) => !c.no_signup)])
 const values = computed(() => (card.value ? connectionDraft(card.value, form) : null))
 const problem = computed(() => (card.value ? formProblem(card.value, form) : '請先選一個服務商'))
 const canSave = computed(() => !!result.value?.ok && !!values.value && sameValues(testedValues.value, values.value) && !saving.value)
@@ -185,7 +187,7 @@ const inputClass =
           </p>
           <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="AI 服務商">
             <button
-              v-for="c in cards"
+              v-for="c in orderedCards"
               :key="c.id"
               type="button"
               role="radio"
@@ -195,13 +197,13 @@ const inputClass =
               @click="choose(c.id)"
             >
               <span class="flex items-baseline justify-between gap-2">
-                <span class="text-xs font-semibold">{{ c.label }}</span>
+                <span class="text-xs font-semibold">{{ c.label }}<span v-if="c.no_signup" class="ml-1.5 rounded bg-success/15 px-1 py-0.5 text-2xs font-normal text-success">不用註冊</span></span>
                 <span class="shrink-0 text-2xs text-muted-foreground">{{ c.cost }}</span>
               </span>
-              <span class="mt-1 block text-2xs text-muted-foreground">{{ c.limits }}</span>
+              <span class="mt-1 block text-2xs text-muted-foreground">{{ c.limits }}（{{ c.verified }} 查證）</span>
             </button>
           </div>
-          <p v-if="cards.length" class="text-2xs text-subtle-foreground">限額資料查證日期：{{ cards[0].verified }}，以服務商後台為準。</p>
+          <p v-if="cards.length" class="text-2xs text-subtle-foreground">還沒有任何金鑰也沒關係：標了「不用註冊」的可以先試，之後再加其他家。限額以服務商後台為準。</p>
         </template>
 
         <!-- 2. Address, key, model, then test -->

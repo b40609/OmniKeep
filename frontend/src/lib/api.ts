@@ -366,6 +366,8 @@ export interface AiCard {
   limits: string
   notes: string
   training_note: string
+  /** usable with no account at all (Kilo, OVHcloud) */
+  no_signup?: boolean
   min_interval: number
   max_concurrency: number
   caps: AiCaps

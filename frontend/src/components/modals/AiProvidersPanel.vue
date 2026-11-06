@@ -371,13 +371,13 @@ const inputClass =
               @click="startNew(c)"
             >
               <span class="flex items-baseline justify-between gap-2">
-                <span class="text-xs font-semibold">{{ c.label }}</span>
+                <span class="text-xs font-semibold">{{ c.label }}<span v-if="c.no_signup" class="ml-1.5 rounded bg-success/15 px-1 py-0.5 text-2xs font-normal text-success">不用註冊</span></span>
                 <span class="shrink-0 text-2xs text-muted-foreground">{{ c.cost }}</span>
               </span>
-              <span class="mt-0.5 block text-2xs text-muted-foreground">{{ c.limits }}</span>
+              <span class="mt-0.5 block text-2xs text-muted-foreground">{{ c.limits }}（{{ c.verified }} 查證）</span>
             </button>
           </div>
-          <p v-if="cards.length" class="text-2xs text-subtle-foreground">限額查證日期 {{ cards[0].verified }}，以服務商後台為準。</p>
+          <p v-if="cards.length" class="text-2xs text-subtle-foreground">限額以服務商後台為準。</p>
         </div>
 
         <!-- Editor (new or edit) -->

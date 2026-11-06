@@ -57,6 +57,9 @@ def test_catalog_lists_options_without_a_default_or_subscription_routes():
         assert card.get("key_url", "").startswith("https://") or card["key_mode"] != "required"
     text = str(cards).lower()
     assert "claude" not in text and "chatgpt" not in text and "antigravity" not in text
+    no_signup = {c["id"] for c in cards if c["no_signup"]}
+    assert no_signup == {"kilo", "ovh"}
+    assert all(c["key_mode"] == "none" for c in cards if c["no_signup"])
 
 
 # ── Connections API ──────────────────────────────────────────────
