@@ -47,14 +47,20 @@ async def _generate_content(client, status_key: str = "gemini", label: str = "",
 
 class GeminiProvider(BaseLLMProvider):
     def __init__(self, api_keys: Optional[List[str]] = None, model: Optional[str] = None,
-                 rate_limiter=None, status_key: str = "gemini", label: str = ""):
+                 rate_limiter=None, status_key: str = "gemini", label: str = "", vertexai: bool = False):
         self.keys = api_keys if api_keys is not None else settings.gemini_keys
         self.model = model or settings.GEMINI_MODEL
         self.limiter = rate_limiter
         self.status_key = status_key
         self.label = label
+        self.vertexai = vertexai  # Vertex AI (Agent Platform) express mode instead of AI Studio
         self._key_cycle = itertools.cycle(self.keys) if self.keys else None
         self._lock = threading.Lock()
+
+    def make_client(self, key: str):
+        """A google-genai client for one key: AI Studio, or Vertex AI express mode."""
+        from google import genai
+        return genai.Client(api_key=key, vertexai=True) if self.vertexai else genai.Client(api_key=key)
 
     def _get_next_key(self) -> Optional[str]:
         if not self._key_cycle:
@@ -70,7 +76,7 @@ class GeminiProvider(BaseLLMProvider):
         from google import genai
         from google.genai import types as gtypes
 
-        client = genai.Client(api_key=key)
+        client = self.make_client(key)
         contents = []
         if system_prompt:
             contents.append(system_prompt + "\n\n")
@@ -94,7 +100,7 @@ class GeminiProvider(BaseLLMProvider):
         from google import genai
         from google.genai import types as gtypes
 
-        client = genai.Client(api_key=key)
+        client = self.make_client(key)
         full_prompt = (system_prompt + "\n\n" if system_prompt else "") + prompt + "\n\nReturn ONLY a valid JSON object."
 
         response = await _generate_content(
@@ -121,7 +127,7 @@ class GeminiProvider(BaseLLMProvider):
         from google import genai
         from google.genai import types as gtypes
 
-        client = genai.Client(api_key=key)
+        client = self.make_client(key)
 
         response = await _generate_content(
             client, self.status_key, self.label, self.limiter,

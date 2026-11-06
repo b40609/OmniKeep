@@ -168,6 +168,32 @@ class _NoJsonMode(Exception):
     pass
 
 
+async def check_vertex(key: str, model: str, secrets: Optional[List[str]] = None) -> Dict[str, Any]:
+    """The Vertex AI (Agent Platform) express-mode version of check_chat: one small Chinese
+    JSON request through google-genai, the way GeminiProvider calls it."""
+    from google import genai
+    from google.genai import types as gtypes
+    secrets = [key, *(secrets or [])]
+    extra: Dict[str, Any] = {"models": [], "json_mode": True, "latency_ms": None}
+    started = time.monotonic()
+    try:
+        client = genai.Client(api_key=key, vertexai=True)
+        response = await client.aio.models.generate_content(
+            model=model, contents=[JSON_PROMPT],
+            config=gtypes.GenerateContentConfig(system_instruction=JSON_SYSTEM, temperature=0,
+                                                response_mime_type="application/json"))
+    except Exception as exc:
+        code = getattr(exc, "code", None)
+        return {**_fail(code if isinstance(code, int) else None, f"{type(exc).__name__}: {exc}", secrets), **extra}
+    extra["latency_ms"] = int((time.monotonic() - started) * 1000)
+    text = getattr(response, "text", None) or ""
+    if _parse_json_reply(text) is None:
+        return {**_fail(200, text[:300], secrets,
+                        message=f"模型 {model} 有回應，但不是可以解析的 JSON：換一個模型通常就能解決"), **extra}
+    return {**_ok(f"連線成功（Vertex AI）：模型 {model} 回了可解析的中文 JSON，花了 {extra['latency_ms'] / 1000:.1f} 秒"),
+            **extra}
+
+
 async def _check_llm(values: Dict[str, Any]) -> Dict[str, Any]:
     base_url = _candidate(values, "OPENAI_BASE_URL")
     blocked = _guard_base_url(values, base_url)
@@ -196,8 +222,11 @@ async def check_connection(conn, model: Optional[str] = None, purpose: str = "ch
             return _fail(None, message="還沒有設定 Gemini API 金鑰")
         if purpose == "embeddings":
             return _fail(None, message="Gemini 目前不能用在向量")
-        result = await check_chat(GEMINI_OPENAI_URL, keys[0], model, secrets=keys,
-                                  json_mode=conn.caps.get("json_mode", True) is not False)
+        if conn.caps.get("vertex"):
+            result = await check_vertex(keys[0], model, secrets=keys)
+        else:
+            result = await check_chat(GEMINI_OPENAI_URL, keys[0], model, secrets=keys,
+                                      json_mode=conn.caps.get("json_mode", True) is not False)
         if result["ok"] and len(keys) > 1:
             result["message"] += f"（用第 1 把測試，共 {len(keys)} 把會輪流使用）"
         return result

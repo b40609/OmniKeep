@@ -268,7 +268,7 @@ async def analyze_storyboard_vision(tile_path: str) -> str:
             gemini_prov = get_gemini_provider()
             key = gemini_prov._get_next_key()
             if key:
-                client = genai.Client(api_key=key)
+                client = gemini_prov.make_client(key)
                 resp = await _generate_content(
                     client, gemini_prov.status_key, gemini_prov.label, gemini_prov.limiter,
                     model=gemini_prov.model,
@@ -328,7 +328,7 @@ async def transcribe_audio_stream(audio_path: str) -> str:
             gemini_prov = get_gemini_provider()
             key = gemini_prov._get_next_key()
             if key:
-                client = genai.Client(api_key=key)
+                client = gemini_prov.make_client(key)
                 with open(audio_path, "rb") as af:
                     audio_bytes = af.read()
                 resp = await _generate_content(
