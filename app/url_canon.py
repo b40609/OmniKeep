@@ -61,8 +61,13 @@ def _youtube_id(host: str, path: str, params: list) -> Optional[str]:
     return candidate if _YOUTUBE_ID.match(candidate or "") else None
 
 
-def canonical_url(url: str) -> str:
-    """The canonical form of `url`; '' for empty input. Text around a link is ignored."""
+def canonical_url(url: str, repo_level: bool = True) -> str:
+    """The canonical form of `url`; '' for empty input. Text around a link is ignored.
+
+    repo_level folds every GitHub page into its repository (a release, an issue and the README
+    all name the same project), which is what citations and the queue want. The radar compares
+    pages, where a new release is new: it passes repo_level=False.
+    """
     if not url:
         return ""
     clean = url.strip()
@@ -99,10 +104,14 @@ def canonical_url(url: str) -> str:
         if m:
             return f"https://www.threads.net/{m.group(1).lower()}/post/{m.group(2)}"
     if bare == "github.com":
-        m = re.match(r"^/([^/]+)/([^/]+)", path)
+        m = re.match(r"^/([^/]+)/([^/]+)(/.*)?$", path)
         if m:
             repo = m.group(2)[:-4] if m.group(2).lower().endswith(".git") else m.group(2)
-            return f"https://github.com/{m.group(1).lower()}/{repo.lower()}"
+            if repo_level:
+                return f"https://github.com/{m.group(1).lower()}/{repo.lower()}"
+            # Owner and repository names ignore case; the rest of the path (tags, files) may not.
+            scheme, netloc = "https", "github.com"
+            path = f"/{m.group(1).lower()}/{repo.lower()}{m.group(3) or ''}"
 
     path = path.rstrip("/")
     if path.endswith(".git"):

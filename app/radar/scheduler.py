@@ -16,9 +16,9 @@ from app.database import (
     get_last_radar_digest_at,
     get_latest_radar_digests,
     get_radar_items_updated_since,
-    find_item_by_canonical_or_url,
-    normalize_canonical_url,
+    find_item_by_same_page,
 )
+from app.url_canon import canonical_url
 from app.radar.adapters import get_adapter
 from app.radar.recommender import score_item_detailed, rank_items_with_exploration
 from app.radar.clustering import cluster_item_to_event
@@ -360,12 +360,13 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
             logger.warning(f"[Radar:Scheduler] Failed to scan source {src.get('name')}: {e}")
             continue
         for raw in raw_items or []:
-            canon = normalize_canonical_url(raw.url)
+            canon = canonical_url(raw.url, repo_level=False)
             if canon in seen:
                 continue
             seen.add(canon)
-            # Same page under another link (tracking parameters, youtu.be vs watch?v=) counts too.
-            row = find_item_by_canonical_or_url(raw.url)
+            # Same page under another link (tracking parameters, youtu.be vs watch?v=) counts too;
+            # another page of a known repository (a new release) does not.
+            row = find_item_by_same_page(raw.url)
             if row and row["analysis_status"] != "pending":
                 continue  # already ingested; pending stubs wait for backfill
             if row and row["url"] != raw.url:

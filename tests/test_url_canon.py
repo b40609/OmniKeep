@@ -98,3 +98,38 @@ async def test_radar_skips_a_known_page_and_the_same_story_from_two_feeds():
         from app.radar.scheduler import run_radar_cycle
         await run_radar_cycle(force=True, auto_digest=False)
     assert [call.args[0] for call in analyzed.await_args_list] == ["https://example.com/fresh?utm_medium=feed"]
+
+
+def test_same_page_keeps_a_repositorys_pages_apart():
+    _item("repo", "https://github.com/acme/tool")
+    _item("rel1", "https://github.com/acme/tool/releases/tag/v1.0.0")
+    assert canonical_url("https://github.com/acme/tool/releases/tag/v2.0.0") == "https://github.com/acme/tool"
+    assert canonical_url("https://github.com/Acme/tool/releases/tag/v2.0.0/", repo_level=False) == \
+        "https://github.com/acme/tool/releases/tag/v2.0.0"
+    assert db.find_item_by_same_page("https://github.com/acme/tool/releases/tag/v2.0.0") is None
+    assert db.find_item_by_same_page("https://github.com/acme/tool/releases/tag/v1.0.0?utm_source=x")["id"] == "rel1"
+    _item("yt2", f"https://youtu.be/{OTHER}")
+    assert db.find_item_by_same_page(f"https://www.youtube.com/watch?v={OTHER}&si=1")["id"] == "yt2"
+
+
+async def test_radar_still_analyzes_a_new_release_of_a_known_repository():
+    _item("repo2", "https://github.com/acme/widget")
+    raws = [RawFeedItem(url="https://github.com/acme/widget/releases/tag/v3.0.0", title="v3", content="",
+                        source_id="gh", source_type="github")]
+
+    class Adapter:
+        async def fetch_latest(self, src):
+            return raws
+
+    analyzed = AsyncMock(return_value=None)
+    with patch("app.radar.scheduler.get_all_radar_sources", return_value=[{"id": "gh", "source_type": "github"}]), \
+            patch("app.radar.scheduler.get_adapter", return_value=Adapter()), \
+            patch("app.radar.scheduler.is_source_due", return_value=True), \
+            patch("app.radar.scheduler.pregate_item", return_value=(1.0, False)), \
+            patch("app.radar.scheduler.get_radar_settings",
+                  return_value={"max_analyze_per_cycle": 5, "notification_mode": "silent"}), \
+            patch("app.radar.scheduler._backfill_pending", new=AsyncMock(return_value=[])), \
+            patch("app.radar.scheduler._analyze_candidate", new=analyzed):
+        from app.radar.scheduler import run_radar_cycle
+        await run_radar_cycle(force=True, auto_digest=False)
+    assert [call.args[0] for call in analyzed.await_args_list] == [raws[0].url]

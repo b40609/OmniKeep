@@ -1346,6 +1346,33 @@ def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
     conn.close()
     return None
 
+def find_item_by_same_page(url: str) -> Optional[Dict[str, Any]]:
+    """The item stored under `url` or under another link to the same page (tracking
+    parameters, youtu.be vs watch?v=, twitter vs x). Unlike find_item_by_canonical_or_url it
+    keeps GitHub pages apart, so a repository's new release is not taken for the repository."""
+    from app.url_canon import canonical_url, search_key
+    if not url:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM items WHERE url = ? LIMIT 1", (url,)).fetchone()
+        if row is None:
+            canon = canonical_url(url, repo_level=False)
+            key = search_key(canon)
+            if key:
+                escaped = key.replace("~", "~~").replace("%", "~%").replace("_", "~_")
+                candidates = conn.execute("SELECT * FROM items WHERE lower(url) LIKE ? ESCAPE '~'",
+                                          (f"%{escaped}%",)).fetchall()
+                row = next((c for c in candidates if canonical_url(c["url"], repo_level=False) == canon), None)
+    if row is None:
+        return None
+    d = dict(row)
+    try:
+        d["tech_tags"] = json.loads(d["tech_tags"])
+    except Exception:
+        d["tech_tags"] = []
+    return d
+
+
 def save_citation(data: Dict[str, Any]) -> str:
     """Save or update citation relationship between a parent digest and a child entity"""
     conn = get_db_connection()
