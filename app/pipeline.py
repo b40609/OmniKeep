@@ -92,6 +92,16 @@ ANALYSIS_DEPTH_RULES = {
 }
 
 
+# Marks an analysis made without seeing the content (survey 2026-10-25, gap P1): the
+# reader must not mistake a guess from the title for a summary of the video.
+METADATA_ONLY_TAG = "（只看了標題與說明）"
+
+
+def metadata_only_note(description: str) -> str:
+    source = "影片標題與說明欄" if (description or "").strip() else "影片標題（沒有說明欄）"
+    return f"⚠️ 證據不足：這篇分析只根據{source}，沒有看到影片內容或逐字稿。重點請回原影片確認。"
+
+
 def hardware_heading() -> str:
     """Heading of the AI-model hardware section; names the machine only if the owner entered it."""
     hardware = (settings.LOCAL_HARDWARE or "").strip()
@@ -277,6 +287,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     clean_input = content_input.strip()
     raw_html = ""
     fallback_summary = "已儲存內容，無詳細摘要。"
+    evidence_note = ""  # set when the analysis could not see the content itself
 
     user_note = ""
     if "#note=" in clean_input:
@@ -335,6 +346,8 @@ URL：{url}
                     prompt += interest_profile_block()
                     ai_result = await gemini.analyze_youtube(url, prompt)
                 except Exception as e:
+                    logger.warning("YouTube video analysis failed (%s); analysing title and description only", e)
+                    evidence_note = metadata_only_note(desc_text)
                     primary = get_primary_provider()
                     prompt = f"""分析此 YouTube 影片資訊：
 標題：{default_title}
@@ -348,6 +361,7 @@ URL：{url}
                     prompt += interest_profile_block()
                     ai_result = await _analyze_with_guardrails(primary, prompt)
             else:
+                evidence_note = metadata_only_note(desc_text)
                 primary = get_primary_provider()
                 prompt = f"""分析此 YouTube 影片資訊：
 標題：{default_title}
@@ -479,6 +493,9 @@ URL：{url}
         tech_tags = [t.strip() for t in tech_tags.split(",") if t.strip()]
 
     deep_analysis = ai_result.get("deep_analysis", "")
+    if evidence_note:
+        summary_l1 = f"{METADATA_ONLY_TAG}{summary_l1}"
+        deep_analysis = f"> {evidence_note}\n\n{deep_analysis}" if deep_analysis else f"> {evidence_note}"
 
     if user_note and not content_raw.startswith("## 使用者隨手筆記"):
         content_raw = f"## 使用者隨手筆記/備忘\n{user_note}\n\n" + content_raw
