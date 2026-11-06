@@ -7,7 +7,7 @@ import openai
 import pytest
 from fastapi.testclient import TestClient
 
-from app import ai_connections, ai_status, app_settings, connection_checks, error_translate, providers
+from app import ai_connections, ai_status, app_settings, connection_checks, error_translate, provider_catalog, providers
 from app.config import settings
 from app.database import get_db_connection
 from app.main import app
@@ -131,7 +131,7 @@ def test_slots_check_what_each_task_can_use():
         assert ok.status_code == 200 and ok.json()["reindex_hint"] is False
     assert providers.has_video_provider()
     assert isinstance(providers.get_gemini_provider(), ChainProvider)
-    assert providers.get_gemini_provider().model == "gemini-2.5-flash"  # reel.py reads it directly
+    assert providers.get_gemini_provider().model == provider_catalog.card("gemini")["model"]  # reel.py reads it directly
 
 
 def test_changing_the_embedding_model_asks_for_a_rebuild():
