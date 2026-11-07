@@ -73,8 +73,11 @@ def test_backup_then_reanalyse_then_resume_then_restore(setup):
     assert item["category_name"] == "文章"  # the category stays
     assert db.get_item_by_id("skip-proposal")["summary_l1"] == "舊摘要"
 
-    # A second run skips what is done, and a second backup never replaces the first one.
+    # A second run skips what is done, and leaves alone what was collected after the backup.
+    _item("b3-after-backup")
     assert _run(conn, out)["todo"] == 0
+    assert db.get_item_by_id("b3-after-backup")["summary_l1"] == "舊摘要"
+    # A second backup never replaces the first one.
     tool.write_backup(out, tool.candidates(min_chars=0))
     assert (out / "before.jsonl").read_text(encoding="utf-8") == first
 

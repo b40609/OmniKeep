@@ -133,7 +133,9 @@ async def run(connection_id: int, out: Path, limit: Optional[int], concurrency: 
     system_prompt = analysis_system_prompt()
     categories = ", ".join(c["name"] for c in get_all_categories())
     done_ids = {row["id"] for row in read_jsonl(out / "done.jsonl")}
-    todo = [i for i in candidates() if i["id"] not in done_ids]
+    # Only items in the backup: anything collected after it has no copy to restore.
+    backed_up = {row["id"] for row in read_jsonl(out / "before.jsonl")}
+    todo = [i for i in candidates() if i["id"] in backed_up and i["id"] not in done_ids]
     if limit is not None:
         todo = todo[:limit]
     stats = {"todo": len(todo), "done": 0, "failed": 0}
