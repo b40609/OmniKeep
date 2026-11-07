@@ -5,7 +5,8 @@ import { initTheme } from '@/composables/useTheme'
 import { useKeyboard } from '@/composables/useKeyboard'
 import { useItemsStore } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
-import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, checkLocalAuth, type SessionBridgeSnapshot } from '@/lib/api'
+import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, checkLocalAuth, redeemPairingCode, type SessionBridgeSnapshot } from '@/lib/api'
+import { asPairingCode } from '@/lib/pairing'
 import { linkedPanel, OPEN_LINK_MESSAGE } from '@/lib/push'
 import { readClipRequest } from '@/lib/bookmarklet'
 import { readSettingsLink } from '@/lib/settingsLink'
@@ -107,6 +108,28 @@ async function login(explicitKey?: string, isAuto = false): Promise<boolean> {
   }
 }
 
+/** A one-time pairing code from a signed-in screen is traded for the key first. */
+async function signInWithCode(code: string): Promise<boolean> {
+  loggingIn.value = true
+  loginError.value = ''
+  let key = ''
+  try {
+    key = await redeemPairingCode(code)
+  } catch (error) {
+    loginError.value = error instanceof Error ? error.message : '配對碼無效'
+    return false
+  } finally {
+    loggingIn.value = false
+  }
+  credential.value = ''
+  return login(key)
+}
+
+function submitLogin() {
+  const code = asPairingCode(credential.value)
+  return code ? signInWithCode(code) : login()
+}
+
 async function checkUrlParamIngest() {
   const clip = readClipRequest(window.location.search)
   if (clip) {
@@ -152,6 +175,13 @@ async function bootstrapAuth() {
       rememberKey.value = true
       const ok = await login(urlKey, true)
       if (ok) return
+    }
+    // 0b. A one-time pairing code from the QR code on a signed-in screen (#pair=...).
+    const urlCode = asPairingCode(fragment.get('pair') || '')
+    if (urlCode) {
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
+      rememberKey.value = true
+      if (await signInWithCode(urlCode)) return
     }
 
     // 1. Check local browser storage first
@@ -266,7 +296,7 @@ onUnmounted(() => {
     </div>
   </div>
 
-  <form v-else-if="!signedIn" class="relative z-10 mx-auto mt-24 flex max-w-sm flex-col gap-4 rounded-xl border bg-background p-8 text-foreground shadow-2xl" @submit.prevent="login()">
+  <form v-else-if="!signedIn" class="relative z-10 mx-auto mt-24 flex max-w-sm flex-col gap-4 rounded-xl border bg-background p-8 text-foreground shadow-2xl" @submit.prevent="submitLogin()">
     <div class="flex items-center justify-between">
       <h1 class="text-xl font-semibold">登入 OmniKeep</h1>
       <button
@@ -278,17 +308,22 @@ onUnmounted(() => {
         自動辨識登入
       </button>
     </div>
-    <label for="api-key" class="text-xs font-medium text-muted-foreground">存取金鑰</label>
+    <label for="api-key" class="text-xs font-medium text-muted-foreground">存取金鑰或配對碼</label>
+    <!-- Shown while short enough to be an 8-letter pairing code; a pasted key is longer and stays hidden. -->
     <input
       id="api-key"
       v-model="credential"
-      type="password"
+      :type="credential.length <= 9 ? 'text' : 'password'"
       autocomplete="off"
-      placeholder="貼上 API 金鑰或點擊自動辨識"
+      autocapitalize="off"
+      autocorrect="off"
+      spellcheck="false"
+      placeholder="貼上 API 金鑰，或輸入 8 碼配對碼"
       required
       class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
     />
-    
+    <p class="-mt-2 text-2xs text-muted-foreground">配對碼在電腦上的「設定 → 系統 → 手機登入」產生，5 分鐘內有效。</p>
+
     <div class="flex items-center gap-2">
       <input
         id="remember-key"

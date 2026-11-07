@@ -12,6 +12,7 @@ import {
 import { useUiStore } from '@/stores/ui'
 import TelegramPairing from './TelegramPairing.vue'
 import AiProvidersPanel from './AiProvidersPanel.vue'
+import MobilePairing from './MobilePairing.vue'
 
 /** Everything that used to need .env edits: saved in the app, applied at once, keys never shown again. */
 const ui = useUiStore()
@@ -337,6 +338,7 @@ const inputClass =
 
           <!-- System: read-only bootstrap values, master key, import from .env -->
           <template v-if="ui.settingsTab === 'system'">
+            <MobilePairing />
             <section class="space-y-2">
               <h3 class="text-xs font-semibold">啟動設定（唯讀）</h3>
               <p class="text-2xs text-muted-foreground">服務啟動、開資料庫之前就要用到，或負責保護這個設定頁的登入，所以仍放在 .env。</p>
