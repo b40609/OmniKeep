@@ -20,6 +20,7 @@ from app.parsers import (
     is_bilibili_url,
     parse_bilibili_video
 )
+from app.parsers.blocked import detect_blocked_page, is_error_title, reason_text
 from app.parsers.reel import is_video_reel_url, parse_video_reel
 from app.parsers.threads import is_threads_url, parse_threads_page
 from app.providers import get_primary_provider, get_gemini_provider, has_video_provider
@@ -100,6 +101,37 @@ METADATA_ONLY_TAG = "（只看了標題與說明）"
 def metadata_only_note(description: str) -> str:
     source = "影片標題與說明欄" if (description or "").strip() else "影片標題（沒有說明欄）"
     return f"⚠️ 證據不足：這篇分析只根據{source}，沒有看到影片內容或逐字稿。重點請回原影片確認。"
+
+
+# Marks an item whose fetch got only an error / anti-bot page (or nothing) and that had no
+# title or description to go on either: no AI analysis was made, so nothing could be invented.
+FETCH_FAILED_TAG = "（擷取失敗）"
+
+# Kinds whose content_raw is text scraped from the page, so may be the site's error page.
+BLOCK_CHECKED_KINDS = ("web", "threads")
+
+
+def blocked_page_note(reason_line: str, source: str) -> str:
+    return f"⚠️ 證據不足：{reason_line}，沒有看到原文。這篇分析只根據{source}。重點請回原網頁確認。"
+
+
+def fetch_failed_note(reason_line: str) -> str:
+    return (f"⚠️ 擷取失敗：{reason_line}，沒有看到原文，也沒有標題或描述可以分析，所以沒有做 AI 分析。"
+            "可以從瀏覽器用書籤小工具重新收藏，或之後重新擷取。")
+
+
+def _title_from_url(url: str) -> str:
+    from urllib.parse import urlparse
+    parts = urlparse(url)
+    return f"{parts.netloc}{parts.path}".rstrip("/")[:80] or url[:80]
+
+
+def fetch_failed_fields(url: str, reason_line: str) -> Dict[str, Any]:
+    """Title, summary, deep analysis and tags of an item kept without any AI analysis."""
+    return {"title_l1": _title_from_url(url),
+            "summary_l1": f"{FETCH_FAILED_TAG}{reason_line}，沒有看到原文。",
+            "deep_analysis": f"> {fetch_failed_note(reason_line)}",
+            "tech_tags": []}
 
 
 def hardware_heading() -> str:
@@ -225,6 +257,7 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
     parsed: Dict[str, Any] = {
         "url": url, "content_raw": "", "cover_image": "", "author": "", "title": "",
         "original_title": "", "description": "", "raw_html": "", "fallback_summary": "",
+        "http_status": None,
     }
     short_video = is_youtube_shorts_url(url) or is_video_reel_url(url)
     if short_video and not light:
@@ -273,7 +306,8 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
                       title=page_title or page_data.get("title", "未命名項目"),
                       original_title=page_data.get("title", ""),
                       fallback_summary=page_description,
-                      raw_html=page_data.get("raw_html") or (page_data.get("meta") or {}).get("raw_html") or "")
+                      raw_html=page_data.get("raw_html") or (page_data.get("meta") or {}).get("raw_html") or "",
+                      http_status=page_data.get("http_status"))
     return parsed
 
 
@@ -288,6 +322,9 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     raw_html = ""
     fallback_summary = "已儲存內容，無詳細摘要。"
     evidence_note = ""  # set when the analysis could not see the content itself
+    blocked = None  # REASONS key when the fetch got the site's error / anti-bot page
+    fetch_failed = False  # blocked and nothing else to analyse: no AI call at all
+    reason_line = ""
 
     user_note = ""
     if "#note=" in clean_input:
@@ -309,8 +346,45 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
         default_title = parsed["title"]
         raw_html = parsed["raw_html"]
         fallback_summary = parsed["fallback_summary"] or fallback_summary
+        if kind in BLOCK_CHECKED_KINDS:
+            blocked = detect_blocked_page(content_raw, parsed.get("http_status"))
 
-        if kind == "reel_vision":
+        if blocked:
+            # Never analyse an error page as if it were the article (2026-11-07: X's
+            # "enable JavaScript" page came back as a confident, invented deep analysis).
+            reason_line = reason_text(blocked, parsed.get("http_status"))
+            titles = []
+            for candidate in (page_title, parsed["original_title"] or default_title):
+                candidate = (candidate or "").strip()
+                if candidate and candidate not in titles and not is_error_title(candidate):
+                    titles.append(candidate)
+            description = (page_description or "").strip()
+            has_metadata = bool(titles or description or user_note)
+            logger.warning("[Pipeline] %s: %s (%s)", url, reason_line,
+                           "analysing title/description only" if has_metadata else "no AI analysis")
+            if has_metadata:
+                seen = "、".join(label for label, value in (("網頁標題", titles), ("描述", description),
+                                                            ("你的備註", user_note)) if value)
+                evidence_note = blocked_page_note(reason_line, seen)
+                default_title = titles[0] if titles else _title_from_url(url)
+                note_line = f"\n使用者備註：{user_note[:2000]}" if user_note else ""
+                primary = get_primary_provider()
+                prompt = f"""以下網址的內文沒有擷取到：{reason_line}，伺服器拿到的不是原文。
+只能根據下面的標題與描述分析。標題與描述沒寫到的細節（數據、規格、架構、程式碼、人名、時間）一律不要補，也不要用你對這個網站或專案的既有印象延伸；不要分析錯誤頁本身或網站的擋爬機制。資訊不夠就把 summary_l1 與 deep_analysis 寫短，只條列標題與描述中明確出現的資訊。
+網址：{url}
+標題：{" / ".join(titles) or "（沒有標題）"}
+描述：{description[:3000] or "（沒有描述）"}{note_line}
+
+候選分類清單：[{cat_list_str}]
+
+請依據規範輸出結構化 JSON；sub_entities 只列標題或描述中明確寫出的專案，沒有就填 []。"""
+                prompt += interest_profile_block()
+                ai_result = await _analyze_with_guardrails(primary, prompt)
+            else:
+                fetch_failed = True
+                ai_result = {}
+
+        elif kind == "reel_vision":
             # Short Video Reel (YouTube Shorts / Facebook / Instagram Reels with Vision OCR + Whisper STT)
             primary = get_primary_provider()
             prompt = f"""請深度分析以下短影音情報與畫面視覺 OCR 辨識結果：
@@ -493,7 +567,10 @@ URL：{url}
         tech_tags = [t.strip() for t in tech_tags.split(",") if t.strip()]
 
     deep_analysis = ai_result.get("deep_analysis", "")
-    if evidence_note:
+    if fetch_failed:
+        failed = fetch_failed_fields(url, reason_line)
+        title_l1, summary_l1, deep_analysis = failed["title_l1"], failed["summary_l1"], failed["deep_analysis"]
+    elif evidence_note:
         summary_l1 = f"{METADATA_ONLY_TAG}{summary_l1}"
         deep_analysis = f"> {evidence_note}\n\n{deep_analysis}" if deep_analysis else f"> {evidence_note}"
 
@@ -525,7 +602,7 @@ URL：{url}
     item_record["id"] = item_id
 
     # 2.5 Monolith HTML Snapshot & Vector Embedding (B-full)
-    if raw_html:
+    if raw_html and not blocked:  # a snapshot of the error page would only mislead
         try:
             from app.snapshot import save_html_snapshot
             save_html_snapshot(item_id, raw_html, url)
@@ -544,7 +621,10 @@ URL：{url}
     # 2.8 Mentioned Open-Source Tool Resolution (Automated Entity Linking for professional domain)
     LIFE_ENTERTAINMENT_CATEGORIES = {"生活娛樂", "迷因語錄", "美食", "旅遊", "隔離區"}
     has_github_mention = "github" in (content_raw + " " + default_title).lower() or "開源" in (content_raw + " " + default_title)
-    if not is_sub_task and "github.com" not in url and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
+    # An error page names no tools, and projects guessed from a title alone are how
+    # made-up GitHub repos got collected: no tool resolution, fan-out or alternatives.
+    follow_up = not is_sub_task and not blocked
+    if follow_up and "github.com" not in url and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
         try:
             from app.research.tool_resolver import resolve_mentioned_tools
             resolved_subs = await resolve_mentioned_tools(content_raw, default_title, ai_result)
@@ -555,7 +635,7 @@ URL：{url}
 
     # 3. Entity Fan-out & Citation Linking (Deduplication & Unpacking)
     sub_entities = ai_result.get("sub_entities", [])
-    if isinstance(sub_entities, list) and sub_entities and not is_sub_task and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
+    if isinstance(sub_entities, list) and sub_entities and follow_up and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
         for sub in sub_entities:
             if not isinstance(sub, dict):
                 continue
@@ -600,7 +680,7 @@ URL：{url}
                             logger.warning(f"[Entity Fan-out] Error scheduling child spawn: {e}")
 
     # 4. In-Database Competitor & Superior Alternative Detection
-    if not is_sub_task and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
+    if follow_up and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
         try:
             from app.research.competitor_detector import detect_competitors_and_alternatives
             await detect_competitors_and_alternatives(

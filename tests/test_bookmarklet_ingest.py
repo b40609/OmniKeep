@@ -40,25 +40,30 @@ async def _run(provider_result, **hints):
     with patch.object(pipeline, "get_primary_provider", return_value=provider), \
          patch.object(pipeline, "parse_web_page", AsyncMock(return_value=dict(LOGIN_WALL))):
         item = await pipeline.run_pipeline("https://example.com/members/post", **hints)
-    return item, provider.generate_json.await_args.args[0]
+    return item, provider.generate_json
 
 
+# The server got no text, so the analysis may only use what the browser saw, and says so
+# (app/parsers/blocked.py, 2026-11-07).
 async def test_browser_view_rescues_a_login_walled_page():
-    item, prompt = await _run({}, page_title="會員限定：Rust 非同步實戰", page_description="從 Tokio 到 io_uring 的效能比較")
+    item, generate = await _run({}, page_title="會員限定：Rust 非同步實戰", page_description="從 Tokio 到 io_uring 的效能比較")
+    prompt = generate.await_args.args[0]
     saved = get_item_by_id(item["id"])
     assert saved["title_l1"] == "會員限定：Rust 非同步實戰"
-    assert saved["summary_l1"] == "從 Tokio 到 io_uring 的效能比較"
-    assert "瀏覽器看到的標題：會員限定：Rust 非同步實戰" in prompt
-    assert "瀏覽器看到的描述：從 Tokio 到 io_uring 的效能比較" in prompt
+    assert saved["summary_l1"] == pipeline.METADATA_ONLY_TAG + "從 Tokio 到 io_uring 的效能比較"
+    assert "標題：會員限定：Rust 非同步實戰" in prompt
+    assert "描述：從 Tokio 到 io_uring 的效能比較" in prompt
+    assert "未能擷取到網頁內文" not in prompt
 
 
 async def test_ai_analysis_still_wins_over_the_hints():
     item, _ = await _run({"title_l1": "AI 標題", "summary_l1": "AI 摘要"}, page_title="瀏覽器標題",
                          page_description="瀏覽器描述")
-    assert (item["title_l1"], item["summary_l1"]) == ("AI 標題", "AI 摘要")
+    assert (item["title_l1"], item["summary_l1"]) == ("AI 標題", pipeline.METADATA_ONLY_TAG + "AI 摘要")
 
 
-async def test_without_hints_nothing_changes():
-    item, prompt = await _run({})
-    assert (item["title_l1"], item["summary_l1"]) == ("未知標題", "已儲存內容，無詳細摘要。")
-    assert "瀏覽器看到的" not in prompt
+async def test_without_hints_there_is_nothing_to_analyse():
+    item, generate = await _run({})
+    generate.assert_not_awaited()  # no AI analysis made up from an empty page
+    assert item["title_l1"] == "example.com/members/post"
+    assert item["summary_l1"].startswith(pipeline.FETCH_FAILED_TAG)
