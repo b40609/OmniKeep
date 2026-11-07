@@ -7,6 +7,20 @@ from typing import Optional, List, Dict, Any
 from app.providers.base import BaseLLMProvider
 from app.config import settings
 
+# google-genai sets no timeout, so a stalled connection waits forever (seen 2026-11-07: five
+# batch calls hung for 8 hours). A high-thinking answer can take several minutes; video longer.
+TIMEOUT_MS = 900_000
+
+
+def genai_client(key: str, vertexai: bool = False):
+    """A google-genai client for one key, AI Studio or Vertex AI express mode, with a timeout."""
+    from google import genai
+    from google.genai import types as gtypes
+    options = gtypes.HttpOptions(timeout=TIMEOUT_MS)
+    if vertexai:
+        return genai.Client(api_key=key, vertexai=True, http_options=options)
+    return genai.Client(api_key=key, http_options=options)
+
 
 async def _generate_content(client, status_key: str = "gemini", label: str = "", rate_limiter=None, **kwargs):
     """Run `generate_content` without blocking the event loop.
@@ -61,8 +75,7 @@ class GeminiProvider(BaseLLMProvider):
 
     def make_client(self, key: str):
         """A google-genai client for one key: AI Studio, or Vertex AI express mode."""
-        from google import genai
-        return genai.Client(api_key=key, vertexai=True) if self.vertexai else genai.Client(api_key=key)
+        return genai_client(key, self.vertexai)
 
     def _config(self, **kwargs):
         """GenerateContentConfig with the connection's thinking level, when one is set."""

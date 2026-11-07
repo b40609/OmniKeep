@@ -361,7 +361,7 @@ async def test_embedding_custom_base_url_and_gemini_async_offload(monkeypatch):
             return R()
 
     class DummyGenaiClient:
-        def __init__(self, api_key):
+        def __init__(self, api_key, **options):
             self.models = DummyModels()
 
     import google.genai as genai_mod

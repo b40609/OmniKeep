@@ -56,7 +56,7 @@ def _install_fake_genai(monkeypatch, *, with_aio: bool, delay: float, calls: Lis
             self.models = _AsyncModels()
 
     class _Client:
-        def __init__(self, api_key: str):
+        def __init__(self, api_key: str, **options):
             self.api_key = api_key
             self.models = _SyncModels()
             if with_aio:
@@ -67,6 +67,7 @@ def _install_fake_genai(monkeypatch, *, with_aio: bool, delay: float, calls: Lis
     types_mod = _types.ModuleType("google.genai.types")
     types_mod.GenerateContentConfig = _Config
     types_mod.Part = _Part
+    types_mod.HttpOptions = _Config
     genai_mod.types = types_mod
     google_mod = _types.ModuleType("google")
     google_mod.genai = genai_mod

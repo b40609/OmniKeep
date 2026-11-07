@@ -7,7 +7,7 @@ import pytest
 
 from app import ai_connections, connection_checks, provider_catalog
 from app.providers import build_provider
-from app.providers.gemini import GeminiProvider
+from app.providers.gemini import TIMEOUT_MS, GeminiProvider
 
 KEY = "AQ.test-vertex-key-1234567890"
 
@@ -54,14 +54,18 @@ def test_provider_talks_to_vertex_only_for_the_vertex_card(fake_genai):
     assert build_provider(studio).vertexai is False
     build_provider(vertex).make_client(KEY)
     build_provider(studio).make_client("AIza-test-key-1234567890")
-    assert fake_genai.made == [{"api_key": KEY, "vertexai": True}, {"api_key": "AIza-test-key-1234567890"}]
+    made = [{k: v for k, v in m.items() if k != "http_options"} for m in fake_genai.made]
+    assert made == [{"api_key": KEY, "vertexai": True}, {"api_key": "AIza-test-key-1234567890"}]
+    # Without a timeout a stalled connection waits forever.
+    assert all(m["http_options"].timeout == TIMEOUT_MS for m in fake_genai.made)
 
 
 def test_connection_test_uses_vertex_and_hides_the_key(fake_genai):
     conn = ai_connections.create({"card": "vertex", "key": KEY})
     ok = asyncio.run(connection_checks.check_connection(conn))
     assert ok["ok"] and "Vertex" in ok["message"]
-    assert fake_genai.made[-1] == {"api_key": KEY, "vertexai": True}
+    assert fake_genai.made[-1]["api_key"] == KEY and fake_genai.made[-1]["vertexai"] is True
+    assert fake_genai.made[-1]["http_options"].timeout == TIMEOUT_MS
     fake_genai.fail = True
     bad = asyncio.run(connection_checks.check_connection(conn))
     assert not bad["ok"] and bad["status"] == 403
