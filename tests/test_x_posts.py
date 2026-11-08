@@ -5,8 +5,8 @@ import json
 import pytest
 
 from app.parsers import x_posts
-from app.parsers.x_posts import (LONG_POST_NOTE, from_fxtwitter, from_oembed, from_syndication, from_vxtwitter,
-                                 parse_x_post, render, syndication_token, x_status)
+from app.parsers.x_posts import (LONG_POST_NOTE, REPLIES_MISSING, from_fxtwitter, from_oembed, from_syndication,
+                                 from_vxtwitter, parse_x_post, render, syndication_token, x_status)
 
 FX = {"code": 200, "tweet": {
     "text": "这套越狱提示词居然是免费的\n\n地址在这里：https://github.com/togg53192-cmd/jailbreaks",
@@ -98,8 +98,8 @@ def _client(answers, asked):
         async def __aexit__(self, *exc):
             return False
 
-        async def get(self, url):
-            asked.append(url)
+        async def get(self, url, params=None):
+            asked.append(url + (f"?cursor={params['cursor']}" if params else ""))
             for host, answer in answers.items():
                 if host in url:
                     if isinstance(answer, Exception):
@@ -121,7 +121,8 @@ def test_the_next_source_answers_when_one_is_down(monkeypatch):
     assert page["title"] == "牧枫 (@mr_mofun) on X" and page["author"] == "牧枫 (@mr_mofun)"
     assert page["cover_image"] == "https://pbs.twimg.com/p.jpg"
     assert "https://Scrolltide.co" in page["content_raw"]
-    assert [u.split("/")[2] for u in asked] == ["api.fxtwitter.com", "cdn.syndication.twimg.com"]
+    assert REPLIES_MISSING in page["content_raw"]  # syndication has no replies: tried again later
+    assert [u.split("/")[2] for u in asked] == ["api.fxtwitter.com", "api.fxtwitter.com", "cdn.syndication.twimg.com"]
 
 
 def test_no_post_when_every_source_fails_so_the_usual_fetch_takes_over(monkeypatch):
@@ -133,7 +134,7 @@ def test_no_post_when_every_source_fails_so_the_usual_fetch_takes_over(monkeypat
         "publish.twitter.com": (404, {}),
     }, asked))
     assert asyncio.run(parse_x_post("https://x.com/u/status/2119128837267378509")) is None
-    assert len(asked) == 4
+    assert len(asked) == 5
 
 
 def test_a_profile_or_another_site_never_calls_the_mirrors(monkeypatch):
@@ -153,3 +154,82 @@ def test_web_parser_hands_x_posts_to_the_mirrors(monkeypatch):
     monkeypatch.setattr(x_posts, "parse_x_post", fake)
     page = asyncio.run(web.parse_web_page("https://x.com/a/status/2119128837267378509"))
     assert page["source"] == "FxTwitter" and "hello" in page["content_raw"]
+
+
+def _status(post_id, screen, text, to=None, replies=None, name=None):
+    return {"id": post_id, "text": text, "created_at": "Sat Nov 07 09:36:00 +0000 2026",
+            "author": {"name": name or screen, "screen_name": screen}, "media": {},
+            "replying_to": {"screen_name": to, "status": "1"} if to else None, "replies": replies}
+
+
+def _routes(routes, asked):
+    """A fake client answering by URL substring; a list answers page after page."""
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url, params=None):
+            asked.append(url + (f"?cursor={params['cursor']}" if params else ""))
+            for part, answer in routes.items():
+                if part in url:
+                    if isinstance(answer, list):
+                        answer = answer.pop(0) if answer else (200, {"replies": []})
+                    if isinstance(answer, Exception):
+                        raise answer
+                    return _Resp(*answer)
+            return _Resp(404, {})
+    return Client
+
+
+MAIN = _status("100000", "goan", "Codex + claude-mem 这套组合", replies=3, name="G哥")
+THREAD = {"status": MAIN, "thread": [MAIN, _status("100001", "goan", "安装方法：https://github.com/thedotmack/claude-mem",
+                                                    to="goan"),
+                                     _status("100009", "someone", "not the author", to="goan")]}
+
+
+def test_the_authors_follow_up_posts_and_the_replies_are_read_page_after_page(monkeypatch):
+    asked = []
+    monkeypatch.setattr(x_posts, "public_http_client", _routes({
+        "/2/thread/": (200, THREAD),
+        "/2/conversation/": [
+            (200, {"replies": [_status("100001", "goan", "安装方法", to="goan"),  # already in the thread
+                               _status("200001", "Dicklong", "@goan 现在马上去试试", to="goan", name="liftoff")],
+                   "cursor": {"bottom": "c2"}}),
+            (200, {"replies": [_status("200002", "goan", "@Dicklong 用起来吧", to="Dicklong", name="G哥")],
+                   "cursor": {"bottom": "c3"}}),
+            (200, {"replies": [], "cursor": {"bottom": "c4"}}),
+        ],
+    }, asked))
+    page = asyncio.run(parse_x_post("https://x.com/goan/status/100000"))
+    text = page["content_raw"]
+    assert page["source"] == "FxTwitter" and REPLIES_MISSING not in text
+    assert "作者接著發的 1 則貼文：\n\n（1）安装方法：https://github.com/thedotmack/claude-mem" in text
+    assert "not the author" not in text.split("留言")[0]
+    assert "留言（收錄 2 則，貼文顯示共 3 則）：" in text
+    assert "- liftoff (@Dicklong)：现在马上去试试" in text  # the leading @mention is dropped
+    assert "- G哥 (@goan) 回覆 @Dicklong：用起来吧" in text
+    assert text.count("安装方法") == 1
+    assert [u.rsplit("/", 1)[-1] for u in asked] == ["100000", "100000", "100000?cursor=c2", "100000?cursor=c3"]
+
+
+def test_replies_that_cannot_be_read_are_marked_for_a_later_try(monkeypatch):
+    monkeypatch.setattr(x_posts, "public_http_client", _routes({
+        "/2/thread/": (200, THREAD), "/2/conversation/": (500, {})}, []))
+    page = asyncio.run(parse_x_post("https://x.com/goan/status/100000"))
+    assert page["source"] == "FxTwitter" and "安装方法" in page["content_raw"]
+    assert page["content_raw"].endswith(REPLIES_MISSING)
+
+
+def test_a_post_with_no_replies_does_not_ask_for_them(monkeypatch):
+    asked = []
+    quiet = {"status": {**MAIN, "replies": 0}, "thread": [MAIN]}
+    monkeypatch.setattr(x_posts, "public_http_client", _routes({"/2/thread/": (200, quiet)}, asked))
+    page = asyncio.run(parse_x_post("https://x.com/goan/status/100000"))
+    assert REPLIES_MISSING not in page["content_raw"] and "留言" not in page["content_raw"]
+    assert len(asked) == 1

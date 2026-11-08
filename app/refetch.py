@@ -2,9 +2,10 @@
 
 A site that is down for an hour, an X mirror that is out, a bot check that passes the next time:
 the item is kept as "（擷取失敗）" and tried again 1 h after it was collected, then with the gap
-doubling (2 h, 4 h, 8 h ...) for 7 days. A try that still gets the error page costs one fetch and
-no AI call; the first one that gets the content runs the normal pipeline on the URL, the same as
-collecting it again, which rewrites the item in place.
+doubling (2 h, 4 h, 8 h ...) for 7 days. An X post whose replies could not be read is retried the
+same way. A try that still gets the error page costs one fetch and no AI call; the first one that
+gets the content runs the normal pipeline on the URL, the same as collecting it again, which
+rewrites the item in place.
 """
 import asyncio
 import logging
@@ -13,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from app.database import get_db_connection
 from app.parsers.blocked import MAX_CHARS, detect_blocked_page
+from app.parsers.x_posts import REPLIES_MISSING
 
 logger = logging.getLogger("omnikeep.refetch")
 
@@ -33,19 +35,25 @@ def _when(text: str) -> Optional[datetime]:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+def incomplete(content: str, http_status: Optional[int] = None) -> bool:
+    """The content is an error page, or an X post whose replies could not be read."""
+    return bool(detect_blocked_page(content or "", http_status)) or REPLIES_MISSING in (content or "")
+
+
 def candidates(now: datetime) -> List[Dict[str, Any]]:
-    """Items collected in the last RETRY_FOR whose stored content is an error page."""
+    """Items collected in the last RETRY_FOR whose stored content is an error page or lacks its replies."""
     marks = ",".join("?" * len(SOURCE_TYPES))
     conn = get_db_connection()
     try:
         rows = conn.execute(
             f"SELECT id, url, origin, content_raw, created_at, updated_at FROM items "
-            f"WHERE source_type IN ({marks}) AND created_at >= ? AND length(coalesce(content_raw, '')) <= ? "
+            f"WHERE source_type IN ({marks}) AND created_at >= ? "
+            f"AND (length(coalesce(content_raw, '')) <= ? OR instr(content_raw, ?) > 0) "
             f"ORDER BY created_at DESC",
-            (*SOURCE_TYPES, (now - RETRY_FOR).isoformat(), MAX_CHARS)).fetchall()
+            (*SOURCE_TYPES, (now - RETRY_FOR).isoformat(), MAX_CHARS, REPLIES_MISSING)).fetchall()
     finally:
         conn.close()
-    return [dict(r) for r in rows if detect_blocked_page(r["content_raw"] or "")]
+    return [dict(r) for r in rows if incomplete(r["content_raw"])]
 
 
 def due(item: Dict[str, Any], now: datetime) -> bool:
@@ -61,8 +69,14 @@ async def retry_one(item: Dict[str, Any], now: datetime) -> bool:
     from app.pipeline import BLOCK_CHECKED_KINDS, parse_url, run_pipeline
     _last_try[item["id"]] = now
     parsed = await parse_url(item["url"])
-    if parsed["kind"] in BLOCK_CHECKED_KINDS and detect_blocked_page(parsed["content_raw"], parsed.get("http_status")):
-        return False
+    if parsed["kind"] in BLOCK_CHECKED_KINDS:
+        content = parsed["content_raw"] or ""
+        if detect_blocked_page(content, parsed.get("http_status")):
+            return False
+        had_post = not detect_blocked_page(item.get("content_raw") or "")
+        if had_post and REPLIES_MISSING in content:
+            return False  # nothing new: the post is saved already and the replies are still missing
+    # The post now (its replies may still be missing: then it stays a candidate and is tried again).
     await run_pipeline(item["url"], origin=item.get("origin") or "manual")
     return True
 

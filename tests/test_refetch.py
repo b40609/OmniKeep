@@ -106,3 +106,34 @@ def test_a_backlog_is_worked_through_a_few_at_a_time(follow_ups, monkeypatch):
         assert asyncio.run(refetch.run_once(NOW))["tried"] == 2
         assert asyncio.run(refetch.run_once(NOW))["tried"] == 2
         assert asyncio.run(refetch.run_once(NOW))["tried"] == 1
+
+
+def test_a_post_saved_without_its_replies_is_tried_again_until_they_come(follow_ups):
+    from app.parsers.x_posts import REPLIES_MISSING
+    saved = REAL + "\n\n" + REPLIES_MISSING
+    _save("2119000000000000001", saved, NOW - timedelta(hours=3))
+    assert [i["id"] for i in refetch.candidates(NOW)] == ["2119000000000000001"]
+    provider = AsyncMock()
+    provider.generate_json = AsyncMock(return_value=dict(AI))
+    with patch("app.pipeline.parse_web_page", new=AsyncMock(return_value=_page(saved))), \
+         patch("app.pipeline.get_primary_provider", return_value=provider):
+        assert asyncio.run(refetch.run_once(NOW))["fixed"] == 0  # still no replies: no AI call
+    provider.generate_json.assert_not_awaited()
+    with patch("app.pipeline.parse_web_page", new=AsyncMock(return_value=_page(REAL + "\n\n留言（收錄 1 則）：\n- a：b"))), \
+         patch("app.pipeline.get_primary_provider", return_value=provider):
+        assert asyncio.run(refetch.run_once(NOW + timedelta(hours=4)))["fixed"] == 1  # next gap: 3 h
+    assert "留言（收錄 1 則）" in db.get_item_by_id("2119000000000000001")["content_raw"]
+    assert refetch.candidates(NOW + timedelta(hours=4)) == []
+
+
+def test_an_error_page_is_replaced_by_the_post_even_before_its_replies_come(follow_ups):
+    from app.parsers.x_posts import REPLIES_MISSING
+    _save("2119000000000000001", X_PAGE, NOW - timedelta(hours=3))
+    provider = AsyncMock()
+    provider.generate_json = AsyncMock(return_value=dict(AI))
+    with patch("app.pipeline.parse_web_page", new=AsyncMock(return_value=_page(REAL + "\n\n" + REPLIES_MISSING))), \
+         patch("app.pipeline.get_primary_provider", return_value=provider):
+        assert asyncio.run(refetch.run_once(NOW))["fixed"] == 1
+    item = db.get_item_by_id("2119000000000000001")
+    assert item["content_raw"].startswith("牧枫") and REPLIES_MISSING in item["content_raw"]
+    assert [i["id"] for i in refetch.candidates(NOW)] == ["2119000000000000001"]  # replies still to come
