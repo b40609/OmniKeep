@@ -297,6 +297,10 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
     x_post = await parse_x_post(url)  # x.com itself only answers "JavaScript is disabled"
     if x_post:
         return x_post
+    from app.parsers.npm import parse_npm_package
+    npm_page = await parse_npm_package(url)  # npmjs.com answers HTTP 403 to a plain fetch
+    if npm_page:
+        return npm_page
 
     html = ""
     http_status: Optional[int] = None

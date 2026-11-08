@@ -35,8 +35,9 @@ def test_deptry_finds_no_undeclared_or_unused_packages():
          "--requirements-files-dev", "requirements-dev.txt",
          "--known-first-party", "app",
          "--extend-exclude", r"frontend|static|\.agents|\.claude|\.codex|\.impeccable|_bmad.*",
-         # FastAPI parses form uploads with it; nothing imports it by name.
-         "--per-rule-ignores", "DEP002=python-multipart"],
+         # FastAPI parses form uploads with python-multipart and yt-dlp loads yt-dlp-ejs (its
+         # YouTube challenge solver) as a plugin; nothing imports either by name.
+         "--per-rule-ignores", "DEP002=python-multipart|yt-dlp-ejs"],
         cwd=REPO, capture_output=True, text=True, timeout=120,
     )
     assert res.returncode == 0, res.stdout + res.stderr
