@@ -117,7 +117,7 @@ def blocked_page_note(reason_line: str, source: str) -> str:
 
 def fetch_failed_note(reason_line: str) -> str:
     return (f"⚠️ 擷取失敗：{reason_line}，沒有看到原文，也沒有標題或描述可以分析，所以沒有做 AI 分析。"
-            "可以從瀏覽器用書籤小工具重新收藏，或之後重新擷取。")
+            "OmniKeep 會在 7 天內自動重抓，抓到原文就補做分析；也可以從瀏覽器用書籤小工具重新收藏。")
 
 
 def _title_from_url(url: str) -> str:
@@ -129,7 +129,7 @@ def _title_from_url(url: str) -> str:
 def fetch_failed_fields(url: str, reason_line: str) -> Dict[str, Any]:
     """Title, summary, deep analysis and tags of an item kept without any AI analysis."""
     return {"title_l1": _title_from_url(url),
-            "summary_l1": f"{FETCH_FAILED_TAG}{reason_line}，沒有看到原文。",
+            "summary_l1": f"{FETCH_FAILED_TAG}{reason_line}，沒有看到原文，稍後會自動重抓。",
             "deep_analysis": f"> {fetch_failed_note(reason_line)}",
             "tech_tags": []}
 

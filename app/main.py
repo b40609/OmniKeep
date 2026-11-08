@@ -88,6 +88,9 @@ async def _service_lifespan(app: FastAPI):
         radar_started = True
         # Always running too: each tick reads BACKUP_SINK, which the settings page can change.
         tasks.append(asyncio.create_task(backup_loop()))
+        # Items whose fetch got only an error page are fetched again for a week (app.refetch).
+        from app.refetch import refetch_loop
+        tasks.append(asyncio.create_task(refetch_loop()))
         # Telegram polling lives in app.services so a token saved in the app restarts it.
         services.start_telegram()
         yield

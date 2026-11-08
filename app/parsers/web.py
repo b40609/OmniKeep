@@ -293,6 +293,10 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
     from app.parsers.threads import is_threads_url, parse_threads_page
     if is_threads_url(url):
         return await parse_threads_page(url)
+    from app.parsers.x_posts import parse_x_post
+    x_post = await parse_x_post(url)  # x.com itself only answers "JavaScript is disabled"
+    if x_post:
+        return x_post
 
     html = ""
     http_status: Optional[int] = None

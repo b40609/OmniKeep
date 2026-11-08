@@ -14,9 +14,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
+from app import pairing
 from app.config import settings
+from app.security import configured_key
 from app.parsers.cookie_manager import (
     PLAYWRIGHT_MISSING,
     _cdp_reachable,
@@ -200,3 +203,43 @@ async def get_local_auth(request: Request):
     if not (is_trusted and settings.LOCAL_AUTO_LOGIN) or _came_through_proxy(request):
         return {"authenticated": False, "api_key": ""}
     return {"authenticated": True, "api_key": settings.API_KEY}
+
+
+# ── Phone sign-in with a one-time code (app/pairing.py) ──────────────
+class PairRequest(BaseModel):
+    code: str = Field(..., max_length=32)
+
+
+@router.post("/pairing")
+async def create_pairing():
+    """A new one-time code for a phone, shown on this signed-in screen (replaces any earlier one)."""
+    if not configured_key():
+        raise HTTPException(status_code=503, detail="先設定足夠長的 API_KEY（32 個字元以上）")
+    created = pairing.create()
+    try:
+        urls = await asyncio.to_thread(pairing.phone_urls)
+    except Exception:  # no tailscale CLI, or it timed out: the page can still use its own address
+        urls = []
+    return {**created, "ttl": pairing.TTL, "phone_urls": urls}
+
+
+@router.get("/pairing")
+async def get_pairing():
+    return pairing.status()
+
+
+@router.delete("/pairing")
+async def cancel_pairing():
+    pairing.cancel()
+    return {"ok": True}
+
+
+@router.post("/pair")
+async def redeem_pairing(req: PairRequest):
+    """Public: the code is the credential. Answers with the key once, never cached."""
+    key = configured_key()
+    if not key or not pairing.redeem(req.code):
+        return JSONResponse(status_code=400, content={"error": "配對碼不正確、已用過或已過期，請在電腦上重新產生"},
+                            headers={"Cache-Control": "no-store"})
+    logger.info("A phone signed in with a pairing code")
+    return JSONResponse({"api_key": key}, headers={"Cache-Control": "no-store"})

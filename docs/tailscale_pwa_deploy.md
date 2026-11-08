@@ -24,7 +24,7 @@ iPhone / iPad / 筆電 ──(tailnet)──> 主機上的 tailscaled :443（HTT
 | `LOCAL_AUTO_LOGIN` | `false` | 開啟時，同機瀏覽器可免輸入金鑰。經 Tailscale serve 進來的請求帶有 `X-Forwarded-For`、`Tailscale-*` 等標頭，一律不會自動登入（`app/routers/session.py`）；啟動時也會在 log 留一則警告。 |
 | `CORS_ORIGINS` | 不用設 | PWA 與 API 同源。 |
 
-手機第一次開啟時，輸入 `API_KEY` 並勾選「記住金鑰」即可。
+手機第一次登入不必輸入 `API_KEY`：在電腦上已登入的 OmniKeep 開「設定 → 系統 → 手機登入」，用手機相機掃 QR code，或在手機的登入頁輸入畫面上的 8 碼配對碼。配對碼 5 分鐘內有效、只能用一次，裡面不含金鑰；打錯 5 次就作廢，要重新產生（`app/pairing.py`）。也可以照舊貼上 `API_KEY`。
 
 ## 3. Tailscale 管理後台（一次性）
 
@@ -73,15 +73,15 @@ curl https://<主機名>.<tailnet 名>.ts.net/api/session/local-auth
 - 第一行應回 `{"status":"healthy",...}`。
 - 第二行**必須**回 `{"authenticated":false,"api_key":""}`。即使主機的 `LOCAL_AUTO_LOGIN=true` 也一樣。若回傳了金鑰，立刻關掉 serve 並回報。
 
-接著用瀏覽器開網址，輸入 `API_KEY` 登入。
+接著用瀏覽器開網址，用配對碼（第 2 節）或 `API_KEY` 登入。
 
 ## 6. 把 PWA 加到主畫面
 
 **iPhone、iPad（Safari）**
-1. 用 Safari 開 `https://<主機名>.<tailnet 名>.ts.net/` 並登入。
+1. 用 Safari 開 `https://<主機名>.<tailnet 名>.ts.net/` 並登入（掃手機登入的 QR code 會直接開到這裡並登入）。
 2. 點分享按鈕（依分頁列配置，可能在頁面選單裡），選「加入主畫面」。
 3. 新版 iOS 會出現以網頁 App 開啟的開關（英文介面是 Open as Web App），保持開啟，再點「加入」。
-4. 從主畫面圖示開啟時會是獨立視窗。第一次開啟可能需要再輸入一次金鑰。
+4. 從主畫面圖示開啟時會是獨立視窗。主畫面 App 和 Safari 不共用登入資料，第一次開啟要再登入一次：在電腦上再產生一組配對碼，輸入到 App 的登入頁。
 
 圖示只會出現在操作的那台裝置；iPad 要另外加一次。
 

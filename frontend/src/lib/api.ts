@@ -1077,6 +1077,47 @@ export function importBookmarks(
   })
 }
 
+/* ---------------- Phone sign-in with a one-time code ---------------- */
+
+export interface PhonePairing {
+  code: string
+  expires_at: number
+  ttl: number
+  /** https://<this machine>.<tailnet>.ts.net when the tailscale CLI is on the server. */
+  phone_urls: string[]
+}
+
+export interface PhonePairingStatus {
+  active: boolean
+  expires_at: number
+  /** When a phone last signed in with a code (0 = not since the code was made). */
+  used_at: number
+}
+
+export function createPhonePairing(): Promise<PhonePairing> {
+  return request<PhonePairing>('/api/session/pairing', { method: 'POST' })
+}
+
+export function getPhonePairing(): Promise<PhonePairingStatus> {
+  return request<PhonePairingStatus>('/api/session/pairing')
+}
+
+export function cancelPhonePairing(): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>('/api/session/pairing', { method: 'DELETE' })
+}
+
+/** Signed out, on the phone: trades the code for the key, or throws with the reason. */
+export async function redeemPairingCode(code: string): Promise<string> {
+  const res = await fetch('/api/session/pair', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok || !body.api_key) throw new Error(body.error || body.detail || `HTTP ${res.status}`)
+  return body.api_key as string
+}
+
 /* ---------------- Localhost Auto-Auth ---------------- */
 
 export interface LocalAuthResult {
