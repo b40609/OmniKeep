@@ -295,10 +295,12 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
         return await parse_threads_page(url)
 
     html = ""
+    http_status: Optional[int] = None
     jar = site_cookies(url)  # only this site's cookies, also across redirects
     try:
         async with public_http_client(headers=BROWSER_HEADERS, cookies=jar, timeout=20.0, follow_redirects=True) as client:
             resp = await client.get(url)
+            http_status = resp.status_code
             if resp.status_code == 200:
                 html = resp.text
     except Exception as e:
@@ -362,4 +364,5 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
         "author": "",
         "published_date": "",
         "raw_html": html or "",
+        "http_status": http_status,  # of the plain HTTP fetch; None when it raised
     }
