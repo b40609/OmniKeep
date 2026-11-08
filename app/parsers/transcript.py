@@ -70,8 +70,10 @@ def pick_track(info: Dict[str, Any]) -> Optional[Tuple[str, str, Dict[str, Any]]
     """(source, language, format entry) of the best text track, or None.
 
     The uploader's subtitles: the video's own language first, then Chinese, English and so on.
-    Automatic captions: only the speech recognition of the video's own language ("xx-orig", or the
-    language yt-dlp reports); the other languages are machine translations of it.
+    Automatic captions: only "<the video's language>-orig", the speech recognition of what is said.
+    Any other automatic track is a machine translation, and "-orig" alone is no proof: a Mandarin
+    video (language zh-Hant) offered only "en-orig", an English translation (seen 2026-11-09). With
+    the language unknown, automatic captions are not used at all; the audio is transcribed instead.
     """
     original = (info.get("language") or "").strip()
     manual = {k: v for k, v in (info.get("subtitles") or {}).items() if v and k not in ("live_chat", "rechat")}
@@ -94,10 +96,9 @@ def pick_track(info: Dict[str, Any]) -> Optional[Tuple[str, str, Dict[str, Any]]
         if fmt:
             return "subtitles", lang, fmt
 
-    auto_order = [k for k in auto if k.endswith("-orig")]
-    if original:
-        auto_order += [k for k in auto if k == original]
-    for lang in dict.fromkeys(auto_order):
+    auto_order = [k for k in auto if original and k.endswith("-orig")
+                  and _base(k.removesuffix("-orig")) == _base(original)]
+    for lang in auto_order:
         fmt = best_format(auto[lang])
         if fmt:
             return "auto", lang.removesuffix("-orig"), fmt

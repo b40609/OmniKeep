@@ -28,8 +28,11 @@ def test_chinese_subtitles_before_english_when_the_language_is_unknown():
 
 
 def test_automatic_captions_only_in_the_spoken_language():
-    info = {"automatic_captions": {"fr": [_fmt("json3")], "zh-TW": [_fmt("json3")], "en-orig": [_fmt("json3")]}}
+    info = {"language": "en", "automatic_captions": {"fr": [_fmt("json3")], "zh-TW": [_fmt("json3")], "en-orig": [_fmt("json3")]}}
     assert pick_track(info)[:2] == ("auto", "en")
+    # A Mandarin video whose only "-orig" track is English: a translation, not what is said (2026-11-09).
+    assert pick_track({"language": "zh-Hant", "automatic_captions": {"en-orig": [_fmt("json3")], "zh-Hant": [_fmt("json3")]}}) is None
+    assert pick_track({"automatic_captions": {"en-orig": [_fmt("json3")]}}) is None  # language unknown
     # Only machine translations of the speech recognition: better to transcribe the audio.
     assert pick_track({"automatic_captions": {"fr": [_fmt("json3")], "de": [_fmt("vtt")]}}) is None
     assert pick_track({}) is None
