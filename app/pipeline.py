@@ -22,6 +22,7 @@ from app.parsers import (
 )
 from app.parsers.blocked import detect_blocked_page, is_error_title, reason_text
 from app.parsers.reel import is_video_reel_url, parse_video_reel
+from app.parsers.transcript import TRANSCRIPT_MISSING, get_transcript
 from app.parsers.threads import is_threads_url, parse_threads_page
 from app.providers import get_primary_provider, get_gemini_provider, has_video_provider
 from app.config import settings
@@ -98,8 +99,10 @@ ANALYSIS_DEPTH_RULES = {
 METADATA_ONLY_TAG = "（只看了標題與說明）"
 
 
-def metadata_only_note(description: str) -> str:
+def metadata_only_note(description: str, no_speech: bool = False) -> str:
     source = "影片標題與說明欄" if (description or "").strip() else "影片標題（沒有說明欄）"
+    if no_speech:
+        return f"⚠️ 影片沒有字幕，音訊裡也沒有辨識到口語內容，這篇分析只根據{source}。重點請回原影片確認。"
     return f"⚠️ 證據不足：這篇分析只根據{source}，沒有看到影片內容或逐字稿。重點請回原影片確認。"
 
 
@@ -126,8 +129,18 @@ def _title_from_url(url: str) -> str:
     return f"{parts.netloc}{parts.path}".rstrip("/")[:80] or url[:80]
 
 
-def fetch_failed_fields(url: str, reason_line: str) -> Dict[str, Any]:
+def video_failed_note(reason_line: str) -> str:
+    return (f"⚠️ 擷取失敗：{reason_line}。只憑標題和說明欄猜不出影片講了什麼，所以沒有做 AI 分析。"
+            "OmniKeep 會在 7 天內自動重抓，讀到逐字稿就補做分析。")
+
+
+def fetch_failed_fields(url: str, reason_line: str, title: str = "", video: bool = False) -> Dict[str, Any]:
     """Title, summary, deep analysis and tags of an item kept without any AI analysis."""
+    if video:
+        return {"title_l1": title or _title_from_url(url),
+                "summary_l1": f"{FETCH_FAILED_TAG}{reason_line}，稍後會自動重抓。",
+                "deep_analysis": f"> {video_failed_note(reason_line)}",
+                "tech_tags": []}
     return {"title_l1": _title_from_url(url),
             "summary_l1": f"{FETCH_FAILED_TAG}{reason_line}，沒有看到原文，稍後會自動重抓。",
             "deep_analysis": f"> {fetch_failed_note(reason_line)}",
@@ -257,7 +270,7 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
     parsed: Dict[str, Any] = {
         "url": url, "content_raw": "", "cover_image": "", "author": "", "title": "",
         "original_title": "", "description": "", "raw_html": "", "fallback_summary": "",
-        "http_status": None,
+        "http_status": None, "transcript_status": "", "transcript_reason": "",
     }
     short_video = is_youtube_shorts_url(url) or is_video_reel_url(url)
     if short_video and not light:
@@ -266,13 +279,20 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
                       content_raw=reel_data.get("content_raw", ""),
                       cover_image=reel_data.get("cover_image", ""),
                       author=reel_data.get("author", ""),
-                      title=reel_data.get("title", "短影音情報"))
+                      title=reel_data.get("title", "短影音情報"),
+                      transcript_status=reel_data.get("transcript_status", ""),
+                      transcript_reason=reel_data.get("transcript_reason", ""))
     elif is_youtube_url(url):
         meta = await fetch_youtube_metadata(url)
         desc_text = meta.get("description", "").strip()
         desc_part = f"\n\n## 影片說明欄\n{desc_text}" if desc_text else ""
+        # light (setup previews) stays on the page metadata; the full path reads what is said.
+        transcript = None if light else await get_transcript(url, meta)
+        transcript_part = f"\n\n{transcript.section()}" if transcript else ""
         parsed.update(kind="youtube", source_type="youtube",
-                      content_raw=f"# {meta['title']}\n\n頻道: {meta['author']}\nURL: {url}{desc_part}",
+                      transcript_status=transcript.status if transcript else "",
+                      transcript_reason=transcript.reason if transcript else "",
+                      content_raw=f"# {meta['title']}\n\n頻道: {meta['author']}\nURL: {url}{desc_part}{transcript_part}",
                       cover_image=meta.get("cover_image", ""),
                       author=meta.get("author", ""),
                       title=meta.get("title", "未命名項目"),
@@ -384,6 +404,13 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                 fetch_failed = True
                 ai_result = {}
 
+        elif kind == "reel_vision" and parsed.get("transcript_status") == "failed":
+            # The clip was not downloaded, only the post's text was: same rule as a YouTube video.
+            reason_line = parsed.get("transcript_reason") or "影片沒有下載到"
+            logger.warning("[Pipeline] %s: %s; no AI analysis", url, reason_line)
+            fetch_failed = True
+            ai_result = {}
+
         elif kind == "reel_vision":
             # Short Video Reel (YouTube Shorts / Facebook / Instagram Reels with Vision OCR + Whisper STT)
             primary = get_primary_provider()
@@ -407,6 +434,8 @@ URL：{url}
 
         elif kind == "youtube":
             desc_text = parsed["description"]
+            status = parsed.get("transcript_status")
+            ai_result = None
             # If the video slot has a Gemini connection, use native YouTube video analysis
             if has_video_provider():
                 try:
@@ -420,22 +449,36 @@ URL：{url}
                     prompt += interest_profile_block()
                     ai_result = await gemini.analyze_youtube(url, prompt)
                 except Exception as e:
-                    logger.warning("YouTube video analysis failed (%s); analysing title and description only", e)
-                    evidence_note = metadata_only_note(desc_text)
-                    primary = get_primary_provider()
-                    prompt = f"""分析此 YouTube 影片資訊：
-標題：{default_title}
+                    logger.warning("YouTube video analysis failed (%s); using the transcript instead", e)
+                    ai_result = None
+            if ai_result is not None:
+                pass
+            elif status == "failed":
+                # Never pass a guess from the title and description off as the video's content
+                # (2026-11-08: 41 of 44 saved videos were analysed that way). Refetch tries again.
+                reason_line = f"影片逐字稿沒有讀到（{parsed.get('transcript_reason') or '原因不明'}）"
+                logger.warning("[Pipeline] %s: %s; no AI analysis", url, reason_line)
+                fetch_failed = True
+                ai_result = {}
+            elif status == "ok":
+                primary = get_primary_provider()
+                prompt = f"""深度分析以下 YouTube 影片，依據逐字稿（影片實際說的內容）輸出專業中文結構化總結、技術標籤與核心洞見：
+影片標題：{default_title}
 頻道：{author}
 URL：{url}
 
-影片說明：
-{desc_text[:5000] if desc_text else '(無說明欄)'}
+候選分類清單：[{cat_list_str}]
 
-候選分類清單：[{cat_list_str}]"""
-                    prompt += interest_profile_block()
-                    ai_result = await _analyze_with_guardrails(primary, prompt)
+=== 影片說明欄與逐字稿 ===
+{content_raw[:30000]}
+=== 內容結束 ===
+
+逐字稿可能有語音辨識的錯字，依上下文判讀；逐字稿沒說到的細節不要補。"""
+                prompt += interest_profile_block()
+                ai_result = await _analyze_with_guardrails(primary, prompt)
             else:
-                evidence_note = metadata_only_note(desc_text)
+                # "no_speech": nothing is said, so the title and description are all there is.
+                evidence_note = metadata_only_note(desc_text, no_speech=status == "no_speech")
                 primary = get_primary_provider()
                 prompt = f"""分析此 YouTube 影片資訊：
 標題：{default_title}
@@ -568,7 +611,8 @@ URL：{url}
 
     deep_analysis = ai_result.get("deep_analysis", "")
     if fetch_failed:
-        failed = fetch_failed_fields(url, reason_line)
+        video = parsed.get("transcript_status") == "failed"  # parsed: fetch_failed is only set for a URL
+        failed = fetch_failed_fields(url, reason_line, title=default_title if video else "", video=video)
         title_l1, summary_l1, deep_analysis = failed["title_l1"], failed["summary_l1"], failed["deep_analysis"]
     elif evidence_note:
         summary_l1 = f"{METADATA_ONLY_TAG}{summary_l1}"

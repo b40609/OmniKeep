@@ -1,4 +1,5 @@
-# Optional: on-device speech-to-text for Reels and Bilibili (docs/optional_features.md).
+# Optional: on-device speech-to-text for videos without subtitles: YouTube, Reels, Bilibili, X and
+# Threads (app/parsers/transcript.py, docs/optional_features.md).
 #   pip install -r requirements.txt -r requirements-stt.txt
 # Kept out of requirements.txt: about 210 MB of native wheels, and onnxruntime has shipped
 # wheels for new Python releases months late (3.14: four months), which would break the base install.

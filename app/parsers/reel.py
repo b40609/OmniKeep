@@ -25,6 +25,10 @@ logger = logging.getLogger("omnikeep.reel")
 
 _local_whisper_model = None
 _force_cpu_stt = False
+# tiny got Mandarin wrong too often to analyse from (and long videos now go through it too):
+# large-v3-turbo on the GPU (about 1.6 GB download, 2 GB VRAM), small on a CPU.
+GPU_STT_MODEL = "large-v3-turbo"
+CPU_STT_MODEL = "small"
 
 
 class ReelUnavailableError(RuntimeError):
@@ -89,14 +93,14 @@ def get_local_whisper_model():
                 try:
                     import ctranslate2
                     if ctranslate2.get_cuda_device_count() > 0:
-                        _local_whisper_model = WhisperModel("tiny", device="cuda", compute_type="float16")
-                        logger.info("[Local STT] Initialized faster-whisper on CUDA GPU")
+                        _local_whisper_model = WhisperModel(GPU_STT_MODEL, device="cuda", compute_type="float16")
+                        logger.info("[Local STT] Initialized faster-whisper %s on CUDA GPU", GPU_STT_MODEL)
                         return _local_whisper_model
                 except Exception as e:
                     logger.warning(f"[Local STT] CUDA init failed, falling back to CPU: {e}")
 
             threads = min(8, max(2, os.cpu_count() or 4))
-            _local_whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=threads)
+            _local_whisper_model = WhisperModel(CPU_STT_MODEL, device="cpu", compute_type="int8", cpu_threads=threads)
             logger.info(f"[Local STT] Initialized faster-whisper on CPU ({threads} threads int8)")
         except Exception as e:
             logger.warning(f"[Local STT] Could not load faster-whisper: {e}")
@@ -295,6 +299,10 @@ async def transcribe_audio_stream(audio_path: str) -> str:
 
     # 1. Try Local faster-whisper
     local_text = await _run_thread(lambda: transcribe_local_whisper(audio_path))
+    if local_text and local_text.strip():
+        from app.parsers.transcript import spoken
+        if not spoken(local_text):
+            return ""  # music or silence: Whisper's "You" / "Thank you." is not speech
     if local_text and len(local_text.strip()) > 2:
         logger.info(f"[Reel Audio] Local Whisper transcribed {len(local_text)} chars")
         return local_text.strip()
@@ -486,6 +494,12 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
             page = await parse_facebook_page(url)
         if is_empty_reel_metadata(page):
             raise ReelUnavailableError("無法取得短影音或貼文內容，請確認平台登入狀態後重新傳送連結。") from e
+        # Only the post's text: say so, so the pipeline keeps it as a fetch failure and refetch retries.
+        from app.parsers.transcript import TRANSCRIPT_MISSING, _short
+        reason = f"影片沒有下載到：{_short(e)}"
+        missing = f"## 影片逐字稿\n{TRANSCRIPT_MISSING}\n原因：{reason}"
+        page = dict(page, content_raw=f"{page.get('content_raw') or ''}\n\n{missing}",
+                    transcript_status="failed", transcript_reason=reason)
         return page
 
     finally:

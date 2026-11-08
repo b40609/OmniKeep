@@ -20,9 +20,11 @@
 pip install -r requirements.txt -r requirements-stt.txt
 ```
 
+影片沒有字幕時（YouTube、Reels、Bilibili、X 與 Threads 附帶的影片），OmniKeep 會下載音訊用它轉成逐字稿再分析（`app/parsers/transcript.py`）。沒有裝的話，沒有字幕的影片會標成「擷取失敗」，不會只憑標題和說明欄分析。
+
 裝好後要**重新啟動 OmniKeep**；程式在第一次轉錄時發現套件不存在，就會在這次執行期間停用本機轉錄。
 
-- **大小**：在 Windows、Python 3.12 上實測，安裝後多 213 MB。第一次轉錄時，還會從 Hugging Face 下載 `tiny` 模型（75.5 MB），存在 Hugging Face 快取目錄。
+- **大小**：在 Windows、Python 3.12 上實測，安裝後多 213 MB。第一次轉錄時，還會從 Hugging Face 下載模型，存在 Hugging Face 快取目錄：有 NVIDIA GPU 時是 `large-v3-turbo`（約 1.6 GB，佔約 2 GB VRAM），只有 CPU 時是 `small`（約 480 MB）。之前用的 `tiny` 中文錯字太多。
 - **CPU 與 GPU**：預設用 CPU（int8）；偵測到 NVIDIA GPU 時改用 CUDA。GPU 需要 CUDA 12 的 cuBLAS 與 cuDNN 9（pip 套件 `nvidia-cublas-cu12`、`nvidia-cudnn-cu12==9.*`，合計約 1.3 GB），安裝方式見 [faster-whisper 的說明](https://github.com/SYSTRAN/faster-whisper#gpu)。在 Windows 上，程式會自動載入 pip 安裝在 `site-packages/nvidia/*/bin` 的 DLL（`app/parsers/reel.py` 的 `_preload_cuda_dlls`）。
 - **為什麼不放進 `requirements.txt`**：它會一起安裝 onnxruntime 等需要編譯的套件。Python 3.14 在 2025-10-07 推出，但 onnxruntime 到 2026-02-05 才提供 3.14 的安裝包；如果放在基本需求，這段期間在 3.14 上連基本安裝都會失敗。分開之後，新版 Python 最多只是暫時無法使用本機轉錄。
 

@@ -356,10 +356,12 @@ async def parse_x_post(url: str) -> Optional[Dict[str, Any]]:
                 post["replies_note"] = REPLIES_MISSING  # this source has no replies
             who = _who(post)
             media = post["photos"] + [thumb for _, thumb in post["videos"] if thumb]
+            from app.parsers.transcript import attached_video_section
+            spoken = await attached_video_section(post["videos"][0][0]) if post["videos"] else ""
             return {
                 "url": url,
                 "title": f"{who} on X" if who else "X 貼文",
-                "content_raw": render(post)[:25000],
+                "content_raw": render(post)[:25000] + spoken,
                 "cover_image": media[0] if media else "",
                 "author": who,
                 "published_date": post["created"],
