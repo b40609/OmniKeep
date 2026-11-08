@@ -60,7 +60,13 @@ def due(item: Dict[str, Any], now: datetime) -> bool:
     created = _when(item["created_at"])
     if created is None:
         return False
-    last = _last_try.get(item["id"]) or _when(item["updated_at"]) or created
+    last = _last_try.get(item["id"])
+    if last is None:
+        # Not tried by this process yet. updated_at is no clue: the source annotation run, a
+        # re-analysis or an edit rewrites it, and taking it as the last try pushed the next try of
+        # an item rewritten on day 5 past the 7 days (seen 2026-11-08). So the first tick after a
+        # start tries each waiting item once (PER_TICK at a time, no AI call while it is blocked).
+        return now - created >= FIRST_GAP
     return now - last >= max(FIRST_GAP, last - created)
 
 

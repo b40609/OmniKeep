@@ -70,6 +70,16 @@ def test_retries_start_an_hour_after_collecting_and_the_gap_doubles():
     assert tries == [1.0, 2.0, 4.0, 8.0, 16.0, 32.0]
 
 
+def test_a_rewrite_by_another_job_does_not_count_as_a_try():
+    # Collected on 11-02, its analysis rewritten on 11-07 by the source annotation run: the
+    # rewrite is not a fetch, so the item is tried now instead of five days later (after the 7 days).
+    _save("2119000000000000001", X_PAGE, NOW - timedelta(days=6), updated=NOW - timedelta(hours=1))
+    item = refetch.candidates(NOW)[0]
+    assert refetch.due(item, NOW)
+    refetch._last_try[item["id"]] = NOW
+    assert not refetch.due(item, NOW + timedelta(days=5))  # tried: the gap doubles from here
+
+
 def test_a_retry_that_still_gets_the_error_page_costs_no_ai_call(follow_ups):
     _save("2119000000000000001", X_PAGE, NOW - timedelta(hours=3))
     provider = AsyncMock()
