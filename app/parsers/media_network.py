@@ -1,5 +1,9 @@
 """Keep extractor pages, redirects and native media fragments on public egress."""
 import io
+import os
+import shutil
+from pathlib import Path
+from typing import Optional
 
 import yt_dlp
 from yt_dlp.networking import Request, Response
@@ -20,9 +24,26 @@ DEFAULT_BROWSER_HEADERS = {
 }
 
 
+def deno_path() -> Optional[str]:
+    """Deno for yt-dlp's YouTube challenge solver (yt-dlp-ejs). Without a JavaScript runtime, YouTube
+    with a signed-in session offers only storyboard images ("Requested format is not available").
+    Deno runs the player script sandboxed; Node would run it with full access, so it is not used."""
+    found = shutil.which("deno")
+    if found:
+        return found
+    for candidate in (Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Links" / "deno.exe",
+                      Path.home() / ".deno" / "bin" / ("deno.exe" if os.name == "nt" else "deno")):
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 class PublicYoutubeDL(yt_dlp.YoutubeDL):
     def __init__(self, params=None, **kwargs):
         params = dict(params or {})
+        deno = deno_path()
+        if deno and "js_runtimes" not in params:
+            params["js_runtimes"] = {"deno": {"path": deno}}
         http_headers = dict(DEFAULT_BROWSER_HEADERS)
         http_headers.update(params.get("http_headers") or {})
         params["http_headers"] = http_headers

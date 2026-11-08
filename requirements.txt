@@ -12,6 +12,7 @@ openai>=1.40.0
 python-multipart>=0.0.9
 mcp>=1.0,<2
 yt-dlp
+yt-dlp-ejs  # YouTube challenge solver; needs deno (winget install DenoLand.Deno)
 feedparser>=6.0
 numpy>=1.26
 httpcore>=1.0,<2
