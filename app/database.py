@@ -587,6 +587,9 @@ def _save_item(conn, item_data: Dict[str, Any]) -> str:
             tech_tags = excluded.tech_tags,
             deep_analysis = excluded.deep_analysis,
             content_raw = excluded.content_raw,
+            author = COALESCE(NULLIF(excluded.author, ''), items.author),
+            published_date = COALESCE(NULLIF(excluded.published_date, ''), items.published_date),
+            cover_image = COALESCE(NULLIF(excluded.cover_image, ''), items.cover_image),
             analysis_status = excluded.analysis_status,
             updated_at = excluded.updated_at
     """, (
