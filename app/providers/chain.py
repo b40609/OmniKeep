@@ -98,6 +98,9 @@ class ChainProvider(BaseLLMProvider):
     async def analyze_youtube(self, youtube_url: str, prompt: str):
         return await self._run("analyze_youtube", youtube_url, prompt)
 
+    async def describe_image(self, image: bytes, prompt: str, mime_type: str = "image/jpeg") -> str:
+        return await self._run("describe_image", image, prompt, mime_type)
+
 
 def _retry_after(exc: BaseException) -> Optional[float]:
     try:

@@ -2,7 +2,6 @@ import gc
 import os
 import re
 import shutil
-import base64
 import asyncio
 import importlib.util
 import logging
@@ -16,7 +15,6 @@ from app.network import validate_url
 from app.parsers.media_network import PublicYoutubeDL
 
 from app.providers import get_primary_provider, get_gemini_provider, has_video_provider
-from app.providers.openai_compatible import extract_completion_content
 from app.providers.gemini import _generate_content
 from app import ai_usage
 from app.parsers.web import parse_facebook_page
@@ -51,6 +49,16 @@ Segment = Tuple[Any, Any, str]  # start and end in seconds, text
 
 class ReelUnavailableError(RuntimeError):
     """The reel could not be retrieved for video analysis."""
+
+
+GENERIC_REEL_TITLES = {"", "facebook", "instagram", "video", "reel", "reels", "facebook watch"}
+
+
+def session_lost_metadata(info: Optional[Dict[str, Any]]) -> bool:
+    """yt-dlp got the clip but not the post: a bare site name for a title and no description."""
+    info = info or {}
+    title = (info.get("title") or "").strip().lower()
+    return title in GENERIC_REEL_TITLES and not (info.get("description") or "").strip()
 
 
 def is_empty_reel_metadata(item: Dict[str, Any]) -> bool:
@@ -347,54 +355,30 @@ async def analyze_storyboard_vision(tile_path: str) -> str:
 2. 畫面中標註的 GitHub 倉庫路徑或網址（例如 cloudflare/security-audit-skill, GoPlusSecurity/agentguard 等）
 3. GitHub Stars 數量（若有標示）
 4. 核心功能與防護/技術亮點說明
-請務必將畫面中出現的「每一個」卡片或工具完整列出，切勿遺漏任何一項！格式維持高密度結構化文字。"""
+請務必將畫面中出現的「每一個」卡片或工具完整列出，切勿遺漏任何一項！格式維持高密度結構化文字。
+畫面不是專案或工具卡片時，就條列畫面上看得到的文字、數字與圖表重點。看不清楚的不要猜。"""
 
     with open(tile_path, "rb") as f:
         img_bytes = f.read()
 
-    # 1. Primary OpenAI-Compatible Provider
+    # 1. The analysis slot: its chain reads the image with the first connection that can
+    #    (Gemini / Vertex natively, an OpenAI-compatible model through image_url). Before
+    #    2026-11-09 only an OpenAI-compatible primary was tried, so with a Vertex primary every
+    #    storyboard came back empty without a word in the log.
     provider = get_primary_provider()
-    if hasattr(provider, "client") and hasattr(provider.client, "chat"):
+    if callable(getattr(provider, "describe_image", None)):
         try:
-            b64 = base64.b64encode(img_bytes).decode("utf-8")
-            try:
-                res = await provider.client.chat.completions.create(
-                    model=provider.model,
-                    messages=[{
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-                        ]
-                    }],
-                    temperature=0.1
-                )
-            except Exception:
-                ai_usage.record_failure(getattr(provider, "status_key", ""))
-                raise
-            ai_usage.record_success(getattr(provider, "status_key", ""), res)
-            return extract_completion_content(res).strip()
+            text = (await provider.describe_image(img_bytes, prompt)).strip()
+            if text:
+                return text
+            logger.warning("[Reel Vision] The analysis slot read the storyboard but returned no text")
         except Exception as e:
-            logger.warning(f"[Reel Vision] Primary provider vision failed: {e}")
+            logger.warning(f"[Reel Vision] Analysis slot could not read the storyboard: {e}")
 
-    # 2. Gemini Provider Fallback
+    # 2. The video slot's Gemini, when one is set
     if has_video_provider():
         try:
-            from google import genai
-            from google.genai import types as gtypes
-            gemini_prov = get_gemini_provider()
-            key = gemini_prov._get_next_key()
-            if key:
-                client = gemini_prov.make_client(key)
-                resp = await _generate_content(
-                    client, gemini_prov.status_key, gemini_prov.label, gemini_prov.limiter,
-                    model=gemini_prov.model,
-                    contents=[
-                        gtypes.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-                        prompt
-                    ]
-                )
-                return (resp.text or "").strip()
+            return (await get_gemini_provider().describe_image(img_bytes, prompt)).strip()
         except Exception as e:
             logger.warning(f"[Reel Vision] Gemini vision fallback failed: {e}")
 
@@ -514,6 +498,21 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
                     raise
 
             info = await _run_thread(_download)
+            if session_lost_metadata(info) and cookie_opts:
+                # Facebook serves a logged-in session a page without the post: title "Facebook",
+                # no description (2026-11-09: 18 reels lost their text this way). Ask once more
+                # without the session for the text only; the downloaded video stays.
+                def _public_metadata():
+                    meta_opts = {k: v for k, v in ydl_opts.items() if k not in ("cookiesfrombrowser", "cookiefile")}
+                    with PublicYoutubeDL({**meta_opts, "skip_download": True}) as ydl_meta:
+                        return ydl_meta.extract_info(url, download=False)
+                try:
+                    public = await _run_thread(_public_metadata)
+                    if not session_lost_metadata(public):
+                        info = {**info, **{k: public[k] for k in ("title", "description", "uploader", "channel")
+                                           if public.get(k)}}
+                except Exception as e:
+                    logger.info(f"[Reel Analyzer] Public metadata retry failed: {e}")
         raw_title = info.get("title") or ""
         uploader = info.get("uploader") or info.get("channel") or ""
         description = info.get("description") or ""
@@ -575,8 +574,7 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
 """
 
         cover_image = info.get("thumbnail") or ""
-
-        return {
+        result = {
             "url": url,
             "title": cleaned_title or "短影音情報",
             "content_raw": combined_raw.strip(),
@@ -584,6 +582,15 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
             "author": author,
             "published_date": "",
         }
+        if not description.strip() and not audio_transcript and not visual_content:
+            # Downloaded, yet no post text, no speech and nothing read off the frames: analysing
+            # that would be a guess from the title. Same rule as a video without its transcript.
+            from app.parsers.transcript import TRANSCRIPT_MISSING
+            reason = "影片下載了，但貼文文字、語音和畫面文字都沒有讀到"
+            missing = f"## 影片逐字稿\n{TRANSCRIPT_MISSING}\n原因：{reason}"
+            result.update(content_raw=f"{result['content_raw']}\n\n{missing}",
+                          transcript_status="failed", transcript_reason=reason)
+        return result
 
     except Exception as e:
         host = (urlsplit(url).hostname or "").lower()

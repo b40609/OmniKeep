@@ -146,6 +146,24 @@ class GeminiProvider(BaseLLMProvider):
             ai_status.record_failure(self.status_key, None, str(exc), self.label)
             raise
 
+    async def describe_image(self, image: bytes, prompt: str, mime_type: str = "image/jpeg") -> str:
+        """Read an image (a reel's storyboard tile). Every Gemini model takes images."""
+        key = self._get_next_key()
+        if not key:
+            raise ValueError("No GEMINI_API_KEYS configured.")
+        from google.genai import types as gtypes
+        config = self._config(temperature=0.1)
+        if self.thinking_level:
+            # Copying text off frames needs no long reasoning: high thinking took minutes per tile.
+            config.thinking_config = gtypes.ThinkingConfig(thinking_level="low")
+        response = await _generate_content(
+            self.make_client(key), self.status_key, self.label, self.limiter,
+            model=self.model,
+            contents=[gtypes.Part.from_bytes(data=image, mime_type=mime_type), prompt],
+            config=config,
+        )
+        return response.text or ""
+
     async def analyze_youtube(self, youtube_url: str, prompt: str) -> Dict[str, Any]:
         """
         Natively pass YouTube URL to Gemini model without local download.

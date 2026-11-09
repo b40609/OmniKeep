@@ -139,6 +139,18 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             await asyncio.sleep(wait)
         raise last_exc
 
+    async def describe_image(self, image: bytes, prompt: str, mime_type: str = "image/jpeg") -> str:
+        """Read an image; a text-only model answers with an HTTP error and the chain moves on."""
+        import base64
+        url = f"data:{mime_type};base64,{base64.b64encode(image).decode('ascii')}"
+        response = await self._chat(
+            model=self.model,
+            messages=[{"role": "user", "content": [{"type": "text", "text": prompt},
+                                                   {"type": "image_url", "image_url": {"url": url}}]}],
+            temperature=0.1,
+        )
+        return extract_completion_content(response)
+
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         messages = []
         if system_prompt:

@@ -100,5 +100,10 @@ async def test_reel_vision_accepts_string_response(isolated_runtime, monkeypatch
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
         create=AsyncMock(return_value="九宮格畫面辨識成功")
     )))
-    monkeypatch.setattr("app.parsers.reel.get_primary_provider", lambda: SimpleNamespace(client=client, model="stub"))
+    from app.providers.openai_compatible import OpenAICompatibleProvider
+    provider = OpenAICompatibleProvider(base_url="http://127.0.0.1:9/v1", api_key="stub", model="stub")
+    provider.client = client
+    monkeypatch.setattr("app.parsers.reel.get_primary_provider", lambda: provider)
     assert await analyze_storyboard_vision(str(tile)) == "九宮格畫面辨識成功"
+    sent = client.chat.completions.create.await_args.kwargs["messages"][0]["content"]
+    assert sent[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
