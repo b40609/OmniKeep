@@ -1,3 +1,4 @@
+import gc
 import os
 import re
 import shutil
@@ -7,7 +8,8 @@ import importlib.util
 import logging
 import subprocess
 import tempfile
-from typing import Dict, Any, Optional
+import time
+from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
 from urllib.parse import urlsplit
 from app.network import validate_url
@@ -23,12 +25,28 @@ from app.config import settings
 
 logger = logging.getLogger("omnikeep.reel")
 
-_local_whisper_model = None
+_local_whisper_model = None  # the loaded WhisperModel; False once local STT turned out unusable
+_local_whisper_name = ""  # which one: BREEZE_STT_MODEL, GPU_STT_MODEL or CPU_STT_MODEL
 _force_cpu_stt = False
-# tiny got Mandarin wrong too often to analyse from (and long videos now go through it too):
-# large-v3-turbo on the GPU (about 1.6 GB download, 2 GB VRAM), small on a CPU.
-GPU_STT_MODEL = "large-v3-turbo"
+_breeze_off_until = 0.0  # time.monotonic() until which Breeze is skipped: it could not be loaded (offline ...)
+BREEZE_RETRY_SECONDS = 3600
+_cuda_dlls_added = False
+# Which model, measured 2026-11-09 on 4 Taiwanese YouTube videos (40 min, the uploaders' subtitles as
+# reference): Breeze-ASR-25 (MediaTek Research, Whisper large-v2 tuned on Taiwanese Mandarin and
+# Mandarin-English code-switching) 7.7% mixed error rate against 9.4% for large-v3-turbo, Traditional
+# output (turbo: 24% Simplified), 7.4x real time, about 4.5 GB VRAM. On an English talk turbo was
+# better (6.0% against 7.0%) and Breeze is not trained on Japanese, Korean and so on. So on a GPU:
+# Chinese or an unknown language -> Breeze, a language the video declares otherwise -> turbo; on a
+# CPU small (Breeze is large-v2 sized, far too slow there). tiny got Mandarin wrong too often.
+BREEZE_STT_MODEL = "breeze-asr-25"
+# A CTranslate2 conversion of MediaTek-Research/Breeze-ASR-25 (Apache-2.0); faster-whisper cannot load
+# the original. Pinned: model.bin is data, not code, but a moved branch would change what is loaded.
+BREEZE_REPO = "shdennlin/breeze-asr-25-ct2"
+BREEZE_REVISION = "70660216b01a6f6b7b8c5690767a4763df61755f"
+BREEZE_VARIANT = "float16"
+GPU_STT_MODEL = "large-v3-turbo"  # about 1.6 GB download, 2 GB VRAM
 CPU_STT_MODEL = "small"
+Segment = Tuple[Any, Any, str]  # start and end in seconds, text
 
 
 class ReelUnavailableError(RuntimeError):
@@ -62,6 +80,10 @@ def _preload_cuda_dlls() -> None:
     nvidia-cudnn-cu12). ctranslate2 loads cublas64_12.dll lazily at first inference
     and only searches the process DLL path — without this, GPU init appears to
     succeed but every transcription dies with 'cublas64_12.dll not found'."""
+    global _cuda_dlls_added
+    if _cuda_dlls_added:
+        return  # once: PATH would grow with every model load
+    _cuda_dlls_added = True
     import site
     seen = set()
     for sp in (*site.getsitepackages(), site.getusersitepackages()):
@@ -77,41 +99,132 @@ def _preload_cuda_dlls() -> None:
                     pass
                 os.environ["PATH"] = p + os.pathsep + os.environ.get("PATH", "")
 
-def get_local_whisper_model():
-    """Lazily load local faster-whisper model (optimized for CUDA GPU / CPU multi-thread int8)"""
-    global _local_whisper_model
-    if _local_whisper_model is None and importlib.util.find_spec("faster_whisper") is None:
-        # Optional (requirements-stt.txt): Reels fall back to cloud transcription.
-        logger.warning("[Local STT] faster-whisper is not installed; local transcription is off "
-                       "(pip install -r requirements-stt.txt)")
-        _local_whisper_model = False
-    if _local_whisper_model is None:
+def chinese_or_unknown(language: str) -> bool:
+    """Breeze's languages: Chinese, or nothing declared (Reels, X and Threads clips, most uploads)."""
+    return (language or "").split("-")[0].strip().lower() in ("", "zh", "cmn")
+
+
+def _cuda() -> bool:
+    if _force_cpu_stt:
+        return False
+    _preload_cuda_dlls()
+    try:
+        import ctranslate2
+        return ctranslate2.get_cuda_device_count() > 0
+    except Exception as e:
+        logger.warning(f"[Local STT] CUDA init failed, falling back to CPU: {e}")
+        return False
+
+
+def _breeze_path() -> str:
+    """The pinned Breeze CT2 folder in the Hugging Face cache (downloaded the first time, 2.9 GB)."""
+    from huggingface_hub import snapshot_download
+    root = snapshot_download(BREEZE_REPO, revision=BREEZE_REVISION, allow_patterns=[f"{BREEZE_VARIANT}/*"])
+    return os.path.join(root, BREEZE_VARIANT)
+
+
+def _build(name: str):
+    from faster_whisper import WhisperModel
+    if name == CPU_STT_MODEL:
+        threads = min(8, max(2, os.cpu_count() or 4))
+        return WhisperModel(CPU_STT_MODEL, device="cpu", compute_type="int8", cpu_threads=threads)
+    path = _breeze_path() if name == BREEZE_STT_MODEL else GPU_STT_MODEL
+    return WhisperModel(path, device="cuda", compute_type="float16")
+
+
+def _unload() -> None:
+    """Free the loaded model's VRAM before another is loaded: the GPU is shared with Ollama."""
+    global _local_whisper_model, _local_whisper_name
+    old, _local_whisper_model, _local_whisper_name = _local_whisper_model, None, ""
+    if old:
         try:
-            from faster_whisper import WhisperModel
-            if not _force_cpu_stt:
-                _preload_cuda_dlls()
-                try:
-                    import ctranslate2
-                    if ctranslate2.get_cuda_device_count() > 0:
-                        _local_whisper_model = WhisperModel(GPU_STT_MODEL, device="cuda", compute_type="float16")
-                        logger.info("[Local STT] Initialized faster-whisper %s on CUDA GPU", GPU_STT_MODEL)
-                        return _local_whisper_model
-                except Exception as e:
-                    logger.warning(f"[Local STT] CUDA init failed, falling back to CPU: {e}")
+            old.model.unload_model()
+        except Exception:
+            pass
+        del old
+        gc.collect()
 
-            threads = min(8, max(2, os.cpu_count() or 4))
-            _local_whisper_model = WhisperModel(CPU_STT_MODEL, device="cpu", compute_type="int8", cpu_threads=threads)
-            logger.info(f"[Local STT] Initialized faster-whisper on CPU ({threads} threads int8)")
-        except Exception as e:
-            logger.warning(f"[Local STT] Could not load faster-whisper: {e}")
+
+def get_local_whisper_model(language: str = ""):
+    """The faster-whisper model for this language, loaded on first use; None when local STT is off.
+
+    One model in memory at a time: asking for the other one unloads the first. language is what the
+    video declares (yt-dlp's "language"), "" when unknown."""
+    global _local_whisper_model, _local_whisper_name, _breeze_off_until, _force_cpu_stt
+    from app.parsers.transcript import _stt_lock
+    with _stt_lock:
+        if _local_whisper_model is False:
+            return None
+        if _local_whisper_model is None and importlib.util.find_spec("faster_whisper") is None:
+            # Optional (requirements-stt.txt): Reels fall back to cloud transcription.
+            logger.warning("[Local STT] faster-whisper is not installed; local transcription is off "
+                           "(pip install -r requirements-stt.txt)")
             _local_whisper_model = False
-    return _local_whisper_model if _local_whisper_model is not False else None
+            return None
+        if _cuda():
+            breeze_ok = time.monotonic() >= _breeze_off_until
+            wanted = BREEZE_STT_MODEL if chinese_or_unknown(language) and breeze_ok else GPU_STT_MODEL
+        else:
+            wanted = CPU_STT_MODEL
+        if _local_whisper_model is not None and _local_whisper_name == wanted:
+            return _local_whisper_model
+        _unload()
+        order = {BREEZE_STT_MODEL: [BREEZE_STT_MODEL, GPU_STT_MODEL, CPU_STT_MODEL],
+                 GPU_STT_MODEL: [GPU_STT_MODEL, CPU_STT_MODEL]}.get(wanted, [CPU_STT_MODEL])
+        for name in order:
+            try:
+                model = _build(name)
+            except Exception as e:
+                # Breeze not downloadable (offline, Hugging Face down ...): turbo, never no transcript.
+                logger.warning("[Local STT] %s could not be loaded (%s)%s", name, e,
+                               "; large-v3-turbo for the next hour" if name == BREEZE_STT_MODEL else "")
+                if name == BREEZE_STT_MODEL:
+                    _breeze_off_until = time.monotonic() + BREEZE_RETRY_SECONDS
+                elif name == GPU_STT_MODEL:
+                    _force_cpu_stt = True  # the GPU itself does not work: do not retry it on every video
+                continue
+            _local_whisper_model, _local_whisper_name = model, name
+            logger.info("[Local STT] Loaded faster-whisper %s on %s", name, "CPU" if name == CPU_STT_MODEL else "CUDA GPU")
+            return model
+        _local_whisper_model = False
+        return None
 
-def transcribe_local_whisper(audio_path: str, timeout: int = 60, max_duration_sec: Optional[int] = None) -> str:
-    """Decodes audio via FFmpeg pipe to 16kHz float32 and transcribes locally in ~0.3s"""
-    global _force_cpu_stt, _local_whisper_model
-    model = get_local_whisper_model()
-    if not model or not os.path.exists(audio_path):
+
+def _whisper_language(language: str) -> Optional[str]:
+    """The declared language as Whisper's code, None to let it detect."""
+    base = (language or "").split("-")[0].strip().lower()
+    try:
+        from faster_whisper.tokenizer import _LANGUAGE_CODES
+    except Exception:
+        return None
+    return base if base in _LANGUAGE_CODES else None
+
+
+def transcribe_audio(audio: np.ndarray, language: str = "", **options) -> List[Segment]:
+    """Speech in 16 kHz mono float32 audio as (start, end, text), one transcription at a time.
+
+    Breeze detects the language itself (as measured); turbo and small get the declared one. Chinese
+    from them is turned into Taiwan Traditional (OpenCC s2twp): turbo wrote 24% Simplified."""
+    from app.parsers.transcript import _stt_lock, to_traditional
+    with _stt_lock:
+        model = get_local_whisper_model(language)
+        if model is None:
+            raise RuntimeError("本機語音轉文字（faster-whisper）沒有裝")
+        name = _local_whisper_name
+        breeze = name == BREEZE_STT_MODEL
+        segments, info = model.transcribe(audio, language=None if breeze else _whisper_language(language), **options)
+        found = [(getattr(s, "start", None), getattr(s, "end", None), s.text.strip()) for s in segments if s.text.strip()]
+    detected = getattr(info, "language", None) or language
+    if not breeze and (detected or "").split("-")[0].lower() == "zh":
+        found = [(start, end, to_traditional(text)) for start, end, text in found]
+    return found
+
+
+def transcribe_local_whisper(audio_path: str, timeout: int = 60, max_duration_sec: Optional[int] = None,
+                             language: str = "") -> str:
+    """Decodes audio via FFmpeg pipe to 16kHz float32 and transcribes it on this machine."""
+    global _force_cpu_stt
+    if not get_local_whisper_model(language) or not os.path.exists(audio_path):
         return ""
     try:
         cmd = ["ffmpeg", "-y", "-protocol_whitelist", "file,pipe"]
@@ -124,17 +237,17 @@ def transcribe_local_whisper(audio_path: str, timeout: int = 60, max_duration_se
         audio_np = np.frombuffer(proc.stdout, dtype=np.float32)
         if len(audio_np) < 8000:
             return ""
-        segments, _ = model.transcribe(audio_np, beam_size=3)
-        texts = [s.text.strip() for s in segments if s.text.strip()]
-        return " ".join(texts)
+        return " ".join(text for _, _, text in transcribe_audio(audio_np, language, beam_size=3))
     except Exception as e:
         logger.warning(f"[Local STT] Local transcription error: {e}")
         # GPU init can succeed while inference still hits a missing CUDA runtime
         # (lazy DLL load) — self-heal by rebuilding on CPU for subsequent calls.
         if not _force_cpu_stt:
             logger.warning("[Local STT] Disabling GPU path for this session, rebuilding on CPU...")
-            _force_cpu_stt = True
-            _local_whisper_model = None
+            from app.parsers.transcript import _stt_lock
+            with _stt_lock:
+                _force_cpu_stt = True
+                _unload()
         return ""
 
 def is_video_reel_url(url: str) -> bool:

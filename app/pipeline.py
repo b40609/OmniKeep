@@ -22,6 +22,7 @@ from app.parsers import (
 )
 from app.parsers.blocked import detect_blocked_page, is_error_title, reason_text
 from app.parsers.reel import is_video_reel_url, parse_video_reel
+from app.parsers.screen import screen_notes
 from app.parsers.transcript import TRANSCRIPT_MISSING, get_transcript
 from app.parsers.threads import is_threads_url, parse_threads_page
 from app.providers import get_primary_provider, get_gemini_provider, has_video_provider
@@ -112,6 +113,7 @@ FETCH_FAILED_TAG = "（擷取失敗）"
 
 # Kinds whose content_raw is text scraped from the page, so may be the site's error page.
 BLOCK_CHECKED_KINDS = ("web", "threads")
+SCREEN_PROMPT_CHARS = 6000  # the OCR section's cap (app/parsers/screen.py); added after the 30000 of transcript
 
 
 def blocked_page_note(reason_line: str, source: str) -> str:
@@ -270,7 +272,7 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
     parsed: Dict[str, Any] = {
         "url": url, "content_raw": "", "cover_image": "", "author": "", "title": "",
         "original_title": "", "description": "", "raw_html": "", "fallback_summary": "",
-        "http_status": None, "transcript_status": "", "transcript_reason": "",
+        "http_status": None, "transcript_status": "", "transcript_reason": "", "screen_text": "",
     }
     short_video = is_youtube_shorts_url(url) or is_video_reel_url(url)
     if short_video and not light:
@@ -289,10 +291,14 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
         # light (setup previews) stays on the page metadata; the full path reads what is said.
         transcript = None if light else await get_transcript(url, meta)
         transcript_part = f"\n\n{transcript.section()}" if transcript else ""
+        # What the frames show and the speech does not say (optional OCR, app/parsers/screen.py).
+        screen = await screen_notes(url, meta, transcript.text) if transcript and transcript.status == "ok" else ""
+        screen_part = f"\n\n{screen}" if screen else ""
         parsed.update(kind="youtube", source_type="youtube",
                       transcript_status=transcript.status if transcript else "",
                       transcript_reason=transcript.reason if transcript else "",
-                      content_raw=f"# {meta['title']}\n\n頻道: {meta['author']}\nURL: {url}{desc_part}{transcript_part}",
+                      screen_text=screen,
+                      content_raw=f"# {meta['title']}\n\n頻道: {meta['author']}\nURL: {url}{desc_part}{transcript_part}{screen_part}",
                       cover_image=meta.get("cover_image", ""),
                       author=meta.get("author", ""),
                       title=meta.get("title", "未命名項目"),
@@ -462,6 +468,16 @@ URL：{url}
                 ai_result = {}
             elif status == "ok":
                 primary = get_primary_provider()
+                # The screen text is kept apart: a long transcript must not push it out, nor it the transcript.
+                screen = parsed.get("screen_text") or ""
+                spoken_part = content_raw.removesuffix(f"\n\n{screen}") if screen else content_raw
+                screen_block = f"""
+=== 畫面文字（從影片畫面 OCR 讀出、旁白沒講到的字）===
+{screen[:SCREEN_PROMPT_CHARS]}
+=== 畫面文字結束 ===
+""" if screen else ""
+                screen_rule = ("\n畫面文字是投影片、圖表、截圖上的字，不是旁白，[MM:SS] 是出現的時間；可以用來補數字、名稱、"
+                               "圖表標題，但 OCR 會有錯字和斷字，看不懂的不要猜。") if screen else ""
                 prompt = f"""深度分析以下 YouTube 影片，依據逐字稿（影片實際說的內容）輸出專業中文結構化總結、技術標籤與核心洞見：
 影片標題：{default_title}
 頻道：{author}
@@ -470,10 +486,10 @@ URL：{url}
 候選分類清單：[{cat_list_str}]
 
 === 影片說明欄與逐字稿 ===
-{content_raw[:30000]}
+{spoken_part[:30000]}
 === 內容結束 ===
-
-逐字稿可能有語音辨識的錯字，依上下文判讀；逐字稿沒說到的細節不要補。"""
+{screen_block}
+逐字稿可能有語音辨識的錯字，依上下文判讀；逐字稿沒說到的細節不要補。逐字稿的 [MM:SS] 是該段開始的時間。{screen_rule}"""
                 prompt += interest_profile_block()
                 ai_result = await _analyze_with_guardrails(primary, prompt)
             else:

@@ -201,6 +201,9 @@ def isolated_runtime(monkeypatch, request):
     monkeypatch.setattr(cookie_manager, "_cached_jar", None)
     monkeypatch.setattr(cookie_manager, "_cached_jar_time", 0)
     monkeypatch.setattr(cookie_manager.yt_dlp.cookies, "load_cookies", lambda *a, **k: None)
+    # The OCR of video frames downloads the video; tests/test_screen.py turns it on where it tests it.
+    from app.parsers import screen
+    monkeypatch.setattr(screen, "available", lambda: False)
     # The network guard is installed once at import (see _install_network_guard).
     database.init_db()
     _refusals.clear()

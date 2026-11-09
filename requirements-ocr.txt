@@ -1,0 +1,13 @@
+# Optional: text on the screen of long videos (slides, charts, screenshots) that the speech does not
+# say, read with OCR (app/parsers/screen.py, docs/optional_features.md).
+#   pip install -r requirements.txt -r requirements-ocr.txt
+# About 165 MB installed (Windows, Python 3.14), more without scipy; the OCR models (PP-OCRv6 small)
+# come inside the rapidocr wheel, nothing is downloaded at run time. scenedetect pulls opencv-python and rapidocr opencv-python-headless:
+# both install the same cv2, keep them on the same version.
+scenedetect>=0.6.4,<0.8
+opencv-python-headless>=4.8
+imagehash>=4.3,<5
+pillow>=10
+rapidocr>=3,<4
+# rapidocr's default engine; nothing imports it by name (faster-whisper also pulls it in).
+onnxruntime>=1.17
