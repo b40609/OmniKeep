@@ -67,7 +67,10 @@ async def test_instagram_download_failure_falls_back_to_page_metadata(monkeypatc
 
     result = await reel.parse_video_reel(URL)
     assert result["title"] == "Instagram 精彩片段"
-    assert result["content_raw"] == "這是 Instagram 貼文說明全文"
+    # Only the post's text came: marked, so the pipeline keeps it as a fetch failure and refetch retries.
+    from app.parsers.transcript import TRANSCRIPT_MISSING
+    assert result["content_raw"].startswith("這是 Instagram 貼文說明全文\n\n## 影片逐字稿\n" + TRANSCRIPT_MISSING)
+    assert result["transcript_status"] == "failed" and "empty media response" in result["transcript_reason"]
     fallback.assert_awaited_once()
 
 

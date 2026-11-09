@@ -663,7 +663,7 @@ def test_all_ffmpeg_inputs_disable_nested_network(isolated_runtime, monkeypatch)
         return Mock(returncode=0, stdout=b"")
 
     monkeypatch.setattr(reel.subprocess, "run", run)
-    monkeypatch.setattr(reel, "get_local_whisper_model", lambda: Mock())
+    monkeypatch.setattr(reel, "get_local_whisper_model", lambda language="": Mock())
     reel.transcribe_local_whisper(str(audio))
     reel.extract_scene_tile(str(audio), str(isolated_runtime / "tile.jpg"))
     reel.extract_audio_stream(str(audio), str(isolated_runtime / "output.mp3"))

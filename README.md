@@ -45,7 +45,7 @@
 - **標準 REST API**：提供 Swagger API 介面，方便各類腳本與自動化管線串接。
 
 ### 2. 多模態深度消化管線 (Multimodal Cognitive Pipeline)
-- **YouTube 影音**：整合 Google Gemini 原生串流解析，主機零下載、零頻寬佔用，秒級提煉數十分鐘長影片結構。
+- **YouTube 影音**：整合 Google Gemini 原生串流解析，主機零下載、零頻寬佔用，秒級提煉數十分鐘長影片結構。沒有 Gemini 時讀字幕，沒字幕就用本機語音轉錄（中文用台灣華語微調的 Breeze-ASR-25），逐字稿帶 `[MM:SS]` 時間與章節；選裝畫面 OCR 後，再補上投影片、圖表上旁白沒講到的字（見 [選用功能](docs/optional_features.md)）。
 - **Bilibili 長影片**：雙軌語音抽取技術——首選官方 CC/AI 逐字稿 JSON（0.2 秒完成），回落 DASH 音訊分離串流搭配本機 `faster-whisper`（GPU CUDA / CPU 多執行緒自動切換；選用安裝，見 [選用功能](docs/optional_features.md)）。
 - **社群短影音 (Reels / TikTok / Shorts)**：關鍵幀 OCR 視覺文字識別 + 語音轉錄（本機或雲端）雙軌融合成高密度情報。
 - **長文閱讀與永久快照**：採用 trafilatura 深度清洗廣告干擾，自動生成 HTML Snapshot 永久留存，徹底免疫網頁失效與連結腐敗（Link-rot Proof）。
@@ -183,8 +183,10 @@ source .venv/bin/activate
 # 安裝 Python 依賴（Windows 會一併安裝自動化 Chrome 登入用的 playwright）
 pip install -r requirements.txt
 
-# 選用：本機語音轉錄（Reels、Bilibili），安裝後約多 213 MB
+# 選用：本機語音轉錄（YouTube、Reels、Bilibili、X、Threads），安裝後約多 213 MB
 pip install -r requirements-stt.txt
+# 選用：長影片的畫面文字（OCR），安裝後約多 165 MB
+pip install -r requirements-ocr.txt
 ```
 
 各選用功能的用途、大小與 GPU 設定見 [選用功能](docs/optional_features.md)。

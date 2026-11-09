@@ -2,8 +2,8 @@
 
 A site that is down for an hour, an X mirror that is out, a bot check that passes the next time:
 the item is kept as "（擷取失敗）" and tried again 1 h after it was collected, then with the gap
-doubling (2 h, 4 h, 8 h ...) for 7 days. An X post whose replies could not be read is retried the
-same way. A try that still gets the error page costs one fetch and no AI call; the first one that
+doubling (2 h, 4 h, 8 h ...) for 7 days. An X post whose replies could not be read, and a video
+whose transcript could not be read (app/parsers/transcript.py), are retried the same way. A try that still gets the error page costs one fetch and no AI call; the first one that
 gets the content runs the normal pipeline on the URL, the same as collecting it again, which
 rewrites the item in place.
 """
@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from app.database import get_db_connection
 from app.parsers.blocked import MAX_CHARS, detect_blocked_page
+from app.parsers.transcript import TRANSCRIPT_MISSING
 from app.parsers.x_posts import REPLIES_MISSING
 
 logger = logging.getLogger("omnikeep.refetch")
@@ -36,21 +37,22 @@ def _when(text: str) -> Optional[datetime]:
 
 
 def incomplete(content: str, http_status: Optional[int] = None) -> bool:
-    """The content is an error page, or an X post whose replies could not be read."""
-    return bool(detect_blocked_page(content or "", http_status)) or REPLIES_MISSING in (content or "")
+    """The content is an error page, an X post whose replies could not be read, or a video without its transcript."""
+    content = content or ""
+    return bool(detect_blocked_page(content, http_status)) or REPLIES_MISSING in content or TRANSCRIPT_MISSING in content
 
 
 def candidates(now: datetime) -> List[Dict[str, Any]]:
-    """Items collected in the last RETRY_FOR whose stored content is an error page or lacks its replies."""
+    """Items collected in the last RETRY_FOR whose stored content is an error page or lacks its replies / transcript."""
     marks = ",".join("?" * len(SOURCE_TYPES))
     conn = get_db_connection()
     try:
         rows = conn.execute(
             f"SELECT id, url, origin, content_raw, created_at, updated_at FROM items "
-            f"WHERE source_type IN ({marks}) AND created_at >= ? "
-            f"AND (length(coalesce(content_raw, '')) <= ? OR instr(content_raw, ?) > 0) "
+            f"WHERE created_at >= ? AND ((source_type IN ({marks}) AND length(coalesce(content_raw, '')) <= ?) "
+            f"OR instr(content_raw, ?) > 0 OR instr(content_raw, ?) > 0) "
             f"ORDER BY created_at DESC",
-            (*SOURCE_TYPES, (now - RETRY_FOR).isoformat(), MAX_CHARS, REPLIES_MISSING)).fetchall()
+            ((now - RETRY_FOR).isoformat(), *SOURCE_TYPES, MAX_CHARS, REPLIES_MISSING, TRANSCRIPT_MISSING)).fetchall()
     finally:
         conn.close()
     return [dict(r) for r in rows if incomplete(r["content_raw"])]
@@ -60,7 +62,13 @@ def due(item: Dict[str, Any], now: datetime) -> bool:
     created = _when(item["created_at"])
     if created is None:
         return False
-    last = _last_try.get(item["id"]) or _when(item["updated_at"]) or created
+    last = _last_try.get(item["id"])
+    if last is None:
+        # Not tried by this process yet. updated_at is no clue: the source annotation run, a
+        # re-analysis or an edit rewrites it, and taking it as the last try pushed the next try of
+        # an item rewritten on day 5 past the 7 days (seen 2026-11-08). So the first tick after a
+        # start tries each waiting item once (PER_TICK at a time, no AI call while it is blocked).
+        return now - created >= FIRST_GAP
     return now - last >= max(FIRST_GAP, last - created)
 
 
@@ -68,6 +76,12 @@ async def retry_one(item: Dict[str, Any], now: datetime) -> bool:
     """True when the content came this time and the item was analysed again."""
     from app.pipeline import BLOCK_CHECKED_KINDS, parse_url, run_pipeline
     _last_try[item["id"]] = now
+    if TRANSCRIPT_MISSING in (item.get("content_raw") or ""):
+        # A video: the download and speech to text are the slow part, so it is not parsed twice. A
+        # transcript that still fails is kept as a fetch failure again, with no AI call.
+        from app.database import get_item_by_id
+        await run_pipeline(item["url"], origin=item.get("origin") or "manual")
+        return TRANSCRIPT_MISSING not in ((get_item_by_id(item["id"]) or {}).get("content_raw") or "")
     parsed = await parse_url(item["url"])
     if parsed["kind"] in BLOCK_CHECKED_KINDS:
         content = parsed["content_raw"] or ""

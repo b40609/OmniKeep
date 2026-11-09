@@ -309,10 +309,12 @@ async def parse_threads_page(url: str) -> Dict[str, Any]:
     # Clean title
     final_title = extract_threads_title(raw_title, main_body, author)
 
+    from app.parsers.transcript import attached_video_section
+    spoken = await attached_video_section(media_info.get("video_url", ""))
     return {
         "url": canonical_url or url,
         "title": final_title,
-        "content_raw": content_raw or "（Threads 貼文未提供公開文字說明）",
+        "content_raw": (content_raw or "（Threads 貼文未提供公開文字說明）") + spoken,
         "cover_image": cover_image,
         "author": author or "Threads",
         "published_date": published_date,

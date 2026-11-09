@@ -711,7 +711,7 @@ const inputClass =
             </li>
           </ol>
           <p v-if="!(slotDraft[slot.id] ?? []).length" class="text-2xs text-subtle-foreground">
-            {{ slot.id === 'analysis' ? '空的：沿用舊的主要服務商設定' : slot.id === 'embeddings' ? '空的：沿用舊設定（本機 Ollama，再來是 OpenAI 相容服務）' : slot.id === 'video' ? '空的：沒有 Gemini 時改讀影片說明欄' : '空的：跟分析用同一份清單' }}
+            {{ slot.id === 'analysis' ? '空的：沿用舊的主要服務商設定' : slot.id === 'embeddings' ? '空的：沿用舊設定（本機 Ollama，再來是 OpenAI 相容服務）' : slot.id === 'video' ? '空的：用字幕或本機語音轉錄的逐字稿分析' : '空的：跟分析用同一份清單' }}
           </p>
           <select
             v-if="candidates(slot.id).length"

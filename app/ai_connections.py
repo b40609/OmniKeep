@@ -47,7 +47,8 @@ SLOT_HELP = {
     "brain": "Ask Brain 回答問題。第一個是本機 Ollama 時，會先用它；清單用完後改用分析的清單。",
     "radar": "雷達的相關性評分與每日摘要。清單用完（或是空的）就用分析的清單。",
     "embeddings": "語意搜尋的向量。都失敗時改用本機雜湊向量。換模型後，既有向量要重建才查得到。",
-    "video": "YouTube 影片解析（只有 Gemini 能看影片）。失敗時改用分析清單讀影片說明欄。",
+    "video": "YouTube 影片解析（只有 Gemini 能看影片）。沒設定或失敗時，改用字幕或本機語音轉錄（中文用 Breeze-ASR-25）的逐字稿，"
+             "裝了畫面 OCR 時再加上畫面文字，交給分析清單。",
 }
 META_MIGRATED = "legacy_settings_migrated"
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")

@@ -68,7 +68,12 @@ jobs:
       - name: Optional speech-to-text requirements install and import
         run: |
           python -m pip install -r requirements-stt.txt
-          python -c "import faster_whisper, ctranslate2; print('faster-whisper', faster_whisper.__version__, 'ctranslate2', ctranslate2.__version__)"
+          python -c "import faster_whisper, ctranslate2, opencc; print('faster-whisper', faster_whisper.__version__, 'ctranslate2', ctranslate2.__version__)"
+
+      - name: Optional frame OCR requirements install and import
+        run: |
+          python -m pip install -r requirements-ocr.txt
+          python -c "import scenedetect, cv2, imagehash, rapidocr, onnxruntime; from app.parsers import screen; assert screen.available(); print('scenedetect', scenedetect.__version__, 'opencv', cv2.__version__)"
 
   docker:
     runs-on: ubuntu-24.04

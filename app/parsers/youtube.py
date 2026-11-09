@@ -67,6 +67,9 @@ async def fetch_youtube_metadata(url: str) -> Dict[str, Any]:
             data["description"] = info.get("description") or ""
             data["duration"] = int(info.get("duration") or 0)
             data["tags"] = info.get("tags") or []
+            # Kept for app/parsers/transcript.py, so the subtitles need no second extraction.
+            for key in ("subtitles", "automatic_captions", "language", "live_status", "is_live", "chapters"):
+                data[key] = info.get(key)
             return data
     except Exception:
         pass

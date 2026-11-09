@@ -1,4 +1,5 @@
-# Optional: on-device speech-to-text for Reels and Bilibili (docs/optional_features.md).
+# Optional: on-device speech-to-text for videos without subtitles: YouTube, Reels, Bilibili, X and
+# Threads (app/parsers/transcript.py, docs/optional_features.md).
 #   pip install -r requirements.txt -r requirements-stt.txt
 # Kept out of requirements.txt: about 210 MB of native wheels, and onnxruntime has shipped
 # wheels for new Python releases months late (3.14: four months), which would break the base install.
@@ -7,3 +8,8 @@
 faster-whisper>=1.0,<2
 # Imported directly to detect a CUDA GPU (app/parsers/reel.py).
 ctranslate2>=4,<5
+# Breeze-ASR-25, the model for Chinese, is fetched from a pinned revision (app/parsers/reel.py);
+# faster-whisper depends on it already.
+huggingface_hub>=0.21
+# large-v3-turbo and small write Simplified Chinese; turned into Taiwan Traditional (s2twp).
+opencc>=1.1,<2

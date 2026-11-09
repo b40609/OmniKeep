@@ -1,7 +1,7 @@
 """Every third-party import is declared, and the optional ones fail with a hint instead of silently.
 
 playwright is installed on Windows only (requirements.txt marker); faster-whisper lives in
-requirements-stt.txt (docs/optional_features.md)."""
+requirements-stt.txt and the OCR of video frames in requirements-ocr.txt (docs/optional_features.md)."""
 import logging
 import subprocess
 import sys
@@ -31,13 +31,17 @@ def test_deptry_finds_no_undeclared_or_unused_packages():
     pytest.importorskip("deptry")
     res = subprocess.run(
         [sys.executable, "-m", "deptry", ".",
-         "--requirements-files", "requirements.txt,requirements-stt.txt",
+         "--requirements-files", "requirements.txt,requirements-stt.txt,requirements-ocr.txt",
          "--requirements-files-dev", "requirements-dev.txt",
          "--known-first-party", "app",
          "--extend-exclude", r"frontend|static|\.agents|\.claude|\.codex|\.impeccable|_bmad.*",
-         # FastAPI parses form uploads with python-multipart and yt-dlp loads yt-dlp-ejs (its
-         # YouTube challenge solver) as a plugin; nothing imports either by name.
-         "--per-rule-ignores", "DEP002=python-multipart|yt-dlp-ejs"],
+         # FastAPI parses form uploads with python-multipart, yt-dlp loads yt-dlp-ejs (its
+         # YouTube challenge solver) as a plugin and rapidocr runs on onnxruntime; nothing imports
+         # them by name.
+         "--per-rule-ignores", "DEP002=python-multipart|yt-dlp-ejs|onnxruntime",
+         # Module names that differ from the package, for when the optional ones are not installed
+         # (CI runs the tests before it installs them).
+         "--package-module-name-map", "opencv-python-headless=cv2,pillow=PIL"],
         cwd=REPO, capture_output=True, text=True, timeout=120,
     )
     assert res.returncode == 0, res.stdout + res.stderr
@@ -53,8 +57,14 @@ def test_playwright_is_declared_for_windows_only():
 
 def test_speech_to_text_stays_out_of_the_base_install():
     base, stt = _requirements("requirements.txt"), _requirements("requirements-stt.txt")
-    assert {"faster-whisper", "ctranslate2"} <= set(stt)
-    assert not {"faster-whisper", "ctranslate2"} & set(base)
+    assert {"faster-whisper", "ctranslate2", "opencc"} <= set(stt)
+    assert not {"faster-whisper", "ctranslate2", "opencc"} & set(base)
+
+
+def test_frame_ocr_stays_out_of_the_base_install():
+    base, ocr = _requirements("requirements.txt"), _requirements("requirements-ocr.txt")
+    heavy = {"scenedetect", "opencv-python-headless", "imagehash", "rapidocr", "onnxruntime"}
+    assert heavy <= set(ocr) and not heavy & set(base)
 
 
 @pytest.fixture
