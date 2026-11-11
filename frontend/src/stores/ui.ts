@@ -10,10 +10,14 @@ export const useUiStore = defineStore('ui', () => {
   // Navigation & Layout
   const sidebarOpen = useLocalStorage('omnikeep-sidebar', true)
   const sidebarMobileOpen = ref(false)
+  /** Bumped to ask the header to open and focus its search box (the mobile bottom bar does this). */
+  const searchFocusRequests = ref(0)
 
   // Reader pane — deep reactive: the same item exists as separate objects in
   // the list and here, so mutations are synced into both copies by id.
   const activeItem = ref<Item | null>(null)
+  /** Item the keyboard is on in the cover wall (J/K) without opening it; null until first used. */
+  const cursorId = ref<number | null>(null)
   const detailTab = ref<ReaderTab>('analysis')
   const readerFontSize = useLocalStorage('omnikeep-reader-font', 16)
   const readerLineHeight = useLocalStorage('omnikeep-reader-lineh', 1.8)
@@ -58,8 +62,8 @@ export const useUiStore = defineStore('ui', () => {
   const isIngesting = ref(false)
 
   return {
-    sidebarOpen, sidebarMobileOpen,
-    activeItem, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
+    sidebarOpen, sidebarMobileOpen, searchFocusRequests,
+    activeItem, cursorId, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
     showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal, showDeckModal, showPushModal,
     showDailyDeckModal, showBrainModal, showCommandPalette,
     showSettingsModal, settingsTab, settingsCard, settingsVersion, openSettings, showSetupWizard,

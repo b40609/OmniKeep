@@ -152,30 +152,40 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         return
     }
 
-    if (items.items.length === 0) return
-    const currentIndex = ui.activeItem ? items.items.findIndex((i) => i.id === ui.activeItem!.id) : -1
+    // The list and the cover wall show the same filtered, ordered items; J/K walk those.
+    const list = items.visibleItems
+    if (list.length === 0) return
+    const anchorId = ui.activeItem?.id ?? ui.cursorId
+    const currentIndex = anchorId == null ? -1 : list.findIndex((i) => i.id === anchorId)
+    // In the cover wall J/K move a cursor and Enter opens it. The list, and either
+    // view once the reader is open, opens each item as it moves (master–detail).
+    const browsing = items.viewMode === 'cards' && !ui.activeItem
+    const moveTo = (index: number) => {
+      ui.cursorId = list[index].id
+      if (!browsing) ui.activeItem = list[index]
+    }
+    const target = ui.activeItem ?? (browsing && currentIndex >= 0 ? list[currentIndex] : null)
 
     if (e.key === 'j' || e.key === 'ArrowDown') {
       e.preventDefault()
-      const next = Math.min(items.items.length - 1, currentIndex + 1)
-      ui.activeItem = items.items[next]
+      moveTo(Math.min(list.length - 1, currentIndex + 1))
     } else if (e.key === 'k' || e.key === 'ArrowUp') {
       e.preventDefault()
-      const prev = Math.max(0, currentIndex - 1)
-      ui.activeItem = items.items[prev]
+      moveTo(Math.max(0, currentIndex - 1))
     } else if (e.key === 'e' || e.key === 'E') {
-      if (ui.activeItem) {
+      if (target) {
         e.preventDefault()
-        toggleRead(ui.activeItem)
+        toggleRead(target)
       }
     } else if (e.key === 's' || e.key === 'S') {
-      if (ui.activeItem) {
+      if (target) {
         e.preventDefault()
-        toggleStar(ui.activeItem)
+        toggleStar(target)
       }
     } else if (e.key === 'Enter') {
-      if (currentIndex === -1 && items.items.length > 0) {
-        ui.activeItem = items.items[0]
+      if (!ui.activeItem) {
+        ui.activeItem = list[Math.max(0, currentIndex)]
+        ui.detailTab = 'analysis'
       }
     }
   }

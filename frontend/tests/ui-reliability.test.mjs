@@ -70,7 +70,7 @@ function reset() {
   globalThis.document = { activeElement: null }
   globalThis.__uiTest = {
     ui: reactive({ activeItem: null, sidebarOpen: true, detailTab: 'analysis' }),
-    items: reactive({ items: [], triageView: 'inbox', categories: [], stats: {}, loadItems() {} }),
+    items: reactive({ items: [], get visibleItems() { return this.items }, triageView: 'inbox', categories: [], stats: {}, loadItems() {} }),
     mutations: { quickIngest: async () => true, toggleStar() {}, toggleRead() {}, updateCategory() {} },
     api: {},
   }

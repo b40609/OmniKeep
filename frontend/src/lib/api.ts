@@ -72,6 +72,8 @@ export interface Item {
   published_date?: string | null
   author?: string | null
   origin?: string | null
+  /** External image address saved at ingest; may be empty, a favicon, or no longer reachable. */
+  cover_image?: string | null
   sub_entities_count?: number
   citations_count?: number
   deep_analysis?: string | null

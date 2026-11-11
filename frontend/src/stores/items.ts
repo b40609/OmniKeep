@@ -1,11 +1,17 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useLocalStorage } from '@vueuse/core'
 import * as api from '@/lib/api'
 import type { Item, Category, Stats } from '@/lib/api'
+import { arrangeItems, type KindFilter } from '@/lib/wall'
 
 export type TriageView = 'inbox' | 'starred' | 'archived' | 'all' | 'radar'
 export type ViewMode = 'list' | 'cards'
 export type SearchMode = 'keyword' | 'semantic'
+export type SortOrder = 'newest' | 'oldest'
+
+/** The API returns one page; the list never asks for the next one. */
+export const PAGE_SIZE = 50
 
 export const useItemsStore = defineStore('items', () => {
   const items = ref<Item[]>([])
@@ -20,7 +26,17 @@ export const useItemsStore = defineStore('items', () => {
   const currentCategory = ref('全部')
   const searchQuery = ref('')
   const searchMode = ref<SearchMode>('keyword')
-  const viewMode = ref<ViewMode>('list')
+  // The cover wall is the default; a view picked on this browser is remembered.
+  const viewMode = useLocalStorage<ViewMode>('omnikeep-view', 'cards')
+  // Kind tabs and sort order work on the loaded page only: the API has no parameter for either.
+  const kindFilter = ref<KindFilter>('all')
+  const sortOrder = ref<SortOrder>('newest')
+  /** Search results arrive ranked by relevance, so they are neither re-sorted nor split by date. */
+  const ranked = computed(() => !!searchQuery.value.trim())
+  /** What the list and the wall show, and what J/K move through. */
+  const visibleItems = computed(() =>
+    arrangeItems(items.value, kindFilter.value, !ranked.value && sortOrder.value === 'oldest' ? 'oldest' : 'server'),
+  )
 
   async function loadItems() {
     const request = ++requestId
@@ -90,6 +106,7 @@ export const useItemsStore = defineStore('items', () => {
   return {
     items, categories, stats, loading, error,
     triageView, currentCategory, searchQuery, searchMode, viewMode,
+    kindFilter, sortOrder, ranked, visibleItems,
     toggleSearchMode,
     loadItems, loadStats, loadCategories, refreshAll,
   }
