@@ -8,6 +8,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from app.config import settings
 
 def get_db_connection() -> sqlite3.Connection:
@@ -28,7 +29,7 @@ def get_db_connection() -> sqlite3.Connection:
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     # Only seed defaults when creating a new database. Restarting must never
     # restore categories that a user intentionally deleted.
     new_categories = cursor.execute(
@@ -45,7 +46,7 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
+
     # 2. Neutral starting categories. All remain user-editable.
     if new_categories:
         for idx, cat_name in enumerate(["文章", "影片", "工具", "筆記"]):
@@ -53,7 +54,7 @@ def init_db():
                 INSERT INTO categories (name, sort_order)
                 VALUES (?, ?)
             """, (cat_name, idx))
-    
+
     # 3. Items table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS items (
@@ -551,7 +552,7 @@ def save_item(item_data: Dict[str, Any]) -> str:
 
 def _save_item(conn, item_data: Dict[str, Any]) -> str:
     cursor = conn.cursor()
-    
+
     # Check if url already exists to preserve and return the true existing item id
     cursor.execute("SELECT id FROM items WHERE url = ? LIMIT 1", (item_data["url"],))
     existing_row = cursor.fetchone()
@@ -561,7 +562,7 @@ def _save_item(conn, item_data: Dict[str, Any]) -> str:
         item_id = item_data.get("id") or uuid.uuid4().hex[:12]
 
     now = datetime.now(timezone.utc).isoformat()
-    
+
     tags = item_data.get("tech_tags", [])
     if isinstance(tags, list):
         tags_str = json.dumps(tags, ensure_ascii=False)
@@ -723,9 +724,53 @@ def _like_pattern(word: str) -> str:
     return "%" + word.replace("~", "~~").replace("%", "~%").replace("_", "~_") + "%"
 
 
-def _item_filters(category, is_starred, is_read, origin):
-    """The list filters of get_items as SQL conditions on `items i`, with named parameters."""
+# The kinds the item list can be narrowed to. frontend/src/lib/wall.ts (itemKind) draws
+# the same lines for the icon it shows, so the two must be changed together.
+ITEM_KINDS = ("project", "post", "video", "article")
+ITEM_SORTS = ("newest", "oldest")
+_VIDEO_SOURCES = {"youtube", "bilibili", "reel", "tiktok", "video"}
+_POST_SOURCES = {"threads", "instagram", "facebook", "twitter", "x", "social"}
+_VIDEO_HOSTS = ("youtube.com", "youtu.be", "bilibili.com", "b23.tv", "tiktok.com", "vimeo.com")
+_POST_HOSTS = ("threads.net", "threads.com", "x.com", "twitter.com", "facebook.com", "fb.com",
+               "instagram.com", "linkedin.com", "bsky.app")
+
+
+def _web_host(url) -> str:
+    """Host of an http(s) address without a leading www., m. or mobile.; '' for anything else."""
+    try:
+        parsed = urlparse(str(url or "").strip())
+        host = (parsed.hostname or "").lower() if parsed.scheme in ("http", "https") else ""
+    except ValueError:
+        return ""
+    return re.sub(r"^(www|m|mobile)\.", "", host)
+
+
+def _on_site(host: str, sites) -> bool:
+    return any(host == site or host.endswith("." + site) for site in sites)
+
+
+def item_kind(url, source_type) -> str:
+    """Every item is exactly one kind; "project" means a github.com address."""
+    source = str(source_type or "").lower()
+    host = _web_host(url)
+    if host == "github.com" or (not host and source == "github"):
+        return "project"
+    if source in _VIDEO_SOURCES or _on_site(host, _VIDEO_HOSTS):
+        return "video"
+    if source in _POST_SOURCES or _on_site(host, _POST_HOSTS):
+        return "post"
+    return "article"
+
+
+def _item_filters(category, is_starred, is_read, origin, kind=None):
+    """The list filters of get_items as SQL conditions on `items i`, with named parameters.
+    A `kind` condition calls item_kind(), which the connection must have registered."""
     conditions, params = [], {}
+    if kind:
+        if kind not in ITEM_KINDS:
+            raise ValueError(f"unknown item kind: {kind!r}")
+        conditions.append("item_kind(i.url, i.source_type) = :kind")
+        params["kind"] = kind
     if category and category != "全部":
         conditions.append("i.category_name = :category")
         params["category"] = category
@@ -841,6 +886,45 @@ def _search_items(cursor, words: List[str], filters, limit: int, offset: int) ->
         return search(use_fts=False)
 
 
+def _count_search(cursor, words: List[str], filters) -> int:
+    """How many items _search_items would return in all, following the same widening rule."""
+    def run(require_all, use_fts):
+        sql, params = _search_statement(words, require_all, filters, use_fts)
+        return cursor.execute(f"SELECT COUNT(*) FROM ({sql})", {**params, "limit": -1, "offset": 0}).fetchone()[0]
+
+    def count(use_fts):
+        found = run(True, use_fts)
+        return found if found or len(words) < 2 else run(False, use_fts)
+
+    try:
+        return count(use_fts=True)
+    except sqlite3.Error:
+        if not any(len(w) >= FTS_MIN_WORD_LENGTH for w in words):
+            raise
+        return count(use_fts=False)
+
+
+def count_items(
+    category: Optional[str] = None,
+    query: Optional[str] = None,
+    is_starred: Optional[bool] = None,
+    is_read: Optional[bool] = None,
+    origin: Optional[str] = None,
+    kind: Optional[str] = None,
+) -> int:
+    """How many items get_items would list in all under the same filters, pages aside."""
+    filters = _item_filters(category, is_starred, is_read, origin, kind)
+    with closing(get_db_connection()) as conn:
+        conn.create_function("item_kind", 2, item_kind, deterministic=True)
+        cursor = conn.cursor()
+        words = search_words(query)
+        if words:
+            return _count_search(cursor, words, filters)
+        conditions, params = filters
+        return cursor.execute(
+            f"SELECT COUNT(*) FROM items i WHERE {' AND '.join(conditions) or '1=1'}", params).fetchone()[0]
+
+
 def get_items(
     category: Optional[str] = None,
     query: Optional[str] = None,
@@ -848,44 +932,38 @@ def get_items(
     is_read: Optional[bool] = None,
     origin: Optional[str] = None,
     limit: int = 50,
-    offset: int = 0
+    offset: int = 0,
+    kind: Optional[str] = None,
+    sort: str = "newest",
 ) -> List[Dict[str, Any]]:
+    """One page of the item list. `kind` narrows it to one of ITEM_KINDS; `sort` is
+    "newest" or "oldest" by the time an item was saved. A search is ranked by
+    relevance, whatever `sort` says."""
+    if sort not in ITEM_SORTS:
+        raise ValueError(f"unknown sort order: {sort!r}")
+    filters = _item_filters(category, is_starred, is_read, origin, kind)
     conn = get_db_connection()
+    conn.create_function("item_kind", 2, item_kind, deterministic=True)
     cursor = conn.cursor()
-    
+
     # A query of nothing but quotes or spaces has no words: it lists like no query at all.
     words = search_words(query)
     if words:
-        # Ranked by relevance (see _search_statement); the list below stays newest first.
-        db_rows = _search_items(cursor, words, _item_filters(category, is_starred, is_read, origin), limit, offset)
+        # Ranked by relevance (see _search_statement); the list below is ordered by date.
+        db_rows = _search_items(cursor, words, filters, limit, offset)
     else:
-        sql = """
+        conditions, params = filters
+        # rowid breaks ties, so items saved in the same instant keep one order across pages.
+        direction = "ASC" if sort == "oldest" else "DESC"
+        cursor.execute(f"""
             SELECT i.*,
                    (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
                    (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
             FROM items i
-            WHERE 1=1
-        """
-        params = []
-        if category and category != "全部":
-            sql += " AND i.category_name = ?"
-            params.append(category)
-        if is_starred is not None:
-            sql += " AND i.is_starred = ?"
-            params.append(1 if is_starred else 0)
-        if is_read is not None:
-            sql += " AND i.is_read = ?"
-            params.append(1 if is_read else 0)
-        if origin == "curated":
-            sql += " AND (i.origin != 'radar' OR i.is_starred = 1)"
-        elif origin == "radar":
-            sql += " AND i.origin = 'radar'"
-        elif origin and origin != "all":
-            sql += " AND i.origin = ?"
-            params.append(origin)
-        sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-        cursor.execute(sql, params)
+            WHERE {" AND ".join(conditions) or "1=1"}
+            ORDER BY i.created_at {direction}, i.rowid {direction}
+            LIMIT :limit OFFSET :offset
+        """, {**params, "limit": limit, "offset": offset})
         db_rows = cursor.fetchall()
 
     rows = []
@@ -896,7 +974,7 @@ def get_items(
         except Exception:
             d["tech_tags"] = []
         rows.append(d)
-        
+
     conn.close()
     return rows
 
@@ -1093,12 +1171,12 @@ def toggle_radar_source_active(source_id: str, is_active: Optional[bool] = None)
     if not row:
         conn.close()
         return None
-    
+
     if is_active is None:
         new_active = 0 if row["is_active"] else 1
     else:
         new_active = 1 if is_active else 0
-        
+
     cursor.execute("UPDATE radar_sources SET is_active = ? WHERE id = ?", (new_active, source_id))
     conn.commit()
     conn.close()
@@ -1387,7 +1465,7 @@ def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
         return None
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     # 1. Exact match on raw url
     cursor.execute("SELECT * FROM items WHERE url = ? LIMIT 1", (url,))
     row = cursor.fetchone()
@@ -1399,7 +1477,7 @@ def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
         except Exception:
             d["tech_tags"] = []
         return d
-    
+
     # 2. Canonical match
     canon = normalize_canonical_url(url)
     if canon:
@@ -1470,7 +1548,7 @@ def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
                 except Exception:
                     d["tech_tags"] = []
                 return d
-    
+
     conn.close()
     return None
 
@@ -1507,7 +1585,7 @@ def save_citation(data: Dict[str, Any]) -> str:
     cursor = conn.cursor()
     cit_id = data.get("id") or f"cit_{uuid.uuid4().hex[:10]}"
     now_iso = datetime.now(timezone.utc).isoformat()
-    
+
     parent_id = data["source_parent_id"]
     canon_url = normalize_canonical_url(data.get("target_canonical_url", ""))
     target_item_id = data.get("target_item_id")

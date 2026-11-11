@@ -6,9 +6,10 @@ import zipfile
 import re
 from datetime import datetime
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Literal, Optional
 from app.database import (
     get_items,
+    count_items,
     get_item_by_id,
     update_item_field,
     delete_item,
@@ -58,10 +59,19 @@ async def list_items(
     starred: Optional[bool] = Query(None, description="Filter starred items only"),
     read: Optional[bool] = Query(None, description="Filter read status (False for unread/Inbox, True for archived)"),
     origin: Optional[str] = Query(None, description="Origin filter (manual | radar | all)"),
+    kind: Optional[Literal["project", "post", "video", "article"]] = Query(
+        None, description="Kind filter: project (a github.com address), post, video or article"),
+    sort: Literal["newest", "oldest"] = Query(
+        "newest", description="Order by the time saved; a search stays ranked by relevance"),
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    response: Response = None,
 ):
-    return get_items(category=category, query=q, is_starred=starred, is_read=read, origin=origin, limit=limit, offset=offset)
+    filters = dict(category=category, query=q, is_starred=starred, is_read=read, origin=origin, kind=kind)
+    # The body stays a plain list for existing clients; the size of the whole result
+    # (every page, same filters) travels in a header.
+    response.headers["X-Total-Count"] = str(count_items(**filters))
+    return get_items(**filters, sort=sort, limit=limit, offset=offset)
 
 @router.get("/export")
 async def export_items(
@@ -164,7 +174,7 @@ async def get_item(item_id: str):
     item = get_item_by_id(item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    
+
     # Enrich with citations, sub_entities, semantic related items & knowledge graph
     item["citations"] = get_citations_for_target(item_id)
     item["sub_entities"] = get_sub_entities_for_parent(item_id)
