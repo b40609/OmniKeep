@@ -4,7 +4,7 @@ import threading
 import json
 import re
 from typing import Optional, List, Dict, Any
-from app.providers.base import BaseLLMProvider
+from app.providers.base import BaseLLMProvider, EmptyResponseError, require_text
 from app.config import settings
 
 # google-genai sets no timeout, so a stalled connection waits forever (seen 2026-11-07: five
@@ -134,8 +134,17 @@ class GeminiProvider(BaseLLMProvider):
                 response_mime_type="application/json"
             )
         )
-        raw = response.text or "{}"
-        return json.loads(raw)
+        return json.loads(self._answer_text(response))
+
+    def _answer_text(self, response) -> str:
+        """The answer's text. An empty answer (a blocked prompt, or thinking that used up the
+        output) is a failure: it used to become "{}", which callers took for a result."""
+        from app import ai_status
+        try:
+            return require_text(response.text, self.label)
+        except EmptyResponseError as exc:
+            ai_status.record_failure(self.status_key, None, str(exc), self.label)
+            raise
 
     async def analyze_youtube(self, youtube_url: str, prompt: str) -> Dict[str, Any]:
         """
@@ -166,7 +175,7 @@ class GeminiProvider(BaseLLMProvider):
                 response_mime_type="application/json"
             )
         )
-        raw = response.text or "{}"
+        raw = self._answer_text(response)
         try:
             return json.loads(raw)
         except Exception:

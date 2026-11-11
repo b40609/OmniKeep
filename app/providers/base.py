@@ -1,6 +1,28 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
 
+
+class EmptyResponseError(RuntimeError):
+    """The model answered, but with no text at all.
+
+    Seen with reasoning models whose whole answer went into thinking. Raised instead of
+    passing an empty object off as a result, so a fallback chain (app/providers/chain.py)
+    moves on to its next connection and the caller never saves an analysis that is not there.
+    """
+
+    def __init__(self, label: str = ""):
+        self.label = label
+        who = f"「{label}」的" if label else ""
+        super().__init__(f"{who}模型回了空白內容，沒有可用的文字。")
+
+
+def require_text(text: Optional[str], label: str = "") -> str:
+    """The model's text as it is; EmptyResponseError when there is none."""
+    if not (text or "").strip():
+        raise EmptyResponseError(label)
+    return text
+
+
 class BaseLLMProvider(ABC):
     """
     Abstract interface for LLM operations.
@@ -14,5 +36,9 @@ class BaseLLMProvider(ABC):
 
     @abstractmethod
     async def generate_json(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """Generate structured JSON response."""
+        """Generate structured JSON response.
+
+        Raises when there is no result (the SDK's error, EmptyResponseError, or
+        json.JSONDecodeError for text that is not JSON); never returns None or a made-up {}.
+        """
         pass
