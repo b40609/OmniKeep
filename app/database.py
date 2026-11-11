@@ -608,6 +608,23 @@ def _save_item(conn, item_data: Dict[str, Any]) -> str:
     ))
     return item_id
 
+def save_item_if_new(item_data: Dict[str, Any]) -> Optional[str]:
+    """Insert the item unless its page is already stored; None when it is.
+
+    save_item() overwrites the stored analysis and raw content of an item with the same
+    URL, which is right for a re-analysis and wrong for a bookmark import or the demo
+    data: those know nothing about the page. "Already stored" is the same URL or another
+    link to the same page (tracking parameters, youtu.be vs watch?v=, a GitHub repository).
+    """
+    if find_item_by_canonical_or_url(item_data["url"]) is not None:
+        return None
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if conn.execute("SELECT 1 FROM items WHERE url = ? LIMIT 1", (item_data["url"],)).fetchone():
+            return None  # stored by another writer since the lookup above
+        return _save_item(conn, item_data)
+
+
 FTS_COLUMNS = ("title_l1", "summary_l1", "tech_tags", "deep_analysis", "content_raw")
 
 
@@ -2694,7 +2711,8 @@ def get_telegram_pairing_expiry(now: float) -> Optional[float]:
 
 
 def seed_demo_items() -> List[Dict[str, Any]]:
-    """Seed high-quality demo items for cold-start first time users."""
+    """Seed high-quality demo items for cold-start first time users. A demo page the user
+    has already saved is left as it is; only the items actually added are returned."""
     demos = [
         {
             "url": "https://www.youtube.com/watch?v=kCc8FmEb1nY",
@@ -2747,6 +2765,6 @@ def seed_demo_items() -> List[Dict[str, Any]]:
     ]
     created = []
     for d in demos:
-        save_item(d)
-        created.append(d)
+        if save_item_if_new(d) is not None:
+            created.append(d)
     return created
