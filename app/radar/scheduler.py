@@ -1,6 +1,7 @@
 import asyncio
 import html
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from app.config import settings
@@ -55,30 +56,85 @@ def is_source_due(source: Dict[str, Any], force: bool = False) -> bool:
         interval = source.get("check_interval_minutes") or 60
         return minutes_passed >= float(interval)
 
+def _fold(text: str) -> str:
+    """Case and whitespace folded, the form tags and item text are compared in."""
+    return " ".join(str(text).split()).casefold()
+
 def build_weight_index() -> List[tuple]:
     """Keyword index for the pre-gate: only trained (non-default) or muted topics."""
     return [
-        (str(r["topic_tag"]).strip().casefold(), float(r["weight"]), bool(r["is_blocked"]))
+        (_fold(r["topic_tag"]), float(r["weight"]), bool(r["is_blocked"]))
         for r in get_all_topic_weights()
         if bool(r["is_blocked"]) or abs(float(r["weight"]) - 1.0) > 1e-9
     ]
 
+# Scripts written without spaces between words: kana, bopomofo, CJK ideographs, hangul.
+_CJK = re.compile(
+    "[ᄀ-ᇿ⺀-⿟々-〇぀-ヿ㄀-ㄯㆠ-ㇿ㐀-䶿"
+    "一-鿿가-힯豈-﫿ｦ-ﾟ\U00020000-\U000323af]"
+)
+PREGATE_CONTENT_CHARS = 500  # how much of the content the pre-gate reads after the title
+PREGATE_MIN_MUTE_LENGTH = 2  # a one-character muted tag ("c", "r", "車") is left to the tag check after analysis
+
+def _joins_word(ch: str) -> bool:
+    """A letter or digit that continues the word next to it (CJK characters stand alone)."""
+    return ch.isalnum() and not _CJK.match(ch)
+
+def tag_in_text(tag: str, text: str) -> bool:
+    """Whether `tag` appears in `text` as a term of its own (both folded with _fold).
+
+    The characters right before and after the hit must not be letters or digits, so "ai" is
+    not found in "openai" or "email", nor "go" in "google". The tag is compared literally,
+    symbols included ("c++", "c#", ".net", "node.js"). CJK text has no word boundaries: a CJK
+    neighbour never counts as part of the word ("使用ai模型" has "ai"), and where the tag itself
+    starts or ends with a CJK character that side needs no boundary, so a Chinese tag is found
+    anywhere in the text.
+    """
+    if not tag:
+        return False
+    open_start, open_end = bool(_CJK.match(tag[0])), bool(_CJK.match(tag[-1]))
+    start = text.find(tag)
+    while start != -1:
+        end = start + len(tag)
+        if ((open_start or start == 0 or not _joins_word(text[start - 1]))
+                and (open_end or end == len(text) or not _joins_word(text[end]))):
+            return True
+        start = text.find(tag, start + 1)
+    return False
+
+def _pregate_scan(title: str, content: str, weight_index: List[tuple]) -> tuple:
+    """(the muted tag found or None, weights of the other tags found) in the title and the
+    opening of the content. The link is not read: host names and paths hold words that say
+    nothing about the topic (every Google News link has "google" in it)."""
+    text = _fold(f"{title} {content[:PREGATE_CONTENT_CHARS]}")
+    matched = []
+    for tag, weight, blocked in weight_index:
+        if blocked and len(tag) < PREGATE_MIN_MUTE_LENGTH:
+            continue
+        if not tag_in_text(tag, text):
+            continue
+        if blocked:
+            return tag, []
+        matched.append(weight)
+    return None, matched
+
+def muted_tag_hit(title: str, content: str, weight_index: List[tuple]) -> Optional[str]:
+    """The muted tag (folded) the pre-gate finds in this item, or None."""
+    return _pregate_scan(title, content, weight_index)[0]
+
 def pregate_item(title: str, url: str, content: str, weight_index: List[tuple]) -> tuple:
     """Free local gate before any LLM spend.
 
-    A muted-topic keyword hit blocks the item outright (no DB row, no Agnes
+    A muted-topic hit blocks the item outright (no DB row, no Agnes
     call, no post-hoc delete). Otherwise returns a rough interest score from
     matched weights (same hybrid formula as score_item) — used only to RANK
     candidates for the analysis budget. No tags exist before analysis, so
-    this is substring matching over title/URL/content, not score_item.
+    this looks for the tags as whole terms (tag_in_text) in the title and the
+    opening of the content, not score_item. `url` is not matched.
     """
-    text = f"{title} {url} {content[:500]}".casefold()
-    matched = []
-    for tag, weight, blocked in weight_index:
-        if tag and tag in text:
-            if blocked:
-                return -999.0, True
-            matched.append(weight)
+    hit, matched = _pregate_scan(title, content, weight_index)
+    if hit is not None:
+        return -999.0, True
     if not matched:
         return 1.0, False
     return round(0.6 * max(matched) + 0.4 * (sum(matched) / len(matched)), 3), False
@@ -373,8 +429,10 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
                 raw = raw.model_copy(update={"url": row["url"]})  # keep to the stub already saved
             pg_score, blocked = pregate_item(raw.title, raw.url, raw.content or "", weight_index)
             if blocked:
-                logger.info(f"[Radar:Scheduler] Pre-gate dropped (muted topic): {raw.title}")
-                if row:
+                hit = muted_tag_hit(raw.title, raw.content or "", weight_index)
+                logger.info(f"[Radar:Scheduler] Pre-gate dropped (muted topic {hit!r}): {raw.title}")
+                # The stub saved earlier goes only when the muted tag really is in this item's text.
+                if row and hit is not None:
                     delete_item(row["id"])
                 continue
             candidates.append((raw, src, pg_score))
