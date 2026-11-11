@@ -228,6 +228,44 @@ def sanitize_and_validate_query(raw_data: Any) -> QueryExtractionSchema:
         return QueryExtractionSchema()
 
 
+class UnusableAnalysis(ValueError):
+    """A model's answer that holds no analysis; the message says what is wrong with it."""
+
+
+class AnalysisFailedError(Exception):
+    """The model answered every time, but never with a usable analysis.
+
+    Raised instead of handing back an empty structure, which the pipeline saved as a finished
+    item with a placeholder summary. `reason` is what was wrong with the last answer.
+    """
+
+    def __init__(self, reason: str, attempts: int = 1):
+        self.reason = reason
+        self.attempts = attempts
+        super().__init__(f"模型回應了 {attempts} 次，都不是可用的分析（{reason}）：換一個模型或服務商通常就能解決。")
+
+
+def usable_analysis(raw_data: Any) -> Dict[str, Any]:
+    """The validated analysis as a dict; UnusableAnalysis when the answer holds none.
+
+    sanitize_and_validate_analysis() never fails: it turns anything, even None, into a schema
+    full of defaults. So an answer with the wrong keys, or no answer at all, used to pass as an
+    analysis. One with neither a summary nor a deep analysis is not an analysis.
+    """
+    if isinstance(raw_data, str):
+        try:
+            raw_data = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_data.strip()))
+        except ValueError:
+            raise UnusableAnalysis("輸出不是合法的 JSON") from None
+    if not isinstance(raw_data, dict):
+        raise UnusableAnalysis(f"輸出不是 JSON 物件（是 {type(raw_data).__name__}）")
+    validated = sanitize_and_validate_analysis(raw_data)
+    if not validated.summary_l1 and not validated.deep_analysis.strip():
+        keys = "、".join(str(k) for k in list(raw_data)[:12])
+        raise UnusableAnalysis("沒有 summary_l1 也沒有 deep_analysis" + (f"；收到的鍵：{keys}" if keys else "；輸出是空物件"))
+    return validated.model_dump()
+
+
 async def generate_structured_intelligence(
     provider,
     prompt: str,
@@ -238,28 +276,35 @@ async def generate_structured_intelligence(
     Closed-Loop Self-Healing LLM Invocation:
     1. Calls primary LLM.
     2. Validates with Pydantic contract.
-    3. If Validation fails, feeds error back to LLM for reflection retry.
-    4. Guarantees clean, typed Dict for downstream pipeline.
+    3. If the model answered but the answer does not validate, feeds the problem back to
+       the LLM for a reflection retry (up to max_retries more calls).
+    4. Returns a clean, typed Dict, or raises: AnalysisFailedError when no answer validated,
+       the provider's own exception when the call itself failed.
+
+    A provider failure (rate limit, dead key, connection, HTTP error, empty answer) goes up
+    at once, untouched. Asking again with a reminder cannot fix it and only spends more of a
+    small quota (three calls an item emptied a two-a-minute free tier); the caller has its
+    own retry and backoff.
     """
-    last_error = None
+    attempts = max_retries + 1
+    problem = ""
     current_prompt = prompt
 
-    for attempt in range(max_retries + 1):
+    for attempt in range(attempts):
         try:
             raw_json = await provider.generate_json(current_prompt, system_prompt)
-            validated = sanitize_and_validate_analysis(raw_json)
-            # Successfully validated and sanitized!
-            return validated.model_dump()
-        except Exception as e:
-            last_error = e
-            if attempt < max_retries:
-                logger.warning(f"[Guardrails] Attempt {attempt + 1} validation failed ({e}). Feeding reflection to LLM...")
-                current_prompt = f"""{prompt}
+            return usable_analysis(raw_json)
+        except json.JSONDecodeError as e:  # the model answered with text that is not JSON
+            problem = f"輸出不是合法的 JSON（{e.msg}）"
+        except UnusableAnalysis as e:
+            problem = str(e)
+        if attempt + 1 < attempts:
+            logger.warning(f"[Guardrails] Attempt {attempt + 1} validation failed ({problem}). Feeding reflection to LLM...")
+            current_prompt = f"""{prompt}
 
 === 上一次輸出格式驗證失敗提醒 ===
-錯誤詳情：{str(e)}
+錯誤詳情：{problem}
 請務必依據原始規範修正上述錯誤，確保 JSON 鍵名與型別完全正確，再次輸出完整的合法 JSON。"""
 
-    logger.error(f"[Guardrails] All {max_retries + 1} attempts hit validation issues. Using soft fallback: {last_error}")
-    # Final defense: generate basic fallback structure
-    return sanitize_and_validate_analysis({}).model_dump()
+    logger.error(f"[Guardrails] All {attempts} attempts hit validation issues: {problem}")
+    raise AnalysisFailedError(problem, attempts)

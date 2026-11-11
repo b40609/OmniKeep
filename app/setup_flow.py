@@ -1084,7 +1084,12 @@ async def ingest(url: str) -> Dict[str, Any]:
     url = (url or "").strip()
     if not url:
         raise SetupError("請給要分析的網址")
-    result = await call_service("POST", "/api/ingest", json_body={"url": url}, timeout=600.0)
+    try:
+        result = await call_service("POST", "/api/ingest", json_body={"url": url}, timeout=600.0)
+    except ServiceError as exc:
+        # The route's detail is the reason in Chinese (rate limit, bad key, unusable answer):
+        # the agent reads it out and picks a fallback connection or a later retry. Nothing was saved.
+        raise SetupError(f"這個連結沒有分析成功，也沒有存檔。原因：{exc}") from exc
     item = result.get("item") or {}
     analysis = item.get("deep_analysis") or ""
     return {
