@@ -393,7 +393,8 @@ def search_similar_items(
     Search for items similar to query_vector using sqlite-vec MATCH or numpy fallback.
     With `model`, only vectors labelled with that model are compared: vectors from
     another model live in another space and their similarity means nothing.
-    Returns: list of dicts with item_id, similarity, distance.
+    Returns: list of dicts with item_id, similarity (cosine, 4 decimals) and distance
+    (1 - similarity), best first; both paths give the same numbers for the same vectors.
     """
     dim = len(query_vector)
     packed = struct.pack(f"{dim}f", *query_vector)
@@ -407,12 +408,16 @@ def search_similar_items(
                 # sqlite-vec MATCH query; vec_items has no model column, so with a
                 # model filter fetch more neighbours and drop the other models after.
                 k = limit * 2 if model is None else limit * 8
+                # vec_items was created without distance_metric, so `distance` (and the
+                # neighbour order) is L2. The similarity comes from vec_distance_cosine on
+                # each neighbour instead: 1 - L2 is not a cosine, and stored vectors are
+                # not always unit length (a remote endpoint's vector is kept as returned).
                 rows = conn.execute("""
-                    SELECT item_id, distance
+                    SELECT item_id, vec_distance_cosine(embedding, ?) AS cosine_distance
                     FROM vec_items
                     WHERE embedding MATCH ? AND k = ?
                     ORDER BY distance ASC
-                """, (packed, k)).fetchall()
+                """, (packed, packed, k)).fetchall()
                 allowed = None
                 if model is not None and rows:
                     ids = [r["item_id"] for r in rows]
@@ -426,15 +431,17 @@ def search_similar_items(
                 for r in rows:
                     if allowed is not None and r["item_id"] not in allowed:
                         continue
-                    dist = float(r["distance"])
-                    # Approximate cosine similarity from cosine distance: sim = 1.0 - dist
-                    sim = max(0.0, round(1.0 - dist, 4))
+                    # NULL for a zero vector, which cosine_similarity() scores 0.0 as well.
+                    cosine_distance = r["cosine_distance"]
+                    sim = 0.0 if cosine_distance is None else max(-1.0, min(1.0, 1.0 - float(cosine_distance)))
                     if sim >= min_similarity:
                         results.append({
                             "item_id": r["item_id"],
-                            "similarity": sim,
-                            "distance": dist
+                            "similarity": round(sim, 4),
+                            "distance": round(1.0 - sim, 4)
                         })
+                # L2 order and cosine order differ for vectors that are not unit length.
+                results.sort(key=lambda x: x["similarity"], reverse=True)
                 used_vec = True
             except Exception as e:
                 logger.debug(f"[Vector] sqlite-vec MATCH failed, using numpy fallback: {e}")
