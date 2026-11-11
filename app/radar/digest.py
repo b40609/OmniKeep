@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from app.providers import get_provider
@@ -8,7 +9,13 @@ def radar_provider():
     """The radar slot (設定 › AI 服務商): falls back to the analysis chain."""
     return get_provider("radar")
 from app.database import save_radar_digest, get_item_by_id
+from app.error_translate import classify
 from app.pipeline import interest_profile_block
+
+logger = logging.getLogger("omnikeep.radar.digest")
+
+# Title of each digest type; "daily" is the one maybe_send_daily_digest sends at the owner's hour.
+DIGEST_TYPE_NAMES = {"evening": "晚間焦點戰報", "morning": "清晨技術晨報", "daily": "每日摘要", "custom": "特報"}
 
 DIGEST_PROMPT_TEMPLATE = """你是一位高階系統架構師與首席技術情報官。
 以下是 OmniKeep 情報雷達近期自適應巡檢獲取的一批高質量技術項目（涵蓋 YouTube、GitHub、技術博客）：
@@ -51,14 +58,19 @@ async def generate_radar_digest(item_ids: List[str], digest_type: str = "evening
     llm = radar_provider()
     system_instruction = "你是一位極簡、專注高質量技術架構的情報官。輸出乾淨的 Markdown 格式。"
     
+    # A failed write-up is neither saved nor announced. Stored, it would count as the digest
+    # of its slot (the daily one is sent once a day) and be pushed as if it were the news.
     try:
         report_md = await llm.generate_text(prompt, system_instruction)
     except Exception as e:
-        report_md = f"戰報生成失敗: {str(e)}\n\n原始項目清單:\n{items_text}"
+        logger.warning("[Radar:Digest] %s digest was not written (%s: %s)", digest_type, type(e).__name__, e)
+        return {"success": False, "message": f"摘要產生失敗：{classify(e)['hint']}"}
+    if not (report_md or "").strip():
+        logger.warning("[Radar:Digest] %s digest was not written (the model returned no text)", digest_type)
+        return {"success": False, "message": "摘要產生失敗：AI 沒有回傳內容。"}
 
     now_str = datetime.now().strftime("%m/%d %H:%M")
-    type_names = {"evening": "晚間焦點戰報", "morning": "清晨技術晨報", "custom": "特報"}
-    title = f"OmniKeep 雷達 {type_names.get(digest_type, '焦點戰報')} ({now_str})"
+    title = f"OmniKeep 雷達 {DIGEST_TYPE_NAMES.get(digest_type, '焦點戰報')} ({now_str})"
 
     digest_id = save_radar_digest({
         "title": title,

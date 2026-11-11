@@ -253,36 +253,21 @@ async def test_dreampass_llm_model_and_radar_source_whitelist(monkeypatch):
     # 1. Verify settings.OPENAI_MODEL resolves to PRIMARY_MODEL without AttributeError
     assert settings.OPENAI_MODEL == settings.PRIMARY_MODEL
 
-    captured_payload = {}
+    asked = []
 
-    class DummyResp:
-        status_code = 200
-        def json(self):
-            return {
-                "choices": [{
-                    "message": {
-                        "content": '{"observations": ["LLM path works"], "suggested_profile": "AI Systems", "diff_summary": "+ AI Systems"}'
-                    }
-                }]
-            }
+    class DummyProvider:
+        async def generate_json(self, prompt, system_prompt=None):
+            asked.append(prompt)
+            return {"observations": ["LLM path works"], "suggested_profile": "AI Systems", "diff_summary": "+ AI Systems"}
 
-    class DummyClient:
-        async def __aenter__(self):
-            return self
-        async def __aexit__(self, *args):
-            pass
-        async def post(self, url, headers=None, json=None):
-            captured_payload["url"] = url
-            captured_payload["json"] = json
-            return DummyResp()
-
+    # Dream Pass goes through the radar slot's provider (app.providers.get_provider) with the
+    # older flat settings as the fallback, so stub the provider where dreampass looks it up.
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
-    # dreampass imports public_http_client at module level, so patch it where it is used.
-    monkeypatch.setattr("app.radar.dreampass.public_http_client", lambda timeout=30.0: DummyClient())
+    monkeypatch.setattr("app.radar.dreampass.get_provider", lambda slot: DummyProvider())
 
     prop = await run_dreampass_reflection(days=7)
     assert prop["suggested_profile"] == "AI Systems"
-    assert captured_payload["json"]["model"] == settings.PRIMARY_MODEL
+    assert len(asked) == 1
 
     # 2. Verify google_news and web_change source types are accepted by /api/radar/sources
     transport = ASGITransport(app=app)
