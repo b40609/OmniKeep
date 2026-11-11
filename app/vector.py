@@ -355,6 +355,25 @@ def store_item_embedding(item_id: str, embedding: List[float], model: str = "") 
     return True
 
 
+def delete_item_embeddings(conn, item_ids: List[str], has_vec: bool) -> int:
+    """Remove the stored vectors of these items on `conn` (the caller commits); returns how
+    many item_embeddings rows went. `has_vec` is load_vec_extension(conn), called before
+    any transaction was opened: the sqlite-vec mirror is only reachable with the extension
+    loaded, and where it cannot load there is no mirror to clean."""
+    removed = 0
+    for item_id in item_ids:
+        try:
+            removed += conn.execute("DELETE FROM item_embeddings WHERE item_id = ?", (item_id,)).rowcount
+        except Exception as e:  # no such table: nothing was ever indexed in this database
+            logger.debug(f"[Vector] Could not delete from item_embeddings: {e}")
+        if has_vec:
+            try:
+                conn.execute("DELETE FROM vec_items WHERE item_id = ?", (item_id,))
+            except Exception as e:
+                logger.debug(f"[Vector] Could not delete from vec_items: {e}")
+    return removed
+
+
 def get_item_embedding(item_id: str) -> Optional[List[float]]:
     """Retrieves the stored embedding for an item."""
     with closing(get_db_connection()) as conn:

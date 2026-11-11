@@ -32,13 +32,18 @@ python scripts/rebuild_embeddings.py
 - **被誤標的本機向量**：`--repair` 把標記改正，向量不變，不呼叫 API。
 - **不是目前查詢模型算的**：`--reembed` 用目前設定重算。有金鑰時每個項目呼叫一次 embeddings API，計畫會先列出呼叫次數。
 - **已分析但沒有向量的項目**：`--reembed --include-missing` 會一併計算。雷達還沒分析的暫存項目不算在內。
-- **已刪除項目的向量**：不影響搜尋，不處理。
+- **已刪除項目的向量**：刪除項目時會一併刪掉它在 `item_embeddings` 與 `vec_items` 的向量。舊版沒有這一步，留下來的向量會佔掉近鄰查詢的名額（查到後才因為找不到項目被丟掉）。`--prune-orphans` 把這些向量清掉，不呼叫 API。
 
 ```bash
 python scripts/rebuild_embeddings.py --repair            # 只顯示會改什麼
 python scripts/rebuild_embeddings.py --repair --yes      # 執行
 python scripts/rebuild_embeddings.py --reembed --yes
+python scripts/rebuild_embeddings.py --prune-orphans --yes
 ```
+
+## 相似度怎麼算
+
+`vec_items` 建表時沒有指定距離，近鄰查詢的 `distance` 是 L2 距離。程式不拿它當相似度：取回近鄰時用 sqlite-vec 的 `vec_distance_cosine` 算每一筆的 cosine 距離，相似度是 `1 - cosine 距離`，和沒有 sqlite-vec 時的 numpy 路徑算出來的數字一致。近鄰的挑選仍依 L2：向量都是單位長度時兩種順序相同，不是單位長度的向量（相容端點回傳後照原樣存的）可能排不進候選。
 
 ## 安全設計
 

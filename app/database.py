@@ -939,8 +939,12 @@ def update_item_field(item_id: str, updates: Dict[str, Any]) -> bool:
     return ok
 
 def delete_item(item_id: str) -> bool:
+    from app.vector import delete_item_embeddings, load_vec_extension
     with closing(get_db_connection()) as conn, conn:
+        has_vec = load_vec_extension(conn)
         conn.execute("BEGIN IMMEDIATE")
+        # The item's vectors go with it, or they stay behind as neighbours of nothing.
+        delete_item_embeddings(conn, [item_id], has_vec)
         conn.execute("DELETE FROM behavior_events WHERE item_id = ? OR proposal_id IN (SELECT id FROM proposals WHERE item_id = ?)", (item_id, item_id))
         conn.execute("DELETE FROM proposals WHERE item_id = ?", (item_id,))
         conn.execute("UPDATE watch_targets SET fingerprint_item_id = NULL, fingerprint_version = NULL WHERE fingerprint_item_id = ?", (item_id,))
