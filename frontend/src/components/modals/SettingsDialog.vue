@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
-import { Settings, PlugZap, ShieldAlert, X, Loader2, CircleCheck, CircleAlert, BellRing } from 'lucide-vue-next'
+import { Settings, PlugZap, ShieldAlert, X, Loader2, CircleCheck, CircleAlert, BellRing, Copy, KeyRound } from 'lucide-vue-next'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import Button from '@/components/ui/button/Button.vue'
 import {
-  checkConnection, getSettings, getSettingsAudit, importEnvSettings, regeneratePushKeys, saveSettings,
+  checkConnection, getApiKey, getSettings, getSettingsAudit, importEnvSettings, regeneratePushKeys, saveSettings,
   type CheckService, type ConnectionCheck, type SettingField, type SettingValue, type SettingsAuditEntry,
   type SettingsSnapshot,
 } from '@/lib/api'
+import { LOCAL_LOGIN_KEY, turnsLocalLoginOff } from '@/lib/localLogin'
 import { useUiStore } from '@/stores/ui'
 import TelegramPairing from './TelegramPairing.vue'
 import AiProvidersPanel from './AiProvidersPanel.vue'
@@ -52,8 +53,9 @@ const auditError = ref('')
 const auditLoaded = ref(false)
 const regenerating = ref(false)
 
+// 系統 is always the last tab; its own settings (the group with the same id) are drawn at its top.
 const tabs = computed(() => [
-  ...(snapshot.value?.groups.map((g) => ({ id: g.id, label: g.label })) ?? []),
+  ...(snapshot.value?.groups.filter((g) => g.id !== 'system').map((g) => ({ id: g.id, label: g.label })) ?? []),
   { id: 'system', label: '系統' },
 ])
 // The flat AI fields (OPENAI_*, GEMINI_*, …) are replaced by AiProvidersPanel; the API still accepts them.
@@ -158,8 +160,33 @@ function display(value: SettingValue | undefined) {
   return value === '' || value === undefined ? '（空）' : String(value)
 }
 
-async function save() {
+// Switching 這台電腦免登入 off: the owner gets the key first, or this computer is locked out next time.
+const confirmingLocalLogin = ref(false)
+const shownKey = ref('')
+
+async function copyAccessKey() {
+  const key = getApiKey()
+  try {
+    await navigator.clipboard.writeText(key)
+    toast.success('已複製存取金鑰')
+  } catch {
+    // No clipboard access (not a secure context, or permission refused): show it for copying by hand.
+    shownKey.value = key
+  }
+}
+
+function closeLocalLoginConfirm() {
+  confirmingLocalLogin.value = false
+  shownKey.value = ''
+}
+
+async function save(confirmed = false) {
   if (!changeCount.value || saving.value) return
+  if (!confirmed && turnsLocalLoginOff(byKey.value.get(LOCAL_LOGIN_KEY), pending.value.values, pending.value.reset)) {
+    confirmingLocalLogin.value = true
+    return
+  }
+  closeLocalLoginConfirm()
   saving.value = true
   errors.value = {}
   try {
@@ -336,6 +363,123 @@ const inputClass =
             </p>
           </div>
 
+          <!-- Every tab: the settings of its group, drawn from what the server describes -->
+          <div v-for="field in fields" :key="field.key" class="space-y-1.5">
+            <div class="flex items-center justify-between gap-2">
+              <label :for="`setting-${field.key}`" class="text-xs font-semibold">{{ field.label }}</label>
+              <div class="flex shrink-0 items-center gap-1.5 text-2xs">
+                <span
+                  class="rounded-full border px-1.5 py-px"
+                  :class="resets.has(field.key) ? 'border-warning/40 text-warning' : field.source === 'app' ? 'border-primary/30 text-primary-soft-foreground' : 'border-border text-muted-foreground'"
+                >
+                  {{ resets.has(field.key) ? (field.env_available ? '將改回 .env' : '將改回預設值') : SOURCE_LABEL[field.source] }}
+                </span>
+                <button
+                  v-if="field.source === 'app' || resets.has(field.key)"
+                  type="button"
+                  class="cursor-pointer text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  @click="toggleReset(field)"
+                >
+                  {{ resets.has(field.key) ? '取消' : field.env_available ? '改回 .env' : '改回預設值' }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="field.kind === 'secret'" class="flex gap-2">
+              <input
+                :id="`setting-${field.key}`"
+                v-model="secretDraft[field.key]"
+                type="password"
+                autocomplete="new-password"
+                spellcheck="false"
+                :placeholder="secretPlaceholder(field)"
+                :disabled="clears.has(field.key) || resets.has(field.key)"
+                :class="inputClass"
+              >
+              <Button
+                v-if="field.configured || clears.has(field.key)"
+                variant="ghost"
+                size="sm"
+                class="h-9 shrink-0"
+                :disabled="resets.has(field.key)"
+                @click="toggleClear(field.key)"
+              >
+                {{ clears.has(field.key) ? '取消清除' : '清除' }}
+              </Button>
+            </div>
+
+            <select
+              v-else-if="field.kind === 'choice'"
+              :id="`setting-${field.key}`"
+              v-model="draft[field.key]"
+              :disabled="resets.has(field.key)"
+              :class="inputClass"
+            >
+              <option v-for="c in field.choices" :key="c.value" :value="c.value" class="bg-popover text-foreground">{{ c.label }}</option>
+            </select>
+
+            <input
+              v-else-if="field.kind === 'int' || field.kind === 'float'"
+              :id="`setting-${field.key}`"
+              v-model.number="draft[field.key]"
+              type="number"
+              :min="field.min"
+              :max="field.max"
+              :step="field.kind === 'float' ? 0.05 : 1"
+              :disabled="resets.has(field.key)"
+              :class="inputClass"
+            >
+
+            <label v-else-if="field.kind === 'bool'" class="flex items-center gap-2 text-xs">
+              <input :id="`setting-${field.key}`" v-model="draft[field.key]" type="checkbox" class="size-4 accent-primary" :disabled="resets.has(field.key)">
+              {{ draft[field.key] ? '開' : '關' }}
+            </label>
+
+            <div v-else-if="field.kind === 'ids'" class="space-y-2">
+              <div class="flex flex-wrap gap-1.5">
+                <span
+                  v-for="id in (draft[field.key] as string[])"
+                  :key="id"
+                  class="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-2xs"
+                >
+                  {{ id }}
+                  <button type="button" class="cursor-pointer text-muted-foreground hover:text-danger" :aria-label="`移除 ${id}`" :disabled="resets.has(field.key)" @click="removeId(field.key, id)">
+                    <X class="size-3" />
+                  </button>
+                </span>
+                <span v-if="!(draft[field.key] as string[])?.length" class="text-2xs text-muted-foreground">（沒有）</span>
+              </div>
+              <div class="flex gap-2">
+                <input
+                  :id="`setting-${field.key}`"
+                  v-model="idInput[field.key]"
+                  type="text"
+                  placeholder="輸入 ID 後按「加入」"
+                  :disabled="resets.has(field.key)"
+                  :class="inputClass"
+                  @keyup.enter="addIds(field.key)"
+                >
+                <Button variant="secondary" size="sm" class="h-9 shrink-0" :disabled="!idInput[field.key]?.trim()" @click="addIds(field.key)">加入</Button>
+              </div>
+            </div>
+
+            <input
+              v-else
+              :id="`setting-${field.key}`"
+              v-model="draft[field.key]"
+              :type="field.kind === 'url' ? 'url' : 'text'"
+              spellcheck="false"
+              :disabled="resets.has(field.key)"
+              :class="inputClass"
+            >
+
+            <p v-if="errors[field.key]" class="text-2xs text-danger">{{ errors[field.key] }}</p>
+            <p v-if="field.help" class="text-2xs text-muted-foreground">{{ field.help }}</p>
+            <p v-if="field.source === 'app' && field.env_value !== undefined" class="text-2xs text-subtle-foreground">
+              .env 的值：{{ display(field.env_value) }}
+            </p>
+          </div>
+
           <!-- System: read-only bootstrap values, master key, import from .env -->
           <template v-if="ui.settingsTab === 'system'">
             <MobilePairing />
@@ -416,122 +560,6 @@ const inputClass =
           </template>
 
           <template v-else>
-            <div v-for="field in fields" :key="field.key" class="space-y-1.5">
-              <div class="flex items-center justify-between gap-2">
-                <label :for="`setting-${field.key}`" class="text-xs font-semibold">{{ field.label }}</label>
-                <div class="flex shrink-0 items-center gap-1.5 text-2xs">
-                  <span
-                    class="rounded-full border px-1.5 py-px"
-                    :class="resets.has(field.key) ? 'border-warning/40 text-warning' : field.source === 'app' ? 'border-primary/30 text-primary-soft-foreground' : 'border-border text-muted-foreground'"
-                  >
-                    {{ resets.has(field.key) ? (field.env_available ? '將改回 .env' : '將改回預設值') : SOURCE_LABEL[field.source] }}
-                  </span>
-                  <button
-                    v-if="field.source === 'app' || resets.has(field.key)"
-                    type="button"
-                    class="cursor-pointer text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                    @click="toggleReset(field)"
-                  >
-                    {{ resets.has(field.key) ? '取消' : field.env_available ? '改回 .env' : '改回預設值' }}
-                  </button>
-                </div>
-              </div>
-
-              <div v-if="field.kind === 'secret'" class="flex gap-2">
-                <input
-                  :id="`setting-${field.key}`"
-                  v-model="secretDraft[field.key]"
-                  type="password"
-                  autocomplete="new-password"
-                  spellcheck="false"
-                  :placeholder="secretPlaceholder(field)"
-                  :disabled="clears.has(field.key) || resets.has(field.key)"
-                  :class="inputClass"
-                >
-                <Button
-                  v-if="field.configured || clears.has(field.key)"
-                  variant="ghost"
-                  size="sm"
-                  class="h-9 shrink-0"
-                  :disabled="resets.has(field.key)"
-                  @click="toggleClear(field.key)"
-                >
-                  {{ clears.has(field.key) ? '取消清除' : '清除' }}
-                </Button>
-              </div>
-
-              <select
-                v-else-if="field.kind === 'choice'"
-                :id="`setting-${field.key}`"
-                v-model="draft[field.key]"
-                :disabled="resets.has(field.key)"
-                :class="inputClass"
-              >
-                <option v-for="c in field.choices" :key="c.value" :value="c.value" class="bg-popover text-foreground">{{ c.label }}</option>
-              </select>
-
-              <input
-                v-else-if="field.kind === 'int' || field.kind === 'float'"
-                :id="`setting-${field.key}`"
-                v-model.number="draft[field.key]"
-                type="number"
-                :min="field.min"
-                :max="field.max"
-                :step="field.kind === 'float' ? 0.05 : 1"
-                :disabled="resets.has(field.key)"
-                :class="inputClass"
-              >
-
-              <label v-else-if="field.kind === 'bool'" class="flex items-center gap-2 text-xs">
-                <input :id="`setting-${field.key}`" v-model="draft[field.key]" type="checkbox" class="size-4 accent-primary" :disabled="resets.has(field.key)">
-                {{ draft[field.key] ? '開' : '關' }}
-              </label>
-
-              <div v-else-if="field.kind === 'ids'" class="space-y-2">
-                <div class="flex flex-wrap gap-1.5">
-                  <span
-                    v-for="id in (draft[field.key] as string[])"
-                    :key="id"
-                    class="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-2xs"
-                  >
-                    {{ id }}
-                    <button type="button" class="cursor-pointer text-muted-foreground hover:text-danger" :aria-label="`移除 ${id}`" :disabled="resets.has(field.key)" @click="removeId(field.key, id)">
-                      <X class="size-3" />
-                    </button>
-                  </span>
-                  <span v-if="!(draft[field.key] as string[])?.length" class="text-2xs text-muted-foreground">（沒有）</span>
-                </div>
-                <div class="flex gap-2">
-                  <input
-                    :id="`setting-${field.key}`"
-                    v-model="idInput[field.key]"
-                    type="text"
-                    placeholder="輸入 ID 後按「加入」"
-                    :disabled="resets.has(field.key)"
-                    :class="inputClass"
-                    @keyup.enter="addIds(field.key)"
-                  >
-                  <Button variant="secondary" size="sm" class="h-9 shrink-0" :disabled="!idInput[field.key]?.trim()" @click="addIds(field.key)">加入</Button>
-                </div>
-              </div>
-
-              <input
-                v-else
-                :id="`setting-${field.key}`"
-                v-model="draft[field.key]"
-                :type="field.kind === 'url' ? 'url' : 'text'"
-                spellcheck="false"
-                :disabled="resets.has(field.key)"
-                :class="inputClass"
-              >
-
-              <p v-if="errors[field.key]" class="text-2xs text-danger">{{ errors[field.key] }}</p>
-              <p v-if="field.help" class="text-2xs text-muted-foreground">{{ field.help }}</p>
-              <p v-if="field.source === 'app' && field.env_value !== undefined" class="text-2xs text-subtle-foreground">
-                .env 的值：{{ display(field.env_value) }}
-              </p>
-            </div>
-
             <AiProvidersPanel v-if="ui.settingsTab === 'ai'" />
 
             <section v-if="ui.settingsTab === 'push'" class="space-y-2 border-t border-border pt-3">
@@ -606,11 +634,45 @@ const inputClass =
         <span class="text-2xs text-muted-foreground">{{ changeCount ? `${changeCount} 項變更尚未儲存` : '沒有未儲存的變更' }}</span>
         <div class="flex gap-2">
           <Button variant="ghost" size="sm" :disabled="!changeCount || saving" @click="resetDrafts">還原</Button>
-          <Button size="sm" :disabled="!changeCount || saving" @click="save">
+          <Button size="sm" :disabled="!changeCount || saving" @click="save()">
             <Loader2 v-if="saving" class="size-3 animate-spin" />
             儲存
           </Button>
         </div>
+      </div>
+    </DialogContent>
+  </Dialog>
+
+  <Dialog :open="confirmingLocalLogin" @update:open="(open: boolean) => { if (!open) closeLocalLoginConfirm() }">
+    <DialogContent class="max-w-md">
+      <DialogHeader>
+        <DialogTitle class="flex items-center gap-2 text-base"><KeyRound class="size-4" /> 關閉這台電腦的免登入？</DialogTitle>
+        <DialogDescription class="text-xs leading-relaxed">
+          關閉後，在這台電腦上開啟 OmniKeep 也要輸入存取金鑰或配對碼。請先複製存取金鑰，存到密碼管理工具之類安全的地方；沒有金鑰，登出或清除瀏覽資料之後就進不來。
+        </DialogDescription>
+      </DialogHeader>
+      <div class="space-y-2">
+        <Button variant="secondary" size="sm" @click="copyAccessKey">
+          <Copy class="size-3.5" />
+          複製存取金鑰
+        </Button>
+        <template v-if="shownKey">
+          <p class="text-2xs text-warning">這個瀏覽器不允許自動複製，請手動選取下面的金鑰並複製。</p>
+          <input
+            :value="shownKey"
+            readonly
+            aria-label="存取金鑰"
+            class="w-full rounded-lg border border-border bg-input px-3 py-2 font-mono text-2xs"
+            @focus="($event.target as HTMLInputElement).select()"
+          >
+        </template>
+        <p class="text-2xs text-muted-foreground">
+          另一個方法：在還登入著的裝置開啟「設定 → 系統 → 手機登入」產生一次性配對碼，在登入頁輸入配對碼也能登入。
+        </p>
+      </div>
+      <div class="flex justify-end gap-2">
+        <Button variant="ghost" size="sm" @click="closeLocalLoginConfirm">取消</Button>
+        <Button variant="danger" size="sm" :disabled="saving" @click="save(true)">關閉免登入並儲存</Button>
       </div>
     </DialogContent>
   </Dialog>
