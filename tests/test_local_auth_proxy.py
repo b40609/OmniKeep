@@ -66,8 +66,9 @@ def test_spoofed_loopback_forwarded_for_is_refused_under_uvicorn(auto_login):
     assert res.json() == DENIED
 
 
-def test_startup_warns_when_local_auto_login_enabled(auto_login, caplog):
-    with caplog.at_level(logging.WARNING, logger="omnikeep.main"):
+def test_startup_notes_when_local_auto_login_enabled(auto_login, caplog):
+    # On by default now, so it is logged as a note rather than a warning.
+    with caplog.at_level(logging.INFO, logger="omnikeep.main"):
         with TestClient(app):
             pass
     assert any("LOCAL_AUTO_LOGIN" in r.getMessage() for r in caplog.records)
