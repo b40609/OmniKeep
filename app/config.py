@@ -109,6 +109,11 @@ class Settings(BaseSettings):
     LLM_MIN_REQUEST_INTERVAL: float = 2.5   # seconds between request starts (≈24 RPM); adapts up on 429
     LLM_MAX_CONCURRENCY: int = 2            # parallel in-flight LLM calls
 
+    # Longest one queued link may take (fetch, transcription, analysis) before the queue worker
+    # gives up on that attempt and retries it. Speech to text of a long video and a video model
+    # can each take over ten minutes, so keep it generous; 0 or less turns the limit off.
+    INGEST_TASK_TIMEOUT_SECONDS: int = 1800
+
     # LINE Messaging API Configuration
     LINE_CHANNEL_SECRET: str = ""
     LINE_CHANNEL_ACCESS_TOKEN: str = ""
