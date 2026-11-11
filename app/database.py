@@ -100,13 +100,7 @@ def init_db():
             DELETE FROM items_fts WHERE id = old.id;
         END;
     """)
-    cursor.execute("""
-        CREATE TRIGGER IF NOT EXISTS items_au AFTER UPDATE ON items BEGIN
-            DELETE FROM items_fts WHERE id = old.id;
-            INSERT INTO items_fts(id, title_l1, summary_l1, tech_tags, deep_analysis, content_raw)
-            VALUES (new.id, new.title_l1, new.summary_l1, new.tech_tags, new.deep_analysis, new.content_raw);
-        END;
-    """)
+    _ensure_fts_update_trigger(cursor)
 
     new_radar_sources = cursor.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'radar_sources'"
@@ -635,6 +629,55 @@ def _ensure_trigram_fts(cursor) -> None:
     if has_items:
         cursor.execute(f"INSERT INTO items_fts(id, {', '.join(FTS_COLUMNS)}) "
                        f"SELECT id, {', '.join(FTS_COLUMNS)} FROM items")
+
+
+def _ensure_fts_update_trigger(cursor) -> None:
+    """Re-index an item only when a column the index holds is written.
+
+    The trigger used to fire on every UPDATE: starring an item or marking it read deleted
+    and re-inserted its whole entry, raw content included, and the index only ever grew.
+    A trigger created that way is replaced once here.
+    """
+    row = cursor.execute("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'items_au'").fetchone()
+    if row is not None and "UPDATE OF" in (row[0] or "").upper():
+        return
+    if row is not None:
+        logging.getLogger("omnikeep.database").info(
+            "Recreating the items_au trigger so that only text changes update the full-text index")
+        cursor.execute("DROP TRIGGER items_au")
+    cursor.execute(f"""
+        CREATE TRIGGER items_au AFTER UPDATE OF {", ".join(FTS_COLUMNS)} ON items BEGIN
+            DELETE FROM items_fts WHERE id = old.id;
+            INSERT INTO items_fts(id, {", ".join(FTS_COLUMNS)})
+            VALUES (new.id, {", ".join("new." + column for column in FTS_COLUMNS)});
+        END;
+    """)
+
+
+def optimize_fts() -> None:
+    """Merge the full-text index into one b-tree, dropping the segments that deletes and
+    re-indexing leave behind. Rewrites the whole index: for the daily backup and the end
+    of bulk updates, not for every write."""
+    with closing(get_db_connection()) as conn, conn:
+        conn.execute("INSERT INTO items_fts(items_fts) VALUES('optimize')")
+
+
+def vacuum_if_fragmented(threshold: float = 0.2) -> bool:
+    """VACUUM when more than `threshold` of the database file is free pages; True if it ran.
+
+    Pages freed by optimize_fts() or by deleting items stay in the file, and in every
+    backup, until then. VACUUM needs the write lock: with another connection writing it
+    raises sqlite3.OperationalError after the busy timeout, which the caller decides about.
+    """
+    with closing(get_db_connection()) as conn:
+        pages = conn.execute("PRAGMA page_count").fetchone()[0]
+        free = conn.execute("PRAGMA freelist_count").fetchone()[0]
+        if not pages or free / pages <= threshold:
+            return False
+        conn.execute("VACUUM")
+        # In WAL mode the rebuilt file went through the log; hand that space back as well.
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return True
 
 
 # bm25() weight of each items_fts column, in table order: id (UNINDEXED, never matched), then
