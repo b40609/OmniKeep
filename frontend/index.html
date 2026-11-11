@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-TW" class="dark">
+<html lang="zh-TW" class="dark neutral">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -8,20 +8,26 @@
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/favicon.svg" sizes="any" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
-    <meta name="theme-color" content="#f2f2f7" />
+    <meta name="theme-color" content="#0f0f0f" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="OmniKeep" />
     <meta name="format-detection" content="telephone=no" />
     <script>
-      // Apply persisted theme before first paint to avoid FOUC (iOS: follow system by default).
+      // Apply the saved theme before first paint to avoid a flash. Mirrors startingTheme()
+      // and themeClasses() in src/lib/themeMode.ts: neutral dark is the default, and a theme
+      // picked under the older key ("oled", "light", "system") is carried over.
       try {
-        var t = localStorage.getItem('omnikeep-theme') || 'system';
-        var dark = t === 'dark' || t === 'oled' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.classList.toggle('dark', dark);
-        if (t === 'oled') document.documentElement.classList.add('oled');
-        var a = localStorage.getItem('omnikeep-accent') || 'blue';
-        document.documentElement.setAttribute('data-accent', a);
+        var modes = ['neutral', 'dark', 'oled', 'light', 'system'];
+        var t = localStorage.getItem('omnikeep-theme-v2');
+        var old = localStorage.getItem('omnikeep-theme');
+        if (modes.indexOf(t) < 0) t = old === 'oled' || old === 'light' || old === 'system' ? old : 'neutral';
+        var dark = t !== 'light' && (t !== 'system' || matchMedia('(prefers-color-scheme: dark)').matches);
+        var root = document.documentElement;
+        root.classList.toggle('dark', dark);
+        root.classList.toggle('oled', t === 'oled');
+        root.classList.toggle('neutral', t === 'neutral');
+        root.setAttribute('data-accent', localStorage.getItem('omnikeep-accent') || 'blue');
       } catch (e) {}
     </script>
   </head>

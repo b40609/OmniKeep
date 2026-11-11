@@ -1,7 +1,8 @@
 import { computed, watch } from 'vue'
 import { useLocalStorage, usePreferredDark } from '@vueuse/core'
+import { LEGACY_THEME_KEY, THEME_KEY, startingTheme, themeClasses, themeColor, type ThemeMode } from '@/lib/themeMode'
 
-export type ThemeMode = 'dark' | 'oled' | 'light' | 'system'
+export type { ThemeMode }
 export type AccentColor = 'blue' | 'violet' | 'emerald' | 'amber' | 'rose' | 'zinc'
 
 export interface AccentOption {
@@ -19,32 +20,42 @@ export const ACCENT_OPTIONS: AccentOption[] = [
   { id: 'zinc', label: '石墨', color: '#71717a' },
 ]
 
-const theme = useLocalStorage<ThemeMode>('omnikeep-theme', 'dark')
+export const THEME_LABELS: Record<ThemeMode, string> = {
+  neutral: '中性深色',
+  dark: '深藍灰',
+  oled: 'OLED 純黑',
+  light: '淺色',
+  system: '跟隨系統',
+}
+
+function readStored(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+// The neutral theme is the default; a theme picked before it existed is carried over once.
+const theme = useLocalStorage<ThemeMode>(THEME_KEY, startingTheme(readStored(THEME_KEY), readStored(LEGACY_THEME_KEY)))
 const accent = useLocalStorage<AccentColor>('omnikeep-accent', 'blue')
 const systemDark = usePreferredDark()
 
 export function isDark(): boolean {
-  return (
-    theme.value === 'dark' ||
-    theme.value === 'oled' ||
-    (theme.value === 'system' && systemDark.value)
-  )
+  return themeClasses(theme.value, systemDark.value).dark
 }
 
 /** Sync <html> class + theme-color meta + data-accent with the resolved theme. */
 function applyTheme() {
-  const dark = isDark()
+  const classes = themeClasses(theme.value, systemDark.value)
   const el = document.documentElement
-  el.classList.toggle('dark', dark)
-  el.classList.toggle('oled', theme.value === 'oled')
+  el.classList.toggle('dark', classes.dark)
+  el.classList.toggle('oled', classes.oled)
+  el.classList.toggle('neutral', classes.neutral)
   el.setAttribute('data-accent', accent.value)
 
   const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-  if (meta) {
-    if (theme.value === 'oled') meta.content = '#000000'
-    else if (dark) meta.content = '#111216'
-    else meta.content = '#f4f5f7'
-  }
+  if (meta) meta.content = themeColor(theme.value, systemDark.value)
 }
 
 /** Initialize on app boot (idempotent). */
@@ -58,12 +69,12 @@ export function useTheme() {
     mode: theme,
     accent,
     accents: ACCENT_OPTIONS,
+    labels: THEME_LABELS,
     resolved: computed<'dark' | 'light'>(() => (isDark() ? 'dark' : 'light')),
     isOled: computed(() => theme.value === 'oled'),
     toggle() {
-      if (theme.value === 'dark') theme.value = 'oled'
-      else if (theme.value === 'oled') theme.value = 'light'
-      else theme.value = 'dark'
+      const cycle: ThemeMode[] = ['neutral', 'dark', 'oled', 'light']
+      theme.value = cycle[(cycle.indexOf(theme.value) + 1) % cycle.length]
     },
     set(mode: ThemeMode) {
       theme.value = mode

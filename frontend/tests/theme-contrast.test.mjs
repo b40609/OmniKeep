@@ -43,3 +43,39 @@ for (const mode of ['light', 'dark', 'oled']) {
     })
   }
 }
+
+// The cover wall's own tokens: page shell, cover backing, filled controls, read titles.
+const light = blocks.find(block => block.tokens.card && block.selector.trim().endsWith(':root')).tokens
+for (const mode of ['light', 'dark', 'oled', 'neutral']) {
+  const own = mode === 'light' ? {} : blocks.find(block => block.tokens.card && block.selector.includes(`:root.${mode}`)).tokens
+  // A theme inherits what it does not redefine; `--shell` defaults to that theme's card.
+  const token = name => {
+    const value = own[name] ?? light[name]
+    return color(value.startsWith('var(') ? own[value.slice(6, -1)] ?? light[value.slice(6, -1)] : value)
+  }
+  test(`${mode}: wall text meets 4.5:1 on the shell, the cover backing and filled controls`, () => {
+    for (const surface of ['shell', 'surface-1', 'surface-2', 'surface-3']) {
+      readable(token('foreground'), token(surface), `title on ${surface}`)
+      readable(token('muted-foreground'), token(surface), `meta on ${surface}`)
+    }
+    for (const surface of ['shell', 'surface-1']) readable(token('done-foreground'), token(surface), `read title on ${surface}`)
+    readable(token('background'), token('foreground'), 'selected kind tab')
+  })
+}
+
+test('neutral dark is the flat default: one accent, readable selection, no glass', async () => {
+  const surface = blocks.find(block => block.tokens.card && block.selector.includes(':root.neutral')).tokens
+  const accent = blocks.find(block => block.selector.includes(':root.neutral[data-accent="blue"]')).tokens
+  assert.equal(surface.background, '#0f0f0f')
+  assert.equal(accent.primary, '#60a5fa')
+  readable(color(accent['primary-foreground']), color(accent.primary), 'primary button')
+  readable(color(accent['primary-foreground']), color(accent['primary-hover']), 'hovered primary button')
+  readable(color(accent['primary-soft-foreground']), color(accent['primary-soft']), 'selected label')
+  readable(color(surface['selection-foreground']), color(surface.selection), 'selected text')
+  assert.ok(contrast(color(accent.ring), color(surface.background)) >= 3, 'focus ring against the page')
+  assert.match(css, /\.neutral \*,[^{]*\{[^}]*backdrop-filter: none !important/)
+  // Starts in the neutral theme before the app loads, so there is no flash of another one.
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8')
+  assert.match(html, /<html[^>]*class="dark neutral"/)
+  assert.match(html, /name="theme-color" content="#0f0f0f"/)
+})

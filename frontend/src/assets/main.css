@@ -3,6 +3,7 @@
 /* vue-sonner 2 no longer injects its CSS. In the components layer, so the
    utility classes in components/ui/sonner/Toaster.vue still win. */
 @import 'vue-sonner/style.css' layer(components);
+@import './wall.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -59,6 +60,15 @@
   --glass-border: rgba(255, 255, 255, 0.75);
   --glass-highlight: rgba(255, 255, 255, 0.9);
   --glass-tint: rgba(255, 255, 255, 0.42);
+
+  /* Wall surfaces: page shell, cover backing, filled controls, their hover */
+  --shell: var(--card);
+  --surface-1: #eceef1;
+  --surface-2: #e2e5e9;
+  --surface-3: #d3d7dd;
+  --done-foreground: #5f6168;
+  --selection: var(--primary);
+  --selection-foreground: var(--primary-foreground);
 }
 
 :root.dark,
@@ -108,6 +118,11 @@
   --glass-border: rgba(255, 255, 255, 0.14);
   --glass-highlight: rgba(255, 255, 255, 0.12);
   --glass-tint: rgba(120, 120, 135, 0.14);
+
+  --surface-1: #1d1e25;
+  --surface-2: #272931;
+  --surface-3: #353741;
+  --done-foreground: #9a9aa6;
 }
 
 /* OLED Pure Black (High Contrast / Zero-Glass) */
@@ -156,6 +171,11 @@
   --glass-border: rgba(255, 255, 255, 0.14);
   --glass-highlight: transparent;
   --glass-tint: #18181b;
+
+  --surface-1: #131315;
+  --surface-2: #1d1d20;
+  --surface-3: #2b2b2f;
+  --done-foreground: #8e8e96;
 }
 
 /* ============================================================
@@ -296,6 +316,83 @@
 }
 
 /* ============================================================
+   Neutral dark (default theme). Sits on top of `.dark`, so `dark:` utilities
+   and the dark accent palettes still apply; declared after them to win ties.
+   Flat surfaces only: no glow, no glass, no gradient. One accent, used for
+   the unread dot, primary buttons and the focus ring.
+   ============================================================ */
+:root.neutral,
+.neutral {
+  color-scheme: dark;
+  --background: #0f0f0f;
+  --background-subtle: #121212;
+  --foreground: #f1f1f1;
+  --card: #181818;
+  --card-foreground: #f1f1f1;
+  --popover: #212121;
+  --popover-foreground: #f1f1f1;
+  --muted: #272727;
+  --muted-foreground: #aaaaaa;
+  --subtle-foreground: #aaaaaa;
+  --accent: #272727;
+  --accent-foreground: #f1f1f1;
+  --border: #3a3a3a;
+  --border-strong: #4d4d4d;
+  --hairline: #272727;
+  --input: #121212;
+  --ring: #60a5fa;
+
+  --shell: #0f0f0f;
+  --surface-1: #1e1e1e;
+  --surface-2: #272727;
+  --surface-3: #3a3a3a;
+  --done-foreground: #8e8e8e;
+  --selection: #2b4c7e;
+  --selection-foreground: #f1f1f1;
+
+  --scrollbar-thumb: #3a3a3a;
+  --scrollbar-thumb-hover: #4d4d4d;
+  --nav-blur: #0f0f0f;
+  --card-shadow: none;
+  --float-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+
+  --glass-bg: #181818;
+  --glass-bg-strong: #212121;
+  --glass-border: #272727;
+  --glass-highlight: transparent;
+  --glass-tint: #212121;
+}
+:root.neutral[data-accent="blue"],
+.neutral[data-accent="blue"] {
+  --primary: #60a5fa;
+  --primary-hover: #93c5fd;
+  --primary-foreground: #0f0f0f;
+  --primary-soft: #272727;
+  --primary-soft-foreground: #f1f1f1;
+  --ring: #60a5fa;
+}
+/* Effects other themes still use are switched off here rather than removed. */
+.neutral *,
+.neutral *::before,
+.neutral *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.neutral .micro-glow:hover {
+  border-color: var(--border);
+  box-shadow: none;
+}
+/* Dialogs and toasts are a step lighter than the page so they read as raised. */
+.neutral [role='dialog'],
+.neutral [role='alertdialog'] {
+  background-color: var(--card);
+}
+.neutral .toaster .toast {
+  background-color: var(--popover);
+  border-color: var(--border);
+}
+
+/* ============================================================
    Native Form Elements Dark Mode Fix (Chromium / Windows)
    ============================================================ */
 select {
@@ -316,6 +413,11 @@ option {
 .oled option {
   background-color: #18191f;
   color: #ffffff;
+}
+
+.neutral option {
+  background-color: #212121;
+  color: #f1f1f1;
 }
 
 .oled option {
@@ -356,6 +458,11 @@ option {
   --color-info-soft: var(--info-soft);
   --color-purple: var(--purple);
   --color-purple-soft: var(--purple-soft);
+  --color-shell: var(--shell);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-done-foreground: var(--done-foreground);
 
   --font-sans: 'Inter Variable', 'Inter', -apple-system, 'SF Pro Text',
     'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif;
@@ -399,8 +506,8 @@ option {
     overscroll-behavior: none;
   }
   ::selection {
-    background: var(--primary);
-    color: var(--primary-foreground);
+    background: var(--selection);
+    color: var(--selection-foreground);
   }
   :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
     outline: 2px solid var(--ring);
@@ -419,6 +526,13 @@ option {
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover);
+  }
+  /* Browsers without the WebKit scrollbar parts take the same colours. */
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+      scrollbar-width: thin;
+    }
   }
   button,
   a,

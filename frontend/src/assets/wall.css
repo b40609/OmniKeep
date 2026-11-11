@@ -1,0 +1,485 @@
+/* ============================================================
+   COVER WALL, SIDEBAR ROWS AND HEADER CONTROLS
+   Covers sit straight on the page with no card frame. Radius stays on
+   thumbnails (12px) and small controls only. Colours come from the theme
+   tokens in main.css, so every theme gets the same layout.
+   ============================================================ */
+@layer components {
+  /* 16:9 frame: the whole image shows, the backing fills what it leaves. */
+  .item-cover {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  .item-cover img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: brightness(0.84);
+    transition: filter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .item-cover__fallback {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 14px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    color: var(--foreground);
+    overflow-wrap: anywhere;
+  }
+  .item-cover__fallback svg {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    color: var(--muted-foreground);
+  }
+  .item-cover--thumb {
+    border-radius: 8px;
+  }
+  .item-cover--thumb .item-cover__fallback {
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .item-cover--hero {
+    aspect-ratio: auto;
+    height: clamp(140px, 28vh, 260px);
+  }
+  .item-cover--hero img {
+    filter: none;
+  }
+  .is-read .item-cover img {
+    filter: brightness(0.6);
+  }
+  .is-read .item-cover__fallback {
+    color: var(--done-foreground);
+  }
+  .cover-host:hover .item-cover img,
+  .cover-host:focus-within .item-cover img,
+  .cover-host.is-cursor .item-cover img {
+    filter: none;
+  }
+
+  .cover-card {
+    position: relative;
+    min-width: 0;
+    border-radius: 12px;
+  }
+  /* Keyboard position (J/K) and Tab focus share one ring around the whole cell. */
+  .cover-card.is-cursor,
+  .cover-card:has(.cover-card__open:focus-visible) {
+    outline: 2px solid var(--ring);
+    outline-offset: 5px;
+  }
+  .cover-card__title {
+    margin-top: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    color: var(--foreground);
+  }
+  .cover-card__open {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  .cover-card__open:focus-visible {
+    outline: none;
+  }
+  /* The title is the control; its hit area is the whole cell. */
+  .cover-card__open::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 12px;
+  }
+  .title-clamp {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: anywhere;
+  }
+  .unread-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--primary);
+    vertical-align: 1.5px;
+  }
+  .is-read .cover-card__title,
+  .is-read .item-row__title {
+    font-weight: 400;
+    color: var(--done-foreground);
+  }
+
+  .item-meta {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .item-meta svg {
+    width: 14px;
+    height: 14px;
+    flex: none;
+  }
+  .item-meta__sep {
+    width: 2px;
+    height: 2px;
+    flex: none;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .item-meta__clip {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .item-meta time {
+    flex: none;
+  }
+  .cover-card__meta {
+    position: relative;
+    min-height: 24px;
+    margin-top: 2px;
+  }
+  /* Laid over the end of the meta line, so the hidden buttons never squeeze the text. */
+  .cover-card__acts {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-left: 10px;
+    background: var(--shell);
+    opacity: 0;
+  }
+  .cover-card:hover .cover-card__acts,
+  .cover-card:focus-within .cover-card__acts,
+  .cover-card.is-cursor .cover-card__acts {
+    opacity: 1;
+  }
+  .wall-action {
+    height: 24px;
+    padding: 0 10px;
+    border-radius: 6px;
+    background: var(--surface-2);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 24px;
+    color: var(--foreground);
+    cursor: pointer;
+  }
+  .wall-action:hover {
+    background: var(--surface-3);
+  }
+  .wall-action--primary {
+    background: var(--primary);
+    font-weight: 600;
+    color: var(--primary-foreground);
+  }
+  .wall-action--primary:hover {
+    background: var(--primary-hover);
+  }
+  /* No hover on touch screens: both actions stay visible, at a size a thumb can hit. */
+  @media (hover: none) {
+    .cover-card__acts {
+      position: relative;
+      inset: auto;
+      flex: none;
+      margin-left: auto;
+      padding-left: 0;
+      opacity: 1;
+    }
+    .cover-card__meta {
+      min-height: 36px;
+    }
+    .wall-action {
+      height: 36px;
+      min-width: 56px;
+      padding: 0 12px;
+      font-size: 13px;
+      line-height: 36px;
+    }
+    /* Always on screen here, so the accent would repeat on every cell: keep both quiet. */
+    .wall-action--primary,
+    .wall-action--primary:hover {
+      background: var(--surface-2);
+      color: var(--foreground);
+    }
+  }
+
+  .wall-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px 16px;
+  }
+  .wall-section-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 24px 0 10px;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 20px;
+    color: var(--foreground);
+  }
+  section:first-child > .wall-section-title {
+    margin-top: 8px;
+  }
+  .wall-section-title span {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Kind tabs: the selected one inverts (light fill, dark text). */
+  .kind-chip {
+    height: 32px;
+    flex: none;
+    padding: 0 12px;
+    border-radius: 8px;
+    background: var(--surface-2);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 32px;
+    color: var(--foreground);
+    cursor: pointer;
+  }
+  .kind-chip:hover {
+    background: var(--surface-3);
+  }
+  .kind-chip[aria-pressed='true'],
+  .kind-chip[aria-pressed='true']:hover {
+    background: var(--foreground);
+    color: var(--background);
+  }
+
+  /* Sidebar rows */
+  .nav-row {
+    display: flex;
+    width: 100%;
+    height: 40px;
+    align-items: center;
+    gap: 18px;
+    padding: 0 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--foreground);
+    text-align: left;
+    cursor: pointer;
+  }
+  .nav-row:hover {
+    background: var(--surface-1);
+  }
+  .nav-row > svg {
+    width: 18px;
+    height: 18px;
+    flex: none;
+  }
+  .nav-row[aria-pressed='true'] {
+    background: var(--surface-2);
+    font-weight: 600;
+  }
+  .nav-row__label {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nav-row__count {
+    flex: none;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  .nav-row[aria-pressed='true'] .nav-row__count {
+    color: var(--foreground);
+  }
+  .nav-group {
+    display: flex;
+    min-height: 43px;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+    padding: 10px 4px 0 12px;
+    border-top: 1px solid var(--hairline);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 20px;
+    color: var(--muted-foreground);
+  }
+  .key-hint {
+    min-width: 22px;
+    flex: none;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 20px;
+    text-align: center;
+    color: var(--muted-foreground);
+  }
+
+  /* Header controls */
+  .top-button {
+    display: inline-flex;
+    height: 36px;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    border-radius: 8px;
+    background: var(--surface-2);
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--muted-foreground);
+    cursor: pointer;
+  }
+  .top-button:hover,
+  .top-button[data-state='open'],
+  .top-button[aria-expanded='true'] {
+    background: var(--surface-3);
+  }
+  .top-button:disabled {
+    cursor: default;
+    background: var(--surface-2);
+  }
+  .top-button strong {
+    font-weight: 500;
+    color: var(--foreground);
+  }
+  .top-button svg {
+    width: 18px;
+    height: 18px;
+    flex: none;
+  }
+  .view-switch {
+    display: flex;
+    flex: none;
+    gap: 2px;
+  }
+  .view-switch button {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border-radius: 8px;
+    color: var(--muted-foreground);
+    cursor: pointer;
+  }
+  .view-switch button:hover {
+    background: var(--surface-3);
+  }
+  .view-switch button[aria-pressed='true'] {
+    background: var(--surface-2);
+    color: var(--foreground);
+  }
+  .view-switch svg {
+    width: 18px;
+    height: 18px;
+  }
+  .search-box {
+    height: 40px;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px 0 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--input);
+    color: var(--muted-foreground);
+  }
+  .search-box:focus-within {
+    border-color: var(--ring);
+  }
+  .search-box input {
+    height: 100%;
+    min-width: 0;
+    flex: 1;
+    background: transparent;
+    color: var(--foreground);
+    outline: none;
+  }
+  .search-box input::placeholder {
+    color: var(--muted-foreground);
+    opacity: 1;
+  }
+  .search-box input::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+  }
+}
+
+/* Columns follow the wall's own width, so it also adapts when the reader opens beside it. */
+@container (min-width: 30rem) {
+  .wall-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  /* Side by side, every title takes two lines so the meta lines stay level. */
+  .cover-card__title {
+    height: 40px;
+  }
+}
+@container (min-width: 46rem) {
+  .wall-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@container (min-width: 64rem) {
+  .wall-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+/* From here up a column is added whenever the cells would pass roughly 320px,
+   so a wide screen shows more covers instead of larger ones (1920 wide: five). */
+@container (min-width: 88rem) {
+  .wall-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+@container (min-width: 110rem) {
+  .wall-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@container (min-width: 130rem) {
+  .wall-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+@container (min-width: 150rem) {
+  .wall-grid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .item-cover img {
+    transition: none;
+  }
+}
