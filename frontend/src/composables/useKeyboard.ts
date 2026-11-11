@@ -27,7 +27,8 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
       ui.showPushModal ||
       ui.showDailyDeckModal ||
       ui.showBrainModal ||
-      ui.showCommandPalette
+      ui.showCommandPalette ||
+      !!ui.snapshotView
     )
   }
 
@@ -67,6 +68,7 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         ui.showDailyDeckModal = false
         ui.showBrainModal = false
         ui.showCommandPalette = false
+        ui.snapshotView = null
       }
       return
     }

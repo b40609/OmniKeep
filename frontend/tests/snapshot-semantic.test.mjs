@@ -33,12 +33,12 @@ test('getSnapshotStatus queries status endpoint', async () => {
   let requestedUrl = ''
   globalThis.fetch = async (url) => {
     requestedUrl = url
-    return new Response(JSON.stringify({ available: true, item_id: '99', size_bytes: 4096 }), { status: 200 })
+    return new Response(JSON.stringify({ has_snapshot: true, size_bytes: 4096 }), { status: 200 })
   }
 
   const status = await api.getSnapshotStatus(99)
   assert.equal(requestedUrl, '/api/items/99/snapshot/status')
-  assert.equal(status.available, true)
+  assert.equal(status.has_snapshot, true)
   assert.equal(status.size_bytes, 4096)
 })
 

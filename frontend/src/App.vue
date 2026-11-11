@@ -30,6 +30,7 @@ import ServiceStatusBanner from '@/components/layout/ServiceStatusBanner.vue'
 import DailyDeckDialog from '@/components/modals/DailyDeckDialog.vue'
 import BrainDialog from '@/components/modals/BrainDialog.vue'
 import CommandPalette from '@/components/modals/CommandPalette.vue'
+import SnapshotDialog from '@/components/modals/SnapshotDialog.vue'
 import * as api from '@/lib/api'
 import { Toaster } from '@/components/ui/sonner'
 import { useMutations } from '@/composables/useMutations'
@@ -59,6 +60,7 @@ function requireLogin(clearSaved = false) {
   items.items = []
   items.categories = []
   items.stats = { inbox: 0, starred: 0, archived: 0, radar: 0, total: 0 }
+  ui.snapshotView = null
 }
 
 function handleLogout() {
@@ -383,6 +385,7 @@ onUnmounted(() => {
     <DailyDeckDialog />
     <BrainDialog />
     <CommandPalette />
+    <SnapshotDialog />
 
     <!-- iOS Single-Handed Bottom Bar (Mobile only) -->
     <MobileBottomBar v-if="!ui.activeItem" />

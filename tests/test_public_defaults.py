@@ -13,9 +13,10 @@ from app.database import (
 )
 
 
-def test_new_install_starts_local_and_opt_in():
+def test_new_install_starts_local_with_radar_opt_in():
     assert Settings.model_fields["HOST"].default == "127.0.0.1"
-    assert Settings.model_fields["LOCAL_AUTO_LOGIN"].default is False
+    # The browser on the same machine goes straight in; other devices still need the key.
+    assert Settings.model_fields["LOCAL_AUTO_LOGIN"].default is True
     assert Settings.model_fields["RADAR_ENABLED"].default is False
 
 

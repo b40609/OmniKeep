@@ -11,7 +11,9 @@ class Settings(BaseSettings):
     HOST: str = "127.0.0.1"
     PORT: int = 5000
     API_KEY: str = ""
-    LOCAL_AUTO_LOGIN: bool = False
+    # A browser on this same machine signs in without typing the key; every other device
+    # still needs it (app/routers/session.py). Switched off in the app's settings, or here.
+    LOCAL_AUTO_LOGIN: bool = True
     # Extra host names MCP over HTTP accepts besides loopback and the Tailscale names found at
     # startup, comma-separated (app/mcp_http.py).
     MCP_ALLOWED_HOSTS: str = ""

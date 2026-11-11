@@ -147,6 +147,11 @@ export function setApiKey(value: string) {
   apiKey = value
 }
 
+/** The key this session signed in with, for the owner to copy before switching local sign-in off. */
+export function getApiKey(): string {
+  return apiKey
+}
+
 /** `read` turns a successful response into the result; file downloads pass their own. */
 async function request<T>(
   path: string,
@@ -564,10 +569,8 @@ export function searchSemantic(q: string, limit: number = 20): Promise<Item[]> {
 }
 
 export interface SnapshotStatus {
-  available: boolean
-  item_id: string
-  path?: string
-  size_bytes?: number
+  has_snapshot: boolean
+  size_bytes: number
   mtime?: number
 }
 
@@ -575,6 +578,7 @@ export function getSnapshotStatus(itemId: number | string): Promise<SnapshotStat
   return request<SnapshotStatus>(`/api/items/${itemId}/snapshot/status`)
 }
 
+/** The saved page as text. Show it only in the sandboxed frame of lib/snapshot.ts, never as a page of this origin. */
 export async function fetchSnapshotHtml(itemId: number | string): Promise<string> {
   if (!apiKey) throw new Error('請先登入')
   const res = await fetch(`/api/items/${itemId}/snapshot`, {
@@ -585,17 +589,6 @@ export async function fetchSnapshotHtml(itemId: number | string): Promise<string
     throw new Error(`獲取快照失敗 (HTTP ${res.status})`)
   }
   return res.text()
-}
-
-export async function openSnapshotInNewTab(itemId: number | string): Promise<void> {
-  const html = await fetchSnapshotHtml(itemId)
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-  const blobUrl = URL.createObjectURL(blob)
-  const w = window.open(blobUrl, '_blank')
-  if (!w) {
-    window.location.href = blobUrl
-  }
-  setTimeout(() => URL.revokeObjectURL(blobUrl), 60000)
 }
 
 /* ---------------- Categories ---------------- */
