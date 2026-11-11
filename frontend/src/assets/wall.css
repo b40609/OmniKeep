@@ -75,6 +75,11 @@
   .item-cover--hero.item-cover--image {
     filter: none;
   }
+  /* A repository card is 2:1: give it exactly that, so its colour bar spans the frame. */
+  .item-cover--hero.item-cover--pad {
+    aspect-ratio: 2 / 1;
+    max-height: none;
+  }
   .is-read .item-cover--image {
     filter: brightness(var(--cover-dim-read));
   }

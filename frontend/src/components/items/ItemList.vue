@@ -120,6 +120,20 @@ watch(
   () => void nextTick(loadMoreIfNearEnd),
 )
 
+// Opening or closing the reader changes the list's width, and with it every row's
+// height. The virtual list was seen keeping its old range until the next scroll,
+// which leaves a gap below shorter rows; a scroll of one pixel and back makes it
+// measure again once the width has settled.
+watch(
+  () => ui.activeItem == null,
+  () => setTimeout(() => {
+    const list = vlist.value
+    if (!list) return
+    list.scrollBy(1)
+    list.scrollBy(-1)
+  }, 360),
+)
+
 /** Scroll a row into view by its position in the virtual list. */
 function scrollToIndex(index: number) {
   vlist.value?.scrollToIndex(index)
@@ -321,15 +335,19 @@ defineExpose({ scrollToIndex, scrollToItem })
     </div>
 
     <!-- List mode: virtualized rows (ssrCount renders the first page even
-         before/without ResizeObserver measurement, e.g. embedded webviews) -->
+         before/without ResizeObserver measurement, e.g. embedded webviews).
+         item-size is the shortest a row gets (beside the open reader): guessing low
+         renders a few rows too many at first, guessing high leaves a gap until the
+         first scroll. ssr-count rows are mounted before anything is measured: 24 of
+         the shortest rows cover the tallest window. buffer-size is in pixels. -->
     <VList
       v-else-if="items.viewMode === 'list'"
       ref="vlist"
       :data="rows"
-      :item-size="220"
-      :ssr-count="8"
+      :item-size="110"
+      :ssr-count="24"
       class="min-h-0 flex-1 max-md:pb-20"
-      :buffer-size="8"
+      :buffer-size="600"
       @scroll="loadMoreIfNearEnd"
     >
       <!-- One centred column, wide enough for a large thumbnail and about 45 characters of summary -->
