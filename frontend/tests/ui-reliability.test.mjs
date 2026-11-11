@@ -283,3 +283,57 @@ test('keyboard shortcuts preserve browser actions and native button activation',
     assert.equal(ctx.ui.showNoteModal, true)
   } finally { view.unmount() }
 })
+
+test('in the cover wall J/K move a cursor, Enter opens it, and E/S act on it', async () => {
+  const ctx = reset()
+  const acted = []
+  ctx.mutations.toggleRead = item => acted.push(['archive', item.id])
+  ctx.mutations.toggleStar = item => acted.push(['star', item.id])
+  Object.assign(ctx.items, { viewMode: 'cards', items: [{ id: 1 }, { id: 2 }, { id: 3 }] })
+  const { useKeyboard } = await loadSource('composables/useKeyboard.ts')
+  const view = mount({ setup() { useKeyboard(() => null); return {} } })
+  const key = value => {
+    const event = new Event('keydown', { cancelable: true })
+    Object.assign(event, { key: value, ctrlKey: false, metaKey: false, altKey: false })
+    window.dispatchEvent(event)
+  }
+  try {
+    key('e')
+    assert.deepEqual(acted, [])              // nothing selected yet
+    key('j'); key('j')
+    assert.equal(ctx.ui.cursorId, 2)
+    assert.equal(ctx.ui.activeItem, null)    // moving does not open (or log a view)
+    key('k')
+    assert.equal(ctx.ui.cursorId, 1)
+    key('k')
+    assert.equal(ctx.ui.cursorId, 1)         // stops at the first item
+    key('s'); key('e')
+    assert.deepEqual(acted, [['star', 1], ['archive', 1]])
+    key('Enter')
+    assert.equal(ctx.ui.activeItem.id, 1)
+    key('j')                                 // with the reader open, J reads the next item
+    assert.equal(ctx.ui.activeItem.id, 2)
+    assert.equal(ctx.ui.cursorId, 2)
+    key('Escape')
+    assert.equal(ctx.ui.activeItem, null)
+    assert.equal(ctx.ui.cursorId, 2)         // closing keeps the place
+  } finally { view.unmount() }
+})
+
+test('a menu item runs after its menu has closed, once, and plain closes are left alone', async () => {
+  const { useMenuAction } = await loadSource('composables/useMenuAction.ts')
+  const menu = useMenuAction()
+  const event = () => ({ prevented: 0, preventDefault() { this.prevented++ } })
+  let opened = 0
+  const dismissed = event()
+  menu.flush(dismissed)                      // Esc with nothing chosen: focus goes back to the button
+  assert.equal(dismissed.prevented, 0)
+  menu.defer(() => opened++)
+  assert.equal(opened, 0)                    // not while the menu is still closing
+  const chosen = event()
+  menu.flush(chosen)
+  assert.equal(opened, 1)
+  assert.equal(chosen.prevented, 1)          // the dialog keeps focus instead of the menu button
+  menu.flush(event())
+  assert.equal(opened, 1)
+})

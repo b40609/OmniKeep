@@ -50,7 +50,7 @@
   }
   .item-cover--hero {
     aspect-ratio: auto;
-    height: clamp(140px, 28vh, 260px);
+    height: clamp(120px, 22vh, 220px);
   }
   .item-cover--hero img {
     filter: none;
@@ -276,14 +276,16 @@
     color: var(--background);
   }
 
-  /* Sidebar rows */
+  /* Sidebar: every row is an icon plus a label, 40px high, no gap between rows.
+     Selected is a filled block with bolder text; hover is one step fainter.
+     No accent bar, no glow, no pill around the count. */
   .nav-row {
     display: flex;
     width: 100%;
     height: 40px;
     align-items: center;
-    gap: 18px;
-    padding: 0 12px;
+    gap: 16px;
+    padding: 0 14px;
     border-radius: 10px;
     font-size: 14px;
     line-height: 20px;
@@ -291,13 +293,15 @@
     text-align: left;
     cursor: pointer;
   }
-  .nav-row:hover {
+  .nav-row:hover,
+  .nav-row[data-state='open'] {
     background: var(--surface-1);
   }
   .nav-row > svg {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     flex: none;
+    stroke-width: 1.75;
   }
   .nav-row[aria-pressed='true'] {
     background: var(--surface-2);
@@ -317,22 +321,145 @@
     color: var(--muted-foreground);
     font-variant-numeric: tabular-nums;
   }
-  .nav-row[aria-pressed='true'] .nav-row__count {
-    color: var(--foreground);
+  /* Collapsed rail: the icon stays where it was, the label moves into a tooltip. */
+  .nav-row--rail {
+    width: 48px;
+    gap: 0;
   }
-  .nav-group {
+  /* A quieter row for "show more" and for disclosure headings */
+  .nav-row--minor {
+    color: var(--muted-foreground);
+  }
+  .nav-divider {
+    margin: 12px 0;
+    border-top: 1px solid var(--hairline);
+  }
+  .nav-heading {
     display: flex;
-    min-height: 43px;
+    height: 28px;
     align-items: center;
     justify-content: space-between;
-    margin-top: 12px;
-    padding: 10px 4px 0 12px;
-    border-top: 1px solid var(--hairline);
+    margin-bottom: 4px;
+    padding-left: 14px;
     font-size: 13px;
-    font-weight: 600;
     line-height: 20px;
     color: var(--muted-foreground);
   }
+  .nav-heading__button {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    flex: none;
+    place-items: center;
+    border-radius: 8px;
+    color: var(--muted-foreground);
+    cursor: pointer;
+  }
+  .nav-heading__button:hover {
+    background: var(--surface-1);
+    color: var(--foreground);
+  }
+  .nav-heading__button svg,
+  .nav-heading svg {
+    width: 16px;
+    height: 16px;
+    stroke-width: 1.75;
+  }
+  /* A heading that opens and closes its group is one button across the row. */
+  button.nav-heading {
+    width: 100%;
+    padding-right: 6px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button.nav-heading:hover {
+    background: var(--surface-1);
+    color: var(--foreground);
+  }
+  .nav-tip {
+    z-index: 70;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: var(--surface-3);
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--foreground);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Menus opened from the sidebar and the top bar: labelled rows, same density as the sidebar. */
+  .app-menu {
+    z-index: 80;
+    min-width: 216px;
+    max-width: calc(100vw - 24px);
+    max-height: var(--reka-dropdown-menu-content-available-height);
+    overflow-y: auto;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--popover);
+    color: var(--popover-foreground);
+    box-shadow: var(--float-shadow);
+  }
+  .app-menu__item {
+    display: flex;
+    min-height: 40px;
+    align-items: center;
+    gap: 14px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 20px;
+    cursor: pointer;
+    outline: none;
+  }
+  .app-menu__item > svg {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    stroke-width: 1.75;
+    color: var(--muted-foreground);
+  }
+  .app-menu__item[data-highlighted],
+  .app-menu__item[data-state='open'] {
+    background: var(--surface-3);
+  }
+  .app-menu__item[data-state='checked'] {
+    font-weight: 600;
+  }
+  .app-menu__end {
+    display: flex;
+    flex: none;
+    align-items: center;
+    margin-left: auto;
+    padding-left: 12px;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  .app-menu__end svg {
+    width: 16px;
+    height: 16px;
+  }
+  .app-menu__label {
+    padding: 8px 10px 4px;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--muted-foreground);
+  }
+  .app-menu__rule {
+    height: 1px;
+    margin: 6px 4px;
+    background: var(--border);
+  }
+  .app-menu__swatch {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    border-radius: 50%;
+  }
+  /* The "/" hint inside the search box */
   .key-hint {
     min-width: 22px;
     flex: none;
@@ -373,6 +500,20 @@
   .top-button strong {
     font-weight: 500;
     color: var(--foreground);
+  }
+  /* The one filled button in the top bar: adding something. */
+  .top-button--primary,
+  .top-button--primary strong {
+    font-weight: 600;
+    color: var(--primary-foreground);
+  }
+  .top-button--primary {
+    background: var(--primary);
+  }
+  .top-button--primary:hover,
+  .top-button--primary[data-state='open'],
+  .top-button--primary[aria-expanded='true'] {
+    background: var(--primary-hover);
   }
   .top-button svg {
     width: 18px;

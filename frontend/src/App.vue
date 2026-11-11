@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { toast } from 'vue-sonner'
 import { initTheme } from '@/composables/useTheme'
 import { useKeyboard } from '@/composables/useKeyboard'
@@ -210,13 +210,19 @@ const headerRef = ref<InstanceType<typeof AppHeader> | null>(null)
 const listRef = ref<InstanceType<typeof ItemList> | null>(null)
 useKeyboard(() => headerRef.value, () => signedIn.value)
 
-// J/K navigation keeps the active row in view.
+// J/K navigation keeps the open item — or, in the cover wall, the keyboard cursor — in view.
+function revealItem(id: number | null | undefined) {
+  if (id != null) listRef.value?.scrollToItem(id)
+}
+watch(() => ui.cursorId, (id) => nextTick(() => revealItem(id)))
 watch(
   () => ui.activeItem?.id,
-  (id) => {
-    if (id == null || items.viewMode !== 'list') return
-    const idx = items.items.findIndex((i) => i.id === id)
-    if (idx >= 0) listRef.value?.scrollToIndex(idx)
+  (id, previous) => {
+    if (id != null) ui.cursorId = id
+    void nextTick(() => revealItem(id ?? ui.cursorId))
+    // Opening or closing the reader changes the wall's width and column count;
+    // look again once that transition has settled.
+    if ((id == null) !== (previous == null)) setTimeout(() => revealItem(ui.activeItem?.id ?? ui.cursorId), 340)
   },
 )
 
@@ -346,17 +352,17 @@ onUnmounted(() => {
       {{ loggingIn ? '驗證中…' : '登入' }}
     </button>
   </form>
-  <div v-else class="relative z-10 flex h-[100dvh] w-screen overflow-hidden text-foreground">
-    <!-- Collapsible Modern Sidebar -->
-    <AppSidebar @logout="handleLogout" />
+  <div v-else class="relative z-10 flex h-[100dvh] w-screen flex-col overflow-hidden bg-shell text-foreground">
+    <!-- Top bar spans the full width; the sidebar and the workspace sit under it -->
+    <AppHeader ref="headerRef" />
+    <ServiceStatusBanner />
 
-    <!-- Main Workspace (Top Header + Master Stream + Reader) -->
-    <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <AppHeader ref="headerRef" />
-      <ServiceStatusBanner />
+    <div class="flex min-h-0 flex-1">
+      <!-- Collapsible sidebar (a drawer on phones) -->
+      <AppSidebar @logout="handleLogout" />
 
       <!-- Master–detail workbench body -->
-      <div class="relative flex min-h-0 flex-1 overflow-hidden">
+      <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <!-- Master stream -->
         <div
           class="flex h-full min-w-0 flex-col transition-[width] duration-300 ease-out max-lg:w-full"

@@ -382,6 +382,10 @@
   border-color: var(--border);
   box-shadow: none;
 }
+/* Inline code reads as text here; the accent is kept for links. */
+.neutral .prose-reader code {
+  color: var(--foreground);
+}
 /* Dialogs and toasts are a step lighter than the page so they read as raised. */
 .neutral [role='dialog'],
 .neutral [role='alertdialog'] {

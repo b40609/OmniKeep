@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { VList } from 'virtua/vue'
-import { Inbox, Sparkles, FolderInput, Bookmark, Copy, Check } from 'lucide-vue-next'
+import { Inbox, Sparkles, FolderInput, Bookmark, Copy, Check, GalleryHorizontalEnd, SlidersHorizontal } from 'lucide-vue-next'
 import * as api from '@/lib/api'
 import type { Item } from '@/lib/api'
 import { toast } from 'vue-sonner'
@@ -12,9 +12,16 @@ import Skeleton from '@/components/ui/skeleton/Skeleton.vue'
 import { KIND_LABELS, KIND_TABS, groupByDay, type WallSection } from '@/lib/wall'
 import { useItemsStore, PAGE_SIZE } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
+import { useRadarStore } from '@/stores/radar'
 
 const items = useItemsStore()
 const ui = useUiStore()
+const radar = useRadarStore()
+
+function openRadarSettings() {
+  ui.showRadarModal = true
+  void radar.ensureLoaded()
+}
 
 const vlist = ref<InstanceType<typeof VList> | null>(null)
 const wall = ref<HTMLElement | null>(null)
@@ -153,6 +160,13 @@ defineExpose({ scrollToIndex, scrollToItem })
       </p>
     </div>
 
+    <!-- The sidebar's single 雷達 entry lands here; its settings and the swipe deck are one step away -->
+    <div v-if="items.triageView === 'radar'" class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-2 text-sm text-muted-foreground sm:px-6">
+      <span class="mr-auto">雷達自動找來、還沒看過的候選內容。</span>
+      <button type="button" class="top-button" title="雷達滑卡　D" @click="ui.showDeckModal = true"><GalleryHorizontalEnd /><strong>滑卡判定</strong></button>
+      <button type="button" class="top-button" title="雷達設定　R" @click="openRadarSettings"><SlidersHorizontal /><strong>雷達設定</strong></button>
+    </div>
+
     <div v-if="items.error && items.items.length" class="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2 text-sm sm:px-6" role="alert">
       <span>{{ items.error }}目前顯示上次載入的內容。</span>
       <button class="min-h-11 px-2 font-medium underline underline-offset-4" @click="items.loadItems()">重試</button>
@@ -160,7 +174,7 @@ defineExpose({ scrollToIndex, scrollToItem })
 
     <!-- First-load placeholders, shaped like the view they stand in for -->
     <div v-if="items.loading && firstLoad" class="flex-1 overflow-hidden" aria-label="載入中">
-      <div v-if="items.viewMode === 'list'" class="max-w-[56rem]">
+      <div v-if="items.viewMode === 'list'" class="max-w-[55rem]">
         <div v-for="i in 9" :key="i" class="flex items-center gap-3 border-b border-hairline px-4 py-3 sm:px-6">
           <div class="item-cover item-cover--thumb w-24 shrink-0 @min-[26rem]:w-[120px]" />
           <div class="flex-1 space-y-2">
@@ -265,10 +279,10 @@ defineExpose({ scrollToIndex, scrollToItem })
       class="min-h-0 flex-1 max-md:pb-20"
       :buffer-size="8"
     >
-      <!-- Rows stop at 56rem: thumbnail, about 40 characters of title, the actions. A wider
+      <!-- Rows stop at 55rem: thumbnail, just under 40 characters of title, the actions. A wider
            screen leaves the rest to the reader, which opens on that side. -->
       <template #default="{ item: row }">
-        <div :key="row.key" class="max-w-[56rem]">
+        <div :key="row.key" class="max-w-[55rem]">
           <h2 v-if="row.type === 'heading'" class="wall-section-title !m-0 border-b border-hairline px-4 pb-2.5 pt-5 sm:px-6">
             {{ row.label }}<span>{{ row.count }} 則</span>
           </h2>
