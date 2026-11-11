@@ -147,11 +147,12 @@ created_at: "{item.get('created_at', '')}"
 
 @router.get("/{item_id}/snapshot")
 async def get_snapshot(item_id: str):
-    from app.snapshot import get_html_snapshot
-    content = get_html_snapshot(item_id)
-    if not content:
+    from app.snapshot import get_snapshot_for_response
+    served = get_snapshot_for_response(item_id)
+    if not served:
         raise HTTPException(status_code=404, detail="No HTML snapshot available for this item")
-    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+    content, headers = served
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8", headers=headers)
 
 @router.get("/{item_id}/snapshot/status")
 async def get_snapshot_status(item_id: str):

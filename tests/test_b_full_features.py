@@ -163,7 +163,7 @@ def test_monolith_html_snapshot_lifecycle():
     info = get_snapshot_info(item_id)
     assert info["has_snapshot"] is True
     assert info["size_bytes"] > 0
-    assert info["path"] == path
+    assert "path" not in info  # where the file is on the server stays on the server
 
 
 # ── 3. Vector Deduplication & Radar Clustering Tests ───────────
