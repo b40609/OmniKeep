@@ -19,10 +19,29 @@ from app.database import (
     dismiss_dreampass_proposal,
     get_dreampass_proposal,
 )
-from app.config import settings
-from app.network import public_http_client
+from app.providers import get_provider
 
 logger = logging.getLogger("omnikeep.dreampass")
+
+
+def radar_provider():
+    """The radar slot (設定 › AI 服務商): falls back to the analysis chain."""
+    return get_provider("radar")
+
+
+def _ai_is_set_up() -> bool:
+    """False when no AI is set up at all: no connection for the radar or analysis slot and
+    none of the older flat settings. get_provider() would still hand back the default
+    endpoint without a key, and calling that only records a failure."""
+    from app import ai_connections
+    return bool(ai_connections.resolve("radar")) or not ai_connections.needs_setup()
+
+
+def _lines(value: Any, bullet: str = "") -> str:
+    """A reply field as text: models answer with a string or with a list of lines."""
+    if isinstance(value, (list, tuple)):
+        return "\n".join(f"{bullet}{str(x).strip()}" for x in value if x is not None and str(x).strip())
+    return str(value).strip() if value is not None else ""
 
 _DREAMPASS_SYSTEM_PROMPT = """你是一位敏銳的「個人知識與情報品味管家」。
 你的任務是回顧使用者最近的真實情報互動訊號（包含星標收藏、手動調升、封存、調降抑制的技術標籤與文章），
@@ -61,21 +80,23 @@ def _heuristic_dreampass_analysis(signals: Dict[str, Any], current_profile: str)
     if top_neg_names:
         observations.append(f"針對「{', '.join(top_neg_names)}」有多次抑制或調降動作，顯示偏好逐漸收斂。")
     if not observations:
-        observations.append("近期互動行為平穩，各技術主題維持均衡分佈。")
+        observations.append("近期沒有足夠的收藏、調升或調降訊號，看不出偏好有變化。")
 
     diff_lines = []
     if top_pos_names:
         diff_lines.append(f"＋ 強化關注：{', '.join(top_pos_names)}")
     if top_neg_names:
         diff_lines.append(f"－ 淡化排除：{', '.join(top_neg_names)}")
-    diff_summary = "\n".join(diff_lines) if diff_lines else "＋ 微調當前技術棧權重"
+    diff_summary = "\n".join(diff_lines) if diff_lines else "（這次沒有調整建議）"
 
-    # Construct suggested profile
-    base = current_profile.strip() if current_profile else "關注系統架構、效能優化與 AI 實戰工具。"
+    # Construct suggested profile. Without a profile of the owner's own the suggestion is
+    # built from the observed tags alone: no field of interest is assumed for them, and with
+    # no signal either it stays empty (applying it changes nothing).
+    base = current_profile.strip() if current_profile else ""
     additions = f"近期重點關注：{', '.join(top_pos_names)}。" if top_pos_names else ""
     exclusions = f"排除噪音：{', '.join(top_neg_names)}。" if top_neg_names else ""
 
-    parts = [base]
+    parts = [base] if base else []
     if additions and additions not in base:
         parts.append(additions)
     if exclusions and exclusions not in base:
@@ -130,52 +151,30 @@ async def run_dreampass_reflection(days: int = 7) -> Dict[str, Any]:
 """
 
     parsed = None
-    if settings.OPENAI_API_KEY:
+    if _ai_is_set_up():
         try:
-            api_url = f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions"
-            payload = {
-                "model": settings.PRIMARY_MODEL,
-                "messages": [
-                    {"role": "system", "content": _DREAMPASS_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.3,
-                "response_format": {"type": "json_object"}
-            }
-            async with public_http_client(timeout=30.0) as client:
-                resp = await client.post(
-                    api_url,
-                    headers={
-                        "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-                        "Content-Type": "application/json"
-                    },
-                    json=payload
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    content = data["choices"][0]["message"]["content"]
-                    parsed = json.loads(content)
-                else:
-                    logger.warning(
-                        "[DreamPass] LLM reflection returned HTTP %s from %s, using heuristic: %s",
-                        resp.status_code, api_url, (resp.text or "")[:300],
-                    )
+            # Through the radar slot like every other radar call: the connections saved in the
+            # app (local servers included), their fallback chain, pacing and usage counts.
+            parsed = await radar_provider().generate_json(user_prompt, _DREAMPASS_SYSTEM_PROMPT)
+            if not isinstance(parsed, dict) or not _lines(parsed.get("suggested_profile")):
+                logger.warning("[DreamPass] LLM reflection came back without a suggested_profile, using heuristic")
+                parsed = None
         except Exception as e:
-            # Fall back to heuristic, but never silently: a wrong settings field,
-            # a network error or malformed JSON must show up in the logs.
+            # Fall back to heuristic, but never silently: a dead key, a network
+            # error or malformed JSON must show up in the logs.
             logger.warning(
                 "[DreamPass] LLM reflection failed (%s: %s), using heuristic",
                 type(e).__name__, e, exc_info=True,
             )
+    else:
+        logger.info("[DreamPass] No AI connection is set up, using heuristic")
 
-    if not parsed or not isinstance(parsed, dict) or "suggested_profile" not in parsed:
+    if not parsed:
         parsed = _heuristic_dreampass_analysis(signals, current_profile)
 
-    obs = parsed.get("observations", "近期關注點持續演進。")
-    if isinstance(obs, list):
-        obs = "\n".join(f"• {x}" for x in obs)
-    sug_prof = str(parsed.get("suggested_profile", current_profile)).strip()
-    diff = str(parsed.get("diff_summary", "＋ 微調關注領域")).strip()
+    obs = _lines(parsed.get("observations"), bullet="• ") or "近期關注點持續演進。"
+    sug_prof = _lines(parsed.get("suggested_profile"))
+    diff = _lines(parsed.get("diff_summary")) or "＋ 微調關注領域"
 
     prop_id = create_dreampass_proposal(
         observations=obs,
