@@ -9,8 +9,11 @@ OmniKeep 安裝腳本（Windows）。
 
 可以重複執行：已完成的步驟會略過，不會覆寫既有的 .env 或資料庫。
 
-一行安裝（PowerShell）：
-  & ([scriptblock]::Create((irm https://raw.githubusercontent.com/b40609/OmniKeep/main/scripts/install.ps1)))
+一行安裝（PowerShell；Windows PowerShell 5.1 與 PowerShell 7 都可以）：
+  & ([scriptblock]::Create((irm https://raw.githubusercontent.com/b40609/OmniKeep/main/scripts/install.ps1).TrimStart([char]0xFEFF)))
+
+這個檔案開頭有 UTF-8 BOM（Windows PowerShell 5.1 用 -File 執行時靠它讀中文）。
+一行安裝要先用 TrimStart 去掉它，否則 [scriptblock]::Create 會解析失敗。
 
 先看會做什麼：
   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1 -DryRun
@@ -157,7 +160,10 @@ if ($prereq.Missing.Count -gt 0) {
     } else {
         Write-Host ('缺少：' + ($prereq.Missing -join '、') + '。可以加 -InstallPrereqs 自動安裝，或手動執行：') -ForegroundColor Red
         $commands | ForEach-Object { Write-Host "  $_" }
-        exit 1
+        # throw, not exit: run as a scriptblock (the one-line install), exit closes the user's
+        # PowerShell window before the lines above can be read. Run with -File, an uncaught
+        # throw still ends the process with exit code 1.
+        throw '缺少必要工具，沒有繼續安裝。裝好上面列的工具後，再執行一次。'
     }
 }
 if ($prereq.Python) { Write-Note "Python $($prereq.Python.Version)：$($prereq.Python.Exe)" }
@@ -208,7 +214,8 @@ Invoke-Action 'pip install -r requirements.txt' {
 # ── 4. 首次設定檔 ────────────────────────────────────────────────
 
 Write-Step '產生 .env（只在不存在時；存取金鑰隨機產生，不會顯示）'
-if (Test-Path (Join-Path $InstallDir '.env')) {
+$envExisted = Test-Path (Join-Path $InstallDir '.env')
+if ($envExisted) {
     Write-Note '.env 已存在，不覆寫。'
 } else {
     Invoke-Action 'python scripts\bootstrap_env.py' {
@@ -220,11 +227,15 @@ if (Test-Path (Join-Path $InstallDir '.env')) {
 
 Write-Step '建置前端（npm ci、npm run build）'
 $frontendDir = Join-Path $InstallDir 'frontend'
+# Invoke-Native looks the name up like any PowerShell command, and a bare "npm" resolves to
+# npm.ps1 before npm.cmd. Under the Restricted execution policy PowerShell refuses to run
+# npm.ps1, so call npm.cmd; keep the bare name only when no npm.cmd is on PATH.
+$Npm = if (Get-Command 'npm.cmd' -ErrorAction SilentlyContinue) { 'npm.cmd' } else { 'npm' }
 Invoke-Action 'npm ci; npm run build' {
     Push-Location $frontendDir
     try {
-        Invoke-Native 'npm' @('ci', '--no-audit', '--no-fund')
-        Invoke-Native 'npm' @('run', 'build')
+        Invoke-Native $Npm @('ci', '--no-audit', '--no-fund')
+        Invoke-Native $Npm @('run', 'build')
     } finally {
         Pop-Location
     }
@@ -301,6 +312,7 @@ function Test-Health {
     }
 }
 
+$serviceUp = $false
 if ($NoStart) {
     Write-Step '略過啟動（-NoStart）'
 } else {
@@ -327,6 +339,7 @@ if ($NoStart) {
             $healthy = Test-Health
         }
         if ($healthy) {
+            $serviceUp = $true
             Write-Note "OmniKeep 已啟動：http://127.0.0.1:5000"
         } else {
             Write-Warn "90 秒內沒等到 $HealthUrl 回應。看 %LOCALAPPDATA%\OmniKeep\logs 的 service-*.stderr.log。"
@@ -359,5 +372,12 @@ if ($DryRun) {
     Write-Host '以上是 dry-run，沒有改動任何東西。' -ForegroundColor Green
 } else {
     Write-Host '安裝完成。' -ForegroundColor Green
+    if ($serviceUp -and -not $envExisted) {
+        Write-Host '在這台電腦用瀏覽器打開 http://127.0.0.1:5000 就能直接使用，不用登入。'
+    } elseif ($serviceUp) {
+        # An older .env may still say LOCAL_AUTO_LOGIN=false, which keeps the login page.
+        Write-Host '在這台電腦用瀏覽器打開 http://127.0.0.1:5000 就能使用，預設不用登入。'
+        Write-Host '看到登入頁的話（例如 .env 裡寫了 LOCAL_AUTO_LOGIN=false），輸入 .env 的 API_KEY。'
+    }
     Write-Host '下一步：開一個新的 agent session（Claude Code、Codex 或 Antigravity），說「幫我設定 OmniKeep」。'
 }
