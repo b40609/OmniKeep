@@ -32,10 +32,11 @@ def test_frontend_writes_no_second_version():
     assert "version" not in lock and "version" not in lock["packages"][""]
 
 
-def test_sidebar_shows_the_injected_version():
-    sidebar = (REPO / "frontend/src/components/layout/AppSidebar.vue").read_text(encoding="utf-8")
+def test_settings_menu_shows_the_injected_version():
+    # The version sits at the foot of the menu behind the avatar in the top bar.
+    menu = (REPO / "frontend/src/components/layout/AccountMenu.vue").read_text(encoding="utf-8")
     config = (REPO / "frontend/vite.config.ts").read_text(encoding="utf-8")
-    assert "__APP_VERSION__" in sidebar and not re.search(r"\bv\d+\.\d+", sidebar)
+    assert "__APP_VERSION__" in menu and not re.search(r"\bv?\d+\.\d+\.\d+", menu)
     assert "'../VERSION'" in config and "__APP_VERSION__" in config
 
 

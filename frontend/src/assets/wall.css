@@ -69,7 +69,7 @@
   }
   /* Reader: full column width, never taller than a third of the window. */
   .item-cover--hero {
-    max-height: min(320px, 30vh);
+    max-height: min(280px, 28vh);
     width: 100%;
   }
   .item-cover--hero.item-cover--image {
@@ -804,6 +804,22 @@
 @media (min-width: 640px) {
   .wall-bar {
     padding: 0 24px;
+  }
+}
+/* A phone has room for the five tabs and two small buttons: the order as an icon,
+   and one button that switches to the other view. */
+@media (max-width: 639px) {
+  .wall-bar {
+    gap: 8px;
+  }
+  .wall-bar .top-button {
+    padding: 0 6px;
+  }
+  .kind-chip {
+    padding: 0 10px;
+  }
+  .view-switch button[aria-pressed='true'] {
+    display: none;
   }
 }
 

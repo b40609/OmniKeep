@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { VList } from 'virtua/vue'
-import { Inbox, Sparkles, FolderInput, Bookmark, Copy, Check, ChevronDown, LayoutGrid, List, Loader2, ListChecks, SlidersHorizontal } from 'lucide-vue-next'
+import { Inbox, Sparkles, FolderInput, Bookmark, Copy, Check, ChevronDown, ArrowUpDown, LayoutGrid, List, Loader2, ListChecks, SlidersHorizontal } from 'lucide-vue-next'
 import {
   DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent,
   DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuItemIndicator,
@@ -177,7 +177,7 @@ defineExpose({ scrollToIndex, scrollToItem })
   <div class="@container flex min-h-0 flex-1 flex-col bg-shell" :aria-busy="items.loading">
     <!-- Filter row: kind tabs on the left; how many, the order and the view on the right -->
     <div class="wall-bar" :class="{ 'wall-column': items.viewMode === 'list' }">
-      <div class="no-scrollbar -my-1 flex min-w-0 gap-3 overflow-x-auto py-1" role="group" aria-label="類型">
+      <div class="no-scrollbar -my-1 flex min-w-0 gap-2 overflow-x-auto py-1 sm:gap-3" role="group" aria-label="類型">
         <button
           v-for="tab in KIND_TABS"
           :key="tab.id"
@@ -198,7 +198,9 @@ defineExpose({ scrollToIndex, scrollToItem })
       </p>
       <DropdownMenuRoot>
         <DropdownMenuTrigger class="top-button max-sm:ml-auto" :disabled="items.ranked" :title="items.ranked ? '搜尋結果依相關性排列' : '排序'" aria-label="排序">
-          <strong>{{ sortLabel }}</strong><ChevronDown v-if="!items.ranked" />
+          <!-- On a phone the five tabs need the width: the order shrinks to an icon -->
+          <ArrowUpDown class="sm:hidden" aria-hidden="true" />
+          <strong class="max-sm:sr-only">{{ sortLabel }}</strong><ChevronDown v-if="!items.ranked" class="max-sm:hidden" />
         </DropdownMenuTrigger>
         <DropdownMenuPortal>
           <DropdownMenuContent class="app-menu !min-w-40" align="end" :side-offset="8" :collision-padding="12">
