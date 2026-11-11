@@ -23,11 +23,11 @@ onBeforeUnmount(() => detachCodeCopy?.())
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl p-5 lg:p-8">
+  <div class="mx-auto max-w-[54rem] p-5 lg:p-8">
     <div
       v-if="ui.activeItem?.content_raw"
       ref="contentRef"
-      class="prose-reader"
+      class="prose-reader mx-auto max-w-[40em]"
       :style="{ fontSize: ui.readerFontSize + 'px', lineHeight: ui.readerLineHeight }"
       v-html="renderMarkdown(ui.activeItem.content_raw)"
     />

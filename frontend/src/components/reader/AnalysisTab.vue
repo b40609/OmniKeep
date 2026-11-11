@@ -2,6 +2,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { Link2, Package, ChevronRight, Camera, Sparkles, Network, ExternalLink, ArrowRight, List, Hash } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
+import ItemCover from '@/components/items/ItemCover.vue'
 import type { Item } from '@/lib/api'
 import { cleanHost, formatRelativeTime, estimateReadTime, sourceMeta } from '@/lib/format'
 import { renderMarkdown, useCodeCopy, extractToc } from '@/lib/markdown'
@@ -36,7 +37,11 @@ function openItem(id: number | string) {
 </script>
 
 <template>
-  <div v-if="ui.activeItem" class="mx-auto max-w-3xl space-y-6 p-5 lg:p-8">
+  <!-- 44rem less the padding is 40rem: about 40 Chinese characters a line, however wide the pane gets -->
+  <div v-if="ui.activeItem" class="mx-auto max-w-[44rem] space-y-6 p-5 lg:p-8">
+    <!-- Cover: same rules as the wall, and simply absent when there is none -->
+    <ItemCover :item="ui.activeItem" variant="hero" />
+
     <!-- Article header -->
     <header class="pb-1">
       <h1 class="text-xl leading-snug font-bold tracking-tight text-foreground lg:text-2xl">
@@ -187,6 +192,42 @@ function openItem(id: number | string) {
       </div>
     </section>
 
+    <!-- L2 deep analysis -->
+    <section class="border-t border-hairline pt-6" aria-label="重點分析">
+      <h2 class="mb-3 text-base font-semibold text-foreground">重點分析</h2>
+
+      <!-- Table of Contents (TOC) -->
+      <nav
+        v-if="tocItems.length >= 2"
+        class="mb-6 rounded-xl border border-white/[0.08] bg-muted/30 p-3.5 backdrop-blur-md"
+        aria-label="章節目錄導航"
+      >
+        <div class="mb-2.5 flex items-center justify-between text-xs font-semibold text-muted-foreground">
+          <span class="flex items-center gap-1.5">
+            <List class="size-3.5 text-primary" />
+            <span>章節目錄 (Table of Contents)</span>
+          </span>
+          <span class="font-mono text-2xs text-subtle-foreground">{{ tocItems.length }} 個章節</span>
+        </div>
+        <div class="flex flex-wrap gap-1.5 sm:grid sm:grid-cols-2 md:grid-cols-3">
+          <a
+            v-for="h in tocItems"
+            :key="h.id"
+            :href="'#' + h.id"
+            class="group flex items-center gap-1.5 truncate rounded-lg border border-border/40 bg-card/70 px-2.5 py-1 text-2xs text-foreground/80 transition-all hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
+            @click.prevent="scrollToHeading(h.id)"
+          >
+            <Hash class="size-2.5 shrink-0 text-muted-foreground/60 group-hover:text-primary" />
+            <span class="truncate">{{ h.text }}</span>
+          </a>
+        </div>
+      </nav>
+      <div v-if="ui.activeItem.deep_analysis" ref="contentRef" class="prose-reader text-base" v-html="renderMarkdown(ui.activeItem.deep_analysis)" />
+      <div v-else class="py-8 text-center text-sm text-muted-foreground">
+        這個項目尚無重點分析，可切換「原文」閱讀。
+      </div>
+    </section>
+
     <!-- Semantic Neighbors / Related Items (E4) -->
     <section
       v-if="ui.activeItem.related_items?.length"
@@ -298,42 +339,6 @@ function openItem(id: number | string) {
           <span class="flex items-center gap-1">📦 提及實體 (Entity)</span>
           <span class="flex items-center gap-1">⚡ 語意相鄰 (Similar)</span>
         </div>
-      </div>
-    </section>
-
-    <!-- L2 deep analysis -->
-    <section class="border-t border-hairline pt-6" aria-label="重點分析">
-      <h2 class="mb-3 text-base font-semibold text-foreground">重點分析</h2>
-
-      <!-- Table of Contents (TOC) -->
-      <nav
-        v-if="tocItems.length >= 2"
-        class="mb-6 rounded-xl border border-white/[0.08] bg-muted/30 p-3.5 backdrop-blur-md"
-        aria-label="章節目錄導航"
-      >
-        <div class="mb-2.5 flex items-center justify-between text-xs font-semibold text-muted-foreground">
-          <span class="flex items-center gap-1.5">
-            <List class="size-3.5 text-primary" />
-            <span>章節目錄 (Table of Contents)</span>
-          </span>
-          <span class="font-mono text-2xs text-subtle-foreground">{{ tocItems.length }} 個章節</span>
-        </div>
-        <div class="flex flex-wrap gap-1.5 sm:grid sm:grid-cols-2 md:grid-cols-3">
-          <a
-            v-for="h in tocItems"
-            :key="h.id"
-            :href="'#' + h.id"
-            class="group flex items-center gap-1.5 truncate rounded-lg border border-border/40 bg-card/70 px-2.5 py-1 text-2xs text-foreground/80 transition-all hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
-            @click.prevent="scrollToHeading(h.id)"
-          >
-            <Hash class="size-2.5 shrink-0 text-muted-foreground/60 group-hover:text-primary" />
-            <span class="truncate">{{ h.text }}</span>
-          </a>
-        </div>
-      </nav>
-      <div v-if="ui.activeItem.deep_analysis" ref="contentRef" class="prose-reader text-base" v-html="renderMarkdown(ui.activeItem.deep_analysis)" />
-      <div v-else class="py-8 text-center text-sm text-muted-foreground">
-        這個項目尚無重點分析，可切換「原文」閱讀。
       </div>
     </section>
   </div>

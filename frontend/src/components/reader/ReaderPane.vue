@@ -62,7 +62,7 @@ function changeTab(event: KeyboardEvent) {
 
 <template>
   <section v-if="ui.activeItem" data-reader-root
-    class="safe-top safe-bottom fixed inset-0 z-40 flex min-w-0 flex-col bg-card lg:flex-1"
+    class="safe-top safe-bottom fixed inset-0 z-40 flex min-w-0 flex-col bg-shell lg:flex-1 lg:border-l lg:border-hairline"
     :class="ui.focusMode ? 'lg:inset-0 lg:z-30 lg:fixed' : 'lg:static lg:z-auto'" aria-label="閱讀面板">
     <div class="flex min-h-14 shrink-0 items-center justify-between gap-1 border-b border-hairline px-2 sm:px-4">
       <button class="item-action lg:hidden" aria-label="返回清單" @click="closeReader"><ArrowLeft class="size-5" /></button>
