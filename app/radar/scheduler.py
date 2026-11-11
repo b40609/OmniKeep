@@ -139,8 +139,20 @@ def pregate_item(title: str, url: str, content: str, weight_index: List[tuple]) 
         return 1.0, False
     return round(0.6 * max(matched) + 0.4 * (sum(matched) / len(matched)), 3), False
 
+def _page_key(url: str) -> str:
+    """One key per page for a cycle's bookkeeping (the same form the dedupe compares)."""
+    return canonical_url(url, repo_level=False)
+
 def _save_deferred_stub(raw) -> str:
-    """Persist an unanalyzed radar candidate so nothing is lost to the cap."""
+    """Persist an unanalyzed radar candidate so nothing is lost to the cap.
+
+    Only a page that is not stored yet gets a stub. save_item() is an upsert: writing a stub
+    over an existing row (analyzed, or already waiting) would blank its summary, tags and
+    analysis and set it back to pending.
+    """
+    existing = find_item_by_same_page(raw.url)
+    if existing:
+        return existing["id"]
     return save_item({
         "url": raw.url,
         "source_type": raw.source_type,
@@ -155,12 +167,22 @@ def _save_deferred_stub(raw) -> str:
         "analysis_status": "pending",
     })
 
-async def _backfill_pending(budget: int) -> List[Dict[str, Any]]:
-    """Analyze oldest pending stubs first (cap overflow from earlier cycles)."""
+async def _backfill_pending(budget: int, handled: Optional[set] = None) -> List[Dict[str, Any]]:
+    """Analyze oldest pending stubs first (cap overflow from earlier cycles).
+
+    Every page tried here is added to `handled` (see _page_key), whatever came of it
+    (analyzed, dropped for a muted tag, failed), so the caller leaves it alone for the
+    rest of the cycle.
+    """
     if budget <= 0:
         return []
     analyzed = []
     for stub in get_pending_analysis_items(budget):
+        if handled is not None:
+            key = _page_key(stub["url"])
+            if key in handled:
+                continue
+            handled.add(key)
         try:
             item = await _analyze_candidate(stub["url"], tier=2)
             if item:
@@ -447,12 +469,20 @@ async def run_radar_cycle(force: bool = False, auto_digest: bool = True) -> Dict
     # Backfill oldest pending stubs first, then spend remaining budget on the
     # best-ranked new candidates
     budget = max(0, int(cfg.get("max_analyze_per_cycle") or settings.RADAR_MAX_ANALYZE_PER_CYCLE))
-    all_new_items = await _backfill_pending(budget)
+    handled: set = set()  # pages the backfill dealt with in this cycle
+    all_new_items = await _backfill_pending(budget, handled)
+    handled.update(_page_key(it["url"]) for it in all_new_items if it.get("url"))
     budget -= len(all_new_items)
 
     candidates.sort(key=lambda c: c[2], reverse=True)
     deferred_count = 0
     for raw, src, _pg in candidates:
+        # A pending stub is a candidate too (its source listed it again). When the backfill
+        # just took it, analyzing it again or deferring it would undo that work.
+        key = _page_key(raw.url)
+        if key in handled:
+            continue
+        handled.add(key)  # one analysis per page per cycle
         if budget <= 0:
             _save_deferred_stub(raw)
             deferred_count += 1
