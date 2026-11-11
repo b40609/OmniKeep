@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app import ai_connections  # noqa: E402
-from app.database import get_db_connection, update_item_field  # noqa: E402
+from app.database import get_db_connection, optimize_fts, update_item_field  # noqa: E402
 from app.providers import build_provider  # noqa: E402
 
 SECTION = "### 📎 原文出處"
@@ -252,6 +252,14 @@ def restore(out: Path) -> int:
     return len(first)
 
 
+def tidy_index() -> None:
+    """Rewriting many items leaves the full-text index in many pieces: merge them once at the end."""
+    try:
+        optimize_fts()
+    except Exception as exc:
+        print(f"全文索引整理失敗（{type(exc).__name__}: {exc}），不影響已寫入的結果")
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -265,10 +273,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = ap.parse_args(argv)
     if args.restore:
         print(f"已還原 {restore(args.out)} 筆")
+        tidy_index()
         return 0
     if args.connection is None:
         ap.error("--connection is required")
     s = asyncio.run(run(args.connection, args.out, args.limit, args.concurrency, args.stop_after, args.only_ids))
+    tidy_index()
     print(f"結束：要處理 {s['todo']} 筆，完成 {s['done']}，失敗 {s['failed']}；"
           f"有出處 {s['sourced']} / {s['points']} 條；等待中被改寫而跳過 {s['changed']} 筆"
           + ("；連續失敗太多次，已停止" if s["stopped"] else ""))

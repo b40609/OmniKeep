@@ -6,13 +6,16 @@ Sinks (BACKUP_SINK in .env) — self-hosters pick what they have:
   git    auto-commit the snapshot into a private repo clone (versioned history)
   off    disabled
 The DB snapshot is taken via sqlite3's online-backup API so a live WAL
-database is copied consistently without stopping the server.
+database is copied consistently without stopping the server. That copy
+includes free pages, so run_backup() first merges the full-text index and
+vacuums the database when a fifth of the file is free.
 
 Archive layout (format 2): omnikeep.db, snapshots/<item id>.html, backup.json.
 Format 1 archives hold omnikeep.db only; restore_backup() accepts both.
 """
 import asyncio
 import json
+import logging
 import re
 import shutil
 import sqlite3
@@ -26,12 +29,31 @@ from typing import Dict, Any, List, Optional, Tuple
 
 from app import __version__
 from app.config import settings
-from app.database import log_backup_run
+from app.database import log_backup_run, optimize_fts, vacuum_if_fragmented
 from app.file_lock import FileLock
+
+logger = logging.getLogger("omnikeep.backup")
 
 ARCHIVE_FORMAT = 2
 # app/snapshot.py names each snapshot after its item id.
 _SNAPSHOT_NAME = re.compile(r"^[A-Za-z0-9_-]+\.html$")
+# VACUUM before the snapshot once this share of the database file is free pages.
+VACUUM_FREE_PAGE_RATIO = 0.2
+
+
+def _compact_database() -> None:
+    """Shrink what the snapshot is about to copy: merge the full-text index, then give
+    back free pages when they are a large share of the file. Neither step may stop the
+    backup: a busy database (VACUUM needs the write lock) is left for the next run."""
+    try:
+        optimize_fts()
+    except Exception as exc:
+        logger.warning("Could not optimize the full-text index before the backup: %s", exc)
+    try:
+        if vacuum_if_fragmented(VACUUM_FREE_PAGE_RATIO):
+            logger.info("Vacuumed the database before the backup")
+    except Exception as exc:
+        logger.warning("Could not vacuum the database before the backup: %s", exc)
 
 
 def _snapshot_db(tmp_dir: Path) -> Path:
@@ -125,6 +147,7 @@ def run_backup() -> Dict[str, Any]:
         return {"status": "busy", "sink": sink}
     try:
         Path(settings.BACKUP_DIR).mkdir(parents=True, exist_ok=True)
+        _compact_database()
         with tempfile.TemporaryDirectory(prefix="snapshot-", dir=settings.BACKUP_DIR) as tmp_dir:
             snap = _snapshot_db(Path(tmp_dir))
             size = _make_zip(snap, zip_path)

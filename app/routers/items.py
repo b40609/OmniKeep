@@ -229,7 +229,7 @@ async def import_bookmarks_endpoint(request: Request):
 
     from app.parsers.bookmarks import parse_bookmarks
     from app.network import is_safe_url
-    from app.database import save_item, create_ingest_task
+    from app.database import save_item_if_new, create_ingest_task
     from app.rules import apply_rules_to_item
 
     parsed_items = parse_bookmarks(content, filename=filename)
@@ -240,6 +240,7 @@ async def import_bookmarks_endpoint(request: Request):
             "imported_count": 0,
             "queued_count": 0,
             "skipped_count": 0,
+            "existing_count": 0,
             "errors": [],
             "sample_ids": [],
         }
@@ -247,6 +248,7 @@ async def import_bookmarks_endpoint(request: Request):
     imported_count = 0
     queued_count = 0
     skipped_count = 0
+    existing_count = 0  # already stored; also part of skipped_count
     errors: List[str] = []
     saved_ids: List[str] = []
 
@@ -277,9 +279,15 @@ async def import_bookmarks_endpoint(request: Request):
                     "origin": "import",
                 }
                 item_rec = apply_rules_to_item(item_rec)
-                item_id = save_item(item_rec)
-                imported_count += 1
-                saved_ids.append(item_id)
+                # Never save_item() here: it would blank the analysis and raw content of
+                # an item the user already has under this link.
+                item_id = save_item_if_new(item_rec)
+                if item_id is None:
+                    existing_count += 1
+                    skipped_count += 1
+                else:
+                    imported_count += 1
+                    saved_ids.append(item_id)
             except Exception as e:
                 errors.append(f"{url}: {str(e)}")
                 skipped_count += 1
@@ -290,6 +298,7 @@ async def import_bookmarks_endpoint(request: Request):
         "imported_count": imported_count,
         "queued_count": queued_count,
         "skipped_count": skipped_count,
+        "existing_count": existing_count,
         "errors": errors[:10],
         "sample_ids": saved_ids[:10],
     }

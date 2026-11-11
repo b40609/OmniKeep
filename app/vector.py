@@ -355,6 +355,25 @@ def store_item_embedding(item_id: str, embedding: List[float], model: str = "") 
     return True
 
 
+def delete_item_embeddings(conn, item_ids: List[str], has_vec: bool) -> int:
+    """Remove the stored vectors of these items on `conn` (the caller commits); returns how
+    many item_embeddings rows went. `has_vec` is load_vec_extension(conn), called before
+    any transaction was opened: the sqlite-vec mirror is only reachable with the extension
+    loaded, and where it cannot load there is no mirror to clean."""
+    removed = 0
+    for item_id in item_ids:
+        try:
+            removed += conn.execute("DELETE FROM item_embeddings WHERE item_id = ?", (item_id,)).rowcount
+        except Exception as e:  # no such table: nothing was ever indexed in this database
+            logger.debug(f"[Vector] Could not delete from item_embeddings: {e}")
+        if has_vec:
+            try:
+                conn.execute("DELETE FROM vec_items WHERE item_id = ?", (item_id,))
+            except Exception as e:
+                logger.debug(f"[Vector] Could not delete from vec_items: {e}")
+    return removed
+
+
 def get_item_embedding(item_id: str) -> Optional[List[float]]:
     """Retrieves the stored embedding for an item."""
     with closing(get_db_connection()) as conn:
@@ -393,7 +412,8 @@ def search_similar_items(
     Search for items similar to query_vector using sqlite-vec MATCH or numpy fallback.
     With `model`, only vectors labelled with that model are compared: vectors from
     another model live in another space and their similarity means nothing.
-    Returns: list of dicts with item_id, similarity, distance.
+    Returns: list of dicts with item_id, similarity (cosine, 4 decimals) and distance
+    (1 - similarity), best first; both paths give the same numbers for the same vectors.
     """
     dim = len(query_vector)
     packed = struct.pack(f"{dim}f", *query_vector)
@@ -407,12 +427,16 @@ def search_similar_items(
                 # sqlite-vec MATCH query; vec_items has no model column, so with a
                 # model filter fetch more neighbours and drop the other models after.
                 k = limit * 2 if model is None else limit * 8
+                # vec_items was created without distance_metric, so `distance` (and the
+                # neighbour order) is L2. The similarity comes from vec_distance_cosine on
+                # each neighbour instead: 1 - L2 is not a cosine, and stored vectors are
+                # not always unit length (a remote endpoint's vector is kept as returned).
                 rows = conn.execute("""
-                    SELECT item_id, distance
+                    SELECT item_id, vec_distance_cosine(embedding, ?) AS cosine_distance
                     FROM vec_items
                     WHERE embedding MATCH ? AND k = ?
                     ORDER BY distance ASC
-                """, (packed, k)).fetchall()
+                """, (packed, packed, k)).fetchall()
                 allowed = None
                 if model is not None and rows:
                     ids = [r["item_id"] for r in rows]
@@ -426,15 +450,17 @@ def search_similar_items(
                 for r in rows:
                     if allowed is not None and r["item_id"] not in allowed:
                         continue
-                    dist = float(r["distance"])
-                    # Approximate cosine similarity from cosine distance: sim = 1.0 - dist
-                    sim = max(0.0, round(1.0 - dist, 4))
+                    # NULL for a zero vector, which cosine_similarity() scores 0.0 as well.
+                    cosine_distance = r["cosine_distance"]
+                    sim = 0.0 if cosine_distance is None else max(-1.0, min(1.0, 1.0 - float(cosine_distance)))
                     if sim >= min_similarity:
                         results.append({
                             "item_id": r["item_id"],
-                            "similarity": sim,
-                            "distance": dist
+                            "similarity": round(sim, 4),
+                            "distance": round(1.0 - sim, 4)
                         })
+                # L2 order and cosine order differ for vectors that are not unit length.
+                results.sort(key=lambda x: x["similarity"], reverse=True)
                 used_vec = True
             except Exception as e:
                 logger.debug(f"[Vector] sqlite-vec MATCH failed, using numpy fallback: {e}")
@@ -550,7 +576,8 @@ async def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5)
     """
     from app.database import get_items
 
-    # 1. Lexical search (FTS)
+    # 1. Lexical search. get_items returns matches best first (bm25, column rank), and that
+    #    order is the lexical rank fused below.
     fts_items = get_items(query=query, limit=limit * 2)
 
     # 2. Vector search: same embedding path as indexing (app.pipeline), so the

@@ -176,6 +176,15 @@ def restore(out: Path) -> int:
     return len(seen)
 
 
+def tidy_index() -> None:
+    """Rewriting many items leaves the full-text index in many pieces: merge them once at the end."""
+    from app.database import optimize_fts
+    try:
+        optimize_fts()
+    except Exception as exc:
+        print(f"全文索引整理失敗（{type(exc).__name__}: {exc}），不影響已寫入的結果")
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -200,6 +209,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.restore:
         print(f"已還原 {restore(args.out)} 筆")
+        tidy_index()
         return 0
 
     reasons = [r.strip() for r in args.reasons.split(",") if r.strip()] if args.reasons else None
@@ -219,10 +229,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"清單另存到 {args.report}")
     if args.mark:
         print(f"已標成擷取失敗 {mark(args.out, items)} 筆；原值在 {args.out / 'before.jsonl'}")
+        tidy_index()
     elif args.refetch:
         stats = asyncio.run(refetch(args.out, items))
         print(f"重新擷取：成功 {stats['fixed']}，還是錯誤頁 {stats['still_blocked']}，失敗 {stats['failed']}；"
               f"原值在 {args.out / 'before.jsonl'}")
+        tidy_index()
     return 0
 
 

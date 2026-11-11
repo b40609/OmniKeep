@@ -26,7 +26,7 @@ def test_chinese_words_inside_a_sentence_are_found():
     assert _ids("推論") == {a}                # two characters: LIKE path
     assert _ids("時序資料") == {a}            # four characters inside the title: trigram path
     assert _ids("向量化") == {b}
-    assert _ids("推論 回測") == {a, b}        # words are OR-ed, as before
+    assert _ids("推論 回測") == {a, b}        # no item holds both words, so either one is enough
 
 
 def test_raw_content_and_english_substrings_are_searched():

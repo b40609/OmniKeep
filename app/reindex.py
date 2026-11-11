@@ -16,6 +16,7 @@ from app.config import settings
 from app.database import get_db_connection, get_item_by_id
 from app.vector import (
     LOCAL_EMBEDDING_MODEL,
+    delete_item_embeddings,
     generate_embedding_with_model,
     item_embedding_text,
     load_vec_extension,
@@ -97,6 +98,29 @@ def relabel_proven_local(item_ids: List[str]) -> int:
     with closing(get_db_connection()) as conn, conn:
         return sum(conn.execute("UPDATE item_embeddings SET model = ? WHERE item_id = ?",
                                 (LOCAL_EMBEDDING_MODEL, item_id)).rowcount for item_id in item_ids)
+
+
+def orphan_vector_ids() -> List[str]:
+    """Ids with a vector in item_embeddings or in the sqlite-vec mirror but no item."""
+    with closing(get_db_connection()) as conn:
+        ids = {r["item_id"] for r in conn.execute(
+            "SELECT item_id FROM item_embeddings WHERE item_id NOT IN (SELECT id FROM items)")}
+        if load_vec_extension(conn):
+            try:
+                ids |= {r["item_id"] for r in conn.execute(
+                    "SELECT item_id FROM vec_items WHERE item_id NOT IN (SELECT id FROM items)")}
+            except Exception:
+                pass
+    return sorted(ids)
+
+
+def delete_orphan_vectors() -> int:
+    """Remove the vectors of items that no longer exist; returns how many ids were cleaned."""
+    orphans = orphan_vector_ids()
+    if orphans:
+        with closing(get_db_connection()) as conn, conn:
+            delete_item_embeddings(conn, orphans, load_vec_extension(conn))
+    return len(orphans)
 
 
 async def reembed(item_ids: List[str], progress=lambda done, total: None) -> Dict[str, Any]:
