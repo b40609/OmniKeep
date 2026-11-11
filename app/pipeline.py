@@ -27,7 +27,8 @@ from app.parsers.transcript import TRANSCRIPT_MISSING, get_transcript
 from app.parsers.threads import is_threads_url, parse_threads_page
 from app.providers import get_primary_provider, get_gemini_provider, has_video_provider
 from app.config import settings
-from app.schemas.intelligence import generate_structured_intelligence
+from app.error_translate import mark_ai_failure
+from app.schemas.intelligence import AnalysisFailedError, generate_structured_intelligence, usable_analysis
 
 logger = logging.getLogger("omnikeep.pipeline")
 
@@ -208,9 +209,31 @@ def interest_profile_block() -> str:
         f"{profile[:2000]}\n=== 設定檔結束 ==="
     )
 
-async def _analyze_with_guardrails(provider, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-    """Execute LLM generation protected by strict Pydantic contract & reflection self-healing"""
-    return await generate_structured_intelligence(provider, prompt, system_prompt or analysis_system_prompt())
+def analysis_missing_note(reason: str) -> str:
+    return f"⚠️ AI 沒有產生可用的分析（{reason}）。這裡的摘要是瀏覽器看到的網頁描述，不是 AI 寫的。"
+
+
+async def _analyze_with_guardrails(provider, prompt: str, system_prompt: Optional[str] = None,
+                                   browser_summary: str = "") -> Dict[str, Any]:
+    """Execute LLM generation protected by strict Pydantic contract & reflection self-healing.
+
+    A failed analysis is raised, never returned as an empty result: run_pipeline() then saves
+    nothing and its caller decides what to do (the queue retries and backs off, the ingest
+    API answers with the reason). It used to come back empty and was saved as a finished
+    item with a placeholder summary, which also kept the same link from being analysed again.
+
+    One case still keeps the item: the bookmarklet sent the page's own description
+    (`browser_summary`) and the model answered, but never with a usable analysis. Then the
+    description stands in as the summary, as it did before, and a note says so.
+    """
+    try:
+        return await generate_structured_intelligence(provider, prompt, system_prompt or analysis_system_prompt())
+    except Exception as exc:
+        if isinstance(exc, AnalysisFailedError) and browser_summary:
+            logger.warning("[Pipeline] %s Keeping the item with the description the browser sent.", exc)
+            return {"deep_analysis": f"> {analysis_missing_note(exc.reason)}"}
+        mark_ai_failure(exc)  # callers tell it from a failed fetch (app/error_translate.py)
+        raise
 
 def is_pure_url(text: str) -> bool:
     clean = text.strip()
@@ -405,7 +428,8 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
 
 請依據規範輸出結構化 JSON；sub_entities 只列標題或描述中明確寫出的專案，沒有就填 []。"""
                 prompt += interest_profile_block()
-                ai_result = await _analyze_with_guardrails(primary, prompt)
+                ai_result = await _analyze_with_guardrails(primary, prompt,
+                                                           browser_summary=parsed["fallback_summary"])
             else:
                 fetch_failed = True
                 ai_result = {}
@@ -453,7 +477,9 @@ URL：{url}
 候選分類清單：[{cat_list_str}]
 請分析影片內容，直接輸出結構化 JSON。"""
                     prompt += interest_profile_block()
-                    ai_result = await gemini.analyze_youtube(url, prompt)
+                    # An answer with no analysis in it is a failure too (usable_analysis raises):
+                    # an empty {} used to count as the result and kept the transcript from being used.
+                    ai_result = usable_analysis(await gemini.analyze_youtube(url, prompt))
                 except Exception as e:
                     logger.warning("YouTube video analysis failed (%s); using the transcript instead", e)
                     ai_result = None
@@ -580,7 +606,8 @@ URL：{url}
 
 請依據規範輸出結構化 JSON。"""
             prompt += interest_profile_block()
-            ai_result = await _analyze_with_guardrails(primary, prompt)
+            ai_result = await _analyze_with_guardrails(primary, prompt,
+                                                       browser_summary=parsed["fallback_summary"])
 
     else:
         # Free-form Text Snippet / Paragraph / Thought Note

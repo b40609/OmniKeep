@@ -5,7 +5,7 @@ import re
 from typing import Optional, Dict, Any
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI, DefaultAsyncHttpxClient, RateLimitError
 from app import ai_status, ai_usage
-from app.providers.base import BaseLLMProvider
+from app.providers.base import BaseLLMProvider, EmptyResponseError, require_text
 from app.providers.rate_limiter import limiter
 from app.config import settings
 
@@ -164,36 +164,52 @@ class OpenAICompatibleProvider(BaseLLMProvider):
 
         # First attempt: Try response_format json_object. Rate limits must
         # propagate (never burn a second paced request while throttled).
+        if self.json_mode:
+            try:
+                response = await self._chat(
+                    model=self.model,
+                    messages=messages,
+                    temperature=0.2,
+                    response_format={"type": "json_object"}
+                )
+                return json.loads(self._answer_text(response))
+            except RateLimitError:
+                raise
+            except ProviderUnavailableError:
+                raise  # A block page cannot be fixed by changing response_format.
+            except APIConnectionError:
+                raise  # a down server: the fallback chain moves on
+            except EmptyResponseError:
+                raise  # the model had nothing to say; asking again spends quota for the same nothing
+            except APIStatusError as e:
+                if e.status_code not in (400, 422):
+                    raise  # a dead key or a broken server: retrying without response_format cannot help
+                # 400 / 422 is what an endpoint that does not know response_format answers.
+                # The plain request below settles it: it works, or its own error goes up
+                # (too long a prompt answers 400 again) and the fallback chain moves on.
+                logger.info("[%s] HTTP %s with response_format; trying once without it",
+                            self.label or "LLM", e.status_code)
+            except Exception:
+                pass  # text that is not plain JSON (fenced, or with a preamble): ask without the flag
+
+        # Fallback attempt without response_format flag (the only attempt when json_object is off)
+        response = await self._chat(
+            model=self.model,
+            messages=messages,
+            temperature=0.2,
+        )
+        raw = self._answer_text(response)
+        # Extract JSON block using regex if wrapped in markdown
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
+        if match:
+            raw = match.group(1)
+        return json.loads(raw.strip())
+
+    def _answer_text(self, response: Any) -> str:
+        """The answer's text for generate_json. An empty answer is a failure: it used to
+        become "{}", which the chain took for a result and the pipeline saved as an item."""
         try:
-            if not self.json_mode:
-                raise ValueError("json_object is off for this connection")
-            response = await self._chat(
-                model=self.model,
-                messages=messages,
-                temperature=0.2,
-                response_format={"type": "json_object"}
-            )
-            raw = extract_completion_content(response) or "{}"
-            return json.loads(raw)
-        except RateLimitError:
+            return require_text(extract_completion_content(response), self.label)
+        except EmptyResponseError as e:
+            ai_status.record_failure(self.status_key, None, str(e), self.label)
             raise
-        except ProviderUnavailableError:
-            raise  # A block page cannot be fixed by changing response_format.
-        except APIConnectionError:
-            raise  # a down server: the fallback chain moves on
-        except APIStatusError as e:
-            if e.status_code in (401, 402, 403, 404) or e.status_code >= 500:
-                raise  # a dead key or a broken server: retrying without response_format cannot help
-        except Exception:
-            # Fallback attempt without response_format flag
-            response = await self._chat(
-                model=self.model,
-                messages=messages,
-                temperature=0.2,
-            )
-            raw = extract_completion_content(response) or "{}"
-            # Extract JSON block using regex if wrapped in markdown
-            match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
-            if match:
-                raw = match.group(1)
-            return json.loads(raw.strip())

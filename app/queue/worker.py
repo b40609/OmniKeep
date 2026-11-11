@@ -1,7 +1,9 @@
 import asyncio
 import logging
 import time
+from contextlib import closing
 from app.config import settings
+from app.error_translate import classify, failure_message, is_ai_failure
 from app.file_lock import FileLock
 from typing import Dict, Any, Optional, Set
 from app.database import (
@@ -31,14 +33,39 @@ from app.bot.line_bot import (
 
 logger = logging.getLogger("omnikeep.worker")
 
-# LLM providers answer these when the account quota/plan is exhausted.
-_RATE_LIMIT_PATTERNS = ("429", "rate limit", "quota", "resource_exhausted", "too many requests")
 _MAX_RATE_LIMIT_RETRIES = 6
+# How long a timed-out attempt gets to unwind after it is cancelled, before its slot is
+# given back anyway.
+_CANCEL_GRACE_SECONDS = 10.0
+# Tries (with a growing pause) at writing a task's state back before giving up on the write.
+_STATE_WRITE_PAUSES = (0.2, 1.0, 3.0)
+
+
+class TaskTimeoutError(Exception):
+    """One attempt at a task ran past INGEST_TASK_TIMEOUT_SECONDS and was given up."""
+
+    def __init__(self, seconds: float):
+        self.seconds = seconds
+        limit = f"{round(seconds / 60)} 分鐘" if seconds >= 60 else f"{seconds:g} 秒"
+        super().__init__(f"處理超過 {limit}還沒完成，這次嘗試已中止（影片太長，或來源網站、AI 服務一直沒有回應時會這樣）。")
 
 
 def _is_rate_limit_error(exc: Exception) -> bool:
-    s = str(exc).lower()
-    return any(p in s for p in _RATE_LIMIT_PATTERNS)
+    """An AI provider's rate limit: the one failure the whole queue waits out.
+
+    Read from where the exception came from and its status (app/error_translate.py), not
+    from words in its text. A fetched site answering 429 (an HTTPStatusError, yt-dlp's
+    "HTTP Error 429") matched "429" and cooled the whole queue down, though the AI quota
+    had nothing to do with it; so did any message that happened to contain "quota".
+    """
+    return is_ai_failure(exc) and classify(exc)["kind"] == "rate_limit"
+
+
+def _retrieve_outcome(attempt: "asyncio.Future") -> None:
+    """Done callback of an abandoned attempt: read its outcome, so asyncio does not report
+    an exception that was never retrieved."""
+    if not attempt.cancelled():
+        attempt.exception()
 
 
 class TaskWorker:
@@ -52,6 +79,10 @@ class TaskWorker:
     - Rate-limit aware: on 429 the whole worker cools down with exponential
       backoff (60s -> 600s) instead of burning retries in seconds; quota is
       account-wide, so all queued tasks wait together and resume automatically.
+    - Bounded: one attempt may take INGEST_TASK_TIMEOUT_SECONDS at most (a hung fetch or
+      AI call used to hold its slot until the next restart; two of them stopped the queue),
+      and a task handed out more often than any retry policy allows is failed instead of
+      being claimed first again after every crash.
     """
 
     def __init__(self, concurrency: int = 2, poll_interval: float = 0.5, max_retries: int = 2):
@@ -64,6 +95,8 @@ class TaskWorker:
         self.running: bool = False
         self._loop_task: Optional[asyncio.Task] = None
         self.active_tasks: Set[asyncio.Task] = set()
+        # Timed-out attempts that did not stop when cancelled; kept until they end on their own.
+        self.abandoned_attempts: Set["asyncio.Future"] = set()
         # Rate-limit cooldown state (monotonic clock)
         self._rate_limit_until: float = 0.0
         self._rate_limit_backoff: float = 60.0
@@ -232,6 +265,76 @@ class TaskWorker:
             # The durable pending marker is already committed; the loop will retry.
             logger.warning("[Queue Worker] Could not schedule notification for %s: %s", task_id, exc)
 
+    async def _run_with_timeout(self, coro, timeout: float):
+        """Await `coro` for at most `timeout` seconds, then TaskTimeoutError (0 or less: no limit).
+
+        asyncio.wait_for alone would not give the slot back: it waits for the cancelled
+        attempt to finish, and the reel parser shields its native threads (download, speech
+        to text) and waits for them when cancelled, so a hung thread would hold the slot for
+        good. The attempt gets _CANCEL_GRACE_SECONDS to unwind, then is left to end on its own.
+        """
+        if timeout <= 0:
+            return await coro
+        attempt = asyncio.ensure_future(coro)
+        try:
+            done, _ = await asyncio.wait({attempt}, timeout=timeout)
+            if done:
+                return attempt.result()
+            attempt.cancel()
+            done, _ = await asyncio.wait({attempt}, timeout=_CANCEL_GRACE_SECONDS)
+        except asyncio.CancelledError:
+            # The worker is stopping: take the attempt down too, as a plain await would have.
+            attempt.cancel()
+            await asyncio.gather(attempt, return_exceptions=True)
+            raise
+        if not done:
+            self.abandoned_attempts.add(attempt)
+            attempt.add_done_callback(self.abandoned_attempts.discard)
+            attempt.add_done_callback(_retrieve_outcome)
+            logger.warning("[Queue Worker] A timed-out attempt did not stop within %gs of being cancelled; "
+                           "its slot is released and it is left to end on its own", _CANCEL_GRACE_SECONDS)
+        elif not attempt.cancelled() and attempt.exception() is None:
+            return attempt.result()  # it finished just as the limit was reached
+        raise TaskTimeoutError(timeout)
+
+    async def _write_task_state(self, task_id: str, what: str, write) -> bool:
+        """Run one write of a task's state; True when it landed.
+
+        These writes happen while a failure is being handled. One that raised there left the
+        task 'processing' until the next start, with nothing in the log to say so. A busy
+        database is tried again; a write that never lands is logged with what was lost
+        (reset_stale_tasks() puts the task back in the queue at the next start).
+        """
+        last: Optional[Exception] = None
+        for pause in (0.0, *_STATE_WRITE_PAUSES):
+            if pause:
+                await asyncio.sleep(pause)
+            try:
+                write()
+                return True
+            except Exception as exc:
+                last = exc
+                logger.warning("[Queue Worker] Task %s: could not %s (%s: %s)",
+                               task_id, what, type(exc).__name__, exc)
+        logger.error("[Queue Worker] Task %s stays 'processing': could not %s after %d tries (%s: %s). "
+                     "It is queued again at the next start.",
+                     task_id, what, len(_STATE_WRITE_PAUSES) + 1, type(last).__name__, last)
+        return False
+
+    async def _requeue_task(self, task_id: str, note: str) -> bool:
+        def write():
+            with closing(get_db_connection()) as conn, conn:
+                conn.execute(
+                    "UPDATE ingest_tasks SET status = 'queued', retry_count = retry_count + 1, error_message = ? WHERE id = ?",
+                    (note, task_id)
+                )
+        return await self._write_task_state(task_id, "queue it again", write)
+
+    async def _fail_task(self, task_id: str, message: str) -> bool:
+        return await self._write_task_state(
+            task_id, "mark it failed",
+            lambda: update_task_status(task_id, status="failed", error_message=message))
+
     async def _process_task(self, task: Dict[str, Any]):
         task_id = task["id"]
         url = task["url"]
@@ -269,6 +372,18 @@ class TaskWorker:
             url = existing_item.get("url") or url
             logger.info(f"[Queue Worker] Retrying empty reel item {existing_item.get('id')}")
 
+        # 1b. A task handed out more often than any retry policy allows is one that takes the
+        # process down with it: reset_stale_tasks() queues it again at every start (adding to
+        # retry_count) and, being the oldest, it was claimed first again, without end.
+        if retry_count > max(self.max_retries, _MAX_RATE_LIMIT_RETRIES):
+            gave_up = (f"這個連結已經處理 {retry_count} 次都沒有完成（包含服務中斷後重新排隊的次數），"
+                       "已停止自動重試。可以重新傳送連結再試一次。")
+            logger.error(f"[Queue Worker] Task {task_id} was handed out {retry_count} times without finishing; "
+                         "failing it instead of running it again")
+            await self._fail_task(task_id, gave_up)
+            await _notify_task_failed(gave_up)
+            return
+
         # 2. Telegram Heartbeat notification if user is in heartbeat mode
         mid = _get_current_message_id()
         if source == "telegram" and chat_id and mid:
@@ -284,19 +399,20 @@ class TaskWorker:
                     logger.warning(f"[Queue Worker] Telegram heartbeat error: {e}")
 
         try:
-            # 3. Execute intelligence pipeline
-            item = await run_pipeline(url)
+            # 3. Execute intelligence pipeline, for a bounded time
+            item = await self._run_with_timeout(run_pipeline(url), float(settings.INGEST_TASK_TIMEOUT_SECONDS))
 
             # Mark completed in DB
             update_task_status(task_id, status="completed", item_id=item.get("id"))
             self._rate_limit_backoff = 60.0  # quota healthy again — reset backoff
             logger.info(f"[Queue Worker] Task {task_id} completed successfully (item_id: {item.get('id')})")
         except Exception as exc:
-            logger.error(f"[Queue Worker] Task {task_id} failed on attempt {retry_count + 1}: {exc}")
+            logger.error(f"[Queue Worker] Task {task_id} failed on attempt {retry_count + 1}: "
+                         f"{type(exc).__name__}: {exc}")
 
             if isinstance(exc, (ProviderUnavailableError, ReelUnavailableError)):
                 # A network access block is deterministic; avoid repeated paid API requests.
-                update_task_status(task_id, status="failed", error_message=str(exc))
+                await self._fail_task(task_id, str(exc))
                 await _notify_task_failed(str(exc))
                 return
 
@@ -306,14 +422,9 @@ class TaskWorker:
                     backoff = self._rate_limit_backoff
                     self._rate_limit_backoff = min(self._rate_limit_backoff * 2, 600.0)
                     self._rate_limit_until = time.monotonic() + backoff
-                    conn = get_db_connection()
-                    c = conn.cursor()
-                    c.execute(
-                        "UPDATE ingest_tasks SET status = 'queued', retry_count = retry_count + 1, error_message = ? WHERE id = ?",
-                        (f"AI 額度限流，{int(backoff)} 秒後自動重試（第 {retry_count + 1}/{_MAX_RATE_LIMIT_RETRIES} 次）", task_id)
-                    )
-                    conn.commit()
-                    conn.close()
+                    await self._requeue_task(
+                        task_id,
+                        f"AI 額度限流，{int(backoff)} 秒後自動重試（第 {retry_count + 1}/{_MAX_RATE_LIMIT_RETRIES} 次）")
                     logger.warning(
                         f"[Queue Worker] Rate limited. Worker cooling down {int(backoff)}s; "
                         f"task {task_id} re-queued (attempt {retry_count + 1}/{_MAX_RATE_LIMIT_RETRIES})"
@@ -330,30 +441,27 @@ class TaskWorker:
                     return
                 # Out of rate-limit retries — fail with actionable guidance.
                 friendly = (
-                    "AI 服務額度已用盡（免費方案限流），自動重試 6 次仍未恢復。"
-                    "可升級 LLM 供應商方案，或於 .env 加入 GEMINI_API_KEYS 作為備援後重新轉發此訊息。"
+                    f"AI 服務持續限流（免費額度用完，或請求太頻繁），自動重試 {_MAX_RATE_LIMIT_RETRIES} 次仍未恢復。"
+                    "可以晚一點重新傳送這個連結；常發生的話到「設定 › AI 服務商」把請求間隔調長、"
+                    "加一條備援連線，或升級服務商方案。"
                 )
-                update_task_status(task_id, status="failed", error_message=friendly)
+                await self._fail_task(task_id, friendly)
                 await _notify_task_failed(friendly)
                 return
 
             # Non-rate-limit error: reset backoff so a later 429 starts gentle.
             self._rate_limit_backoff = 60.0
 
+            # An AI failure is explained in Chinese; anything else keeps its own message.
+            reason = failure_message(exc)
+
             # Transient error retry policy: up to max_retries (default 2 retries)
             if retry_count < self.max_retries:
-                conn = get_db_connection()
-                c = conn.cursor()
-                c.execute(
-                    "UPDATE ingest_tasks SET status = 'queued', retry_count = retry_count + 1, error_message = ? WHERE id = ?",
-                    (f"Attempt {retry_count + 1} failed: {str(exc)}", task_id)
-                )
-                conn.commit()
-                conn.close()
-                logger.info(f"[Queue Worker] Task {task_id} re-enqueued for retry (retry_count: {retry_count + 1})")
+                if await self._requeue_task(task_id, f"第 {retry_count + 1} 次嘗試失敗，會自動再試：{reason}"):
+                    logger.info(f"[Queue Worker] Task {task_id} re-enqueued for retry (retry_count: {retry_count + 1})")
             else:
-                update_task_status(task_id, status="failed", error_message=str(exc))
-                await _notify_task_failed(str(exc))
+                await self._fail_task(task_id, reason)
+                await _notify_task_failed(reason)
 
         else:
             # Delivery is independent of ingestion, retries and LLM quota state.

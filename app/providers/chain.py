@@ -5,8 +5,13 @@ Every call starts again at the primary connection (position 0). Per member:
                      retries 429 twice honouring Retry-After; the SDK retries 5xx);
                      when that is used up the member cools down and the next one is tried
   401 / 403 / 404    move on at once
+  400 / 422          the member asks once more without response_format; if that fails
+                     too, move on at once
+  empty answer       (EmptyResponseError, or a member returning None) move on at once
+  text, not JSON     (json.JSONDecodeError) move on at once
   disabled key       (error_translate: action_required) the member is skipped until
                      the connection is edited or tested again
+Every Exception moves on to the next member; only cancellation goes straight up.
 Members cooling down or waiting for a person are skipped while another member
 can still take the call; when none can, every member is tried anyway so the
 error reaches the caller. If every member failed and one of them was rate
@@ -18,7 +23,7 @@ from typing import Any, List, Optional, Tuple
 
 from app import ai_status
 from app.error_translate import classify
-from app.providers.base import BaseLLMProvider
+from app.providers.base import BaseLLMProvider, EmptyResponseError
 
 logger = logging.getLogger("omnikeep.providers.chain")
 
@@ -60,7 +65,11 @@ class ChainProvider(BaseLLMProvider):
         rate_limited: Optional[BaseException] = None
         for index, member in enumerate(order):
             try:
-                return await getattr(member.provider, method)(*args, **kwargs)
+                result = await getattr(member.provider, method)(*args, **kwargs)
+                if result is None:
+                    # No method has None as an answer; taken for one, the chain stopped here.
+                    raise EmptyResponseError(member.label)
+                return result
             except Exception as exc:
                 info = classify(exc)
                 last = exc
