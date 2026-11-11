@@ -181,11 +181,16 @@ export function useMutations() {
     }
   }
 
-  /** Open offline HTML snapshot in a new tab to prevent link rot. */
+  /** Show the offline HTML snapshot (link-rot protection) in SnapshotDialog's sandboxed frame. */
   async function openSnapshot(item: Item) {
     try {
-      toast.info('正在載入離線快照...')
-      await api.openSnapshotInNewTab(item.id)
+      const t = toast.loading('正在載入離線快照...')
+      try {
+        const html = await api.fetchSnapshotHtml(item.id)
+        ui.snapshotView = { title: item.title_l1, url: item.url, html }
+      } finally {
+        toast.dismiss(t)
+      }
       track('open_snapshot', item)
     } catch (e) {
       toast.error('無法開啟離線快照', { description: (e as Error).message })

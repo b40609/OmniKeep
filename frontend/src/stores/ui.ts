@@ -51,6 +51,9 @@ export const useUiStore = defineStore('ui', () => {
     sidebarMobileOpen.value = false
   }
 
+  /** Saved page shown in SnapshotDialog; null while closed. */
+  const snapshotView = ref<{ title: string; url: string; html: string } | null>(null)
+
   // Ingest
   const isIngesting = ref(false)
 
@@ -60,7 +63,7 @@ export const useUiStore = defineStore('ui', () => {
     showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal, showDeckModal, showPushModal,
     showDailyDeckModal, showBrainModal, showCommandPalette,
     showSettingsModal, settingsTab, settingsCard, settingsVersion, openSettings, showSetupWizard,
-    watchTab,
+    watchTab, snapshotView,
     isIngesting,
   }
 })
