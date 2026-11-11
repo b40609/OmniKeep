@@ -345,8 +345,10 @@ async def _announce_digest(digest_info: Dict[str, Any], ranked_items: List[Dict[
 
 DAILY_DIGEST_GRACE_HOURS = 3     # a late start (machine asleep at the hour) still sends within this window
 DAILY_DIGEST_MAX_ITEMS = 20      # keeps the digest prompt bounded
+DAILY_DIGEST_RETRY_MINUTES = 10  # after a failed write-up, wait this long before asking the model again
 DIGEST_CHECK_SECONDS = 60.0
 _daily_digest_running = False
+_daily_digest_retry_at: Optional[datetime] = None  # set while a failed write-up is waiting for its retry
 
 
 def _parse_ts(value: Any) -> Optional[datetime]:
@@ -385,16 +387,22 @@ async def maybe_send_daily_digest(cfg: Optional[Dict[str, Any]] = None,
 
     Collects radar items analyzed since the previous daily digest (the last 24 hours the first
     time). Returns the digest, or None when it is not due or there is nothing to report.
+    When the write-up fails nothing is stored or announced and the failed result is returned;
+    the slot stays open, so a later check tries again (DAILY_DIGEST_RETRY_MINUTES apart).
     """
-    global _daily_digest_running
+    global _daily_digest_running, _daily_digest_retry_at
     if _daily_digest_running:
         return None
     cfg = cfg if cfg is not None else get_radar_settings()
     if not cfg.get("enabled") or cfg.get("notification_mode") != "daily_digest":
         return None
     now_local = (now or datetime.now(timezone.utc)).astimezone()
+    if _daily_digest_retry_at and now_local < _daily_digest_retry_at:
+        return None
     last_sent = _parse_ts(get_last_radar_digest_at("daily"))
-    if not daily_digest_due(now_local, int(cfg.get("daily_digest_hour", 8)), last_sent):
+    # % 24: an hour saved before the settings API checked its range (24 made replace() raise
+    # on every check, so the digest never went out).
+    if not daily_digest_due(now_local, int(cfg.get("daily_digest_hour", 8)) % 24, last_sent):
         return None
     _daily_digest_running = True
     try:
@@ -404,6 +412,12 @@ async def maybe_send_daily_digest(cfg: Optional[Dict[str, Any]] = None,
         if not ranked:
             return None
         digest_info = await generate_radar_digest([it["id"] for it in ranked], digest_type="daily")
+        if digest_info.get("success"):
+            _daily_digest_retry_at = None
+        else:
+            _daily_digest_retry_at = now_local + timedelta(minutes=DAILY_DIGEST_RETRY_MINUTES)
+            logger.warning(f"[Radar:Digest] Daily digest not sent ({digest_info.get('message')}); "
+                           f"next try in {DAILY_DIGEST_RETRY_MINUTES} minutes")
         await _announce_digest(digest_info, ranked)
         return digest_info
     finally:

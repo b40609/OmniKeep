@@ -179,6 +179,11 @@ async def toggle_source(source_id: str, req: Optional[SourceToggleRequest] = Non
 
 # ── Radar Scheduler & Notification Settings ─────────────────
 
+MAX_INTERVAL_MINUTES = 10080   # one week between scheduled scans
+MAX_ANALYZE_PER_CYCLE = 50     # the settings page offers 1 to 10
+MAX_VIP_THRESHOLD = 12.5       # the highest score there is: topic weight 10 x tier-1 multiplier 1.25
+
+
 def _settings_with_state(saved: Dict[str, Any]) -> Dict[str, Any]:
     # The toggle only takes effect while the scheduler task runs (background services on).
     return {**saved, "scheduler_running": radar_scheduler.is_running}
@@ -193,10 +198,19 @@ async def update_settings(req: RadarSettingsUpdateRequest):
     valid_modes = ["silent", "daily_digest", "vip_alert"]
     if req.notification_mode is not None and req.notification_mode not in valid_modes:
         raise HTTPException(status_code=400, detail=f"notification_mode must be one of {valid_modes}")
-    if req.interval_minutes is not None and req.interval_minutes < 0:
-        raise HTTPException(status_code=400, detail="interval_minutes cannot be negative")
-    if req.max_analyze_per_cycle is not None and req.max_analyze_per_cycle < 1:
-        raise HTTPException(status_code=400, detail="max_analyze_per_cycle must be >= 1")
+    # Range checks: a value outside these is stored as it is and breaks the scheduler later
+    # (daily_digest_hour 24 made every digest check raise, so no digest was ever sent).
+    # `not low <= x <= high` also refuses NaN.
+    if req.interval_minutes is not None and not 0 <= req.interval_minutes <= MAX_INTERVAL_MINUTES:
+        raise HTTPException(status_code=400,
+                            detail=f"interval_minutes 必須在 0 到 {MAX_INTERVAL_MINUTES} 之間（0 是只手動巡檢）")
+    if req.max_analyze_per_cycle is not None and not 1 <= req.max_analyze_per_cycle <= MAX_ANALYZE_PER_CYCLE:
+        raise HTTPException(status_code=400,
+                            detail=f"max_analyze_per_cycle 必須在 1 到 {MAX_ANALYZE_PER_CYCLE} 之間")
+    if req.daily_digest_hour is not None and not 0 <= req.daily_digest_hour <= 23:
+        raise HTTPException(status_code=400, detail="daily_digest_hour 必須在 0 到 23 之間")
+    if req.vip_threshold is not None and not 0 <= req.vip_threshold <= MAX_VIP_THRESHOLD:
+        raise HTTPException(status_code=400, detail=f"vip_threshold 必須在 0 到 {MAX_VIP_THRESHOLD} 之間")
 
     updated = update_radar_settings(
         enabled=req.enabled,
