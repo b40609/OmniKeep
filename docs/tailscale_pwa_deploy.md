@@ -21,7 +21,7 @@ iPhone / iPad / 筆電 ──(tailnet)──> 主機上的 tailscaled :443（HTT
 |---|---|---|
 | `HOST` | `127.0.0.1`（預設） | 不要改成 `0.0.0.0`。埠只開在本機，外部一律經 Tailscale。 |
 | `PORT` | `5000`（預設） | 下面的 `tailscale serve` 指向這個埠。 |
-| `LOCAL_AUTO_LOGIN` | `false` | 開啟時，同機瀏覽器可免輸入金鑰。經 Tailscale serve 進來的請求帶有 `X-Forwarded-For`、`Tailscale-*` 等標頭，一律不會自動登入（`app/routers/session.py`）；啟動時也會在 log 留一則警告。 |
+| `LOCAL_AUTO_LOGIN` | 新安裝預設開啟（在「設定 › 系統」的「這台電腦免登入」切換） | 開啟時，同機瀏覽器可免輸入金鑰。經 Tailscale serve 進來的請求帶有 `X-Forwarded-For`、`Tailscale-*` 等標頭，一律不會自動登入（`app/routers/session.py`）；啟動時也會在 log 留一則警告。 |
 | `CORS_ORIGINS` | 不用設 | PWA 與 API 同源。 |
 
 手機第一次登入不必輸入 `API_KEY`：在電腦上已登入的 OmniKeep 開「設定 → 系統 → 手機登入」，用手機相機掃 QR code，或在手機的登入頁輸入畫面上的 8 碼配對碼。配對碼 5 分鐘內有效、只能用一次，裡面不含金鑰；打錯 5 次就作廢，要重新產生（`app/pairing.py`）。也可以照舊貼上 `API_KEY`。

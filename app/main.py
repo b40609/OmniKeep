@@ -55,10 +55,11 @@ async def _service_lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not initialize vector database: {e}")
     if settings.LOCAL_AUTO_LOGIN:
-        logger.warning(
-            "LOCAL_AUTO_LOGIN is enabled: /api/session/local-auth hands the API key to "
-            "loopback clients. Requests with reverse-proxy headers are refused, but "
-            "disable it if any other process forwards traffic to this port."
+        # On by default since the sign-in switch moved to 設定 › 系統, so this is a note, not a warning.
+        logger.info(
+            "This computer signs in without a key (設定 › 系統): /api/session/local-auth hands the "
+            "API key to loopback clients. Requests with reverse-proxy headers are refused; turn it "
+            "off if another process on this machine forwards traffic to this port."
         )
     if not settings.BACKGROUND_SERVICES_ENABLED:
         yield
