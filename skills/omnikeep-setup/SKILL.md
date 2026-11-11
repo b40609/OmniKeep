@@ -48,7 +48,10 @@ description: 安裝 OmniKeep（自架第二大腦與資訊雷達），並用最�
    腳本會：建立 `.venv`、安裝依賴、產生 `.env`（含隨機存取金鑰，不會印出來）、建置前端、啟動服務並設定自動重啟（Windows 是排程工作「OmniKeep Watchdog」）、把 MCP 與這份 Skill 註冊到這台電腦的 Claude Code、Codex、Antigravity。
    想先看會做什麼：Windows 加 `-DryRun`，macOS、Linux 加 `--dry-run`。
 3. 安裝需要幾分鐘（依賴與前端建置），等的時候跟使用者說明在做什麼。腳本失敗時，照錯誤訊息處理；不要跳過失敗的步驟繼續往下。
-4. 完成後打開 `http://127.0.0.1:5000`，確認看得到 OmniKeep。
+4. 完成後請使用者在這台電腦用瀏覽器打開 `http://127.0.0.1:5000`。在執行 OmniKeep 的這台電腦上打開，會直接看到主畫面，不用登入。
+   使用者說看到的是登入頁時（例如他在 `.env` 寫了 `LOCAL_AUTO_LOGIN=false`、在設定頁關掉了「這台電腦免登入」，或是從別台裝置、經 Tailscale 打開）：
+   - 有另一個已經登入的瀏覽器：在那邊打開「設定 › 系統 › 手機登入」產生配對碼（QR code 或 8 碼，5 分鐘內有效、只能用一次），在登入頁輸入。
+   - 沒有：請使用者自己打開 OmniKeep 資料夾裡的 `.env`，複製 `API_KEY=` 後面的值，貼到登入頁。你不要讀 `.env`、不要印出金鑰，也不要請使用者把金鑰貼到聊天。
 5. MCP 要開新的 session 才會載入：請使用者開新的 session（Claude Code 也可以重新啟動），說「繼續設定 OmniKeep」，從第 1 步接著做。
 
 ## 1. 掃描
@@ -117,7 +120,7 @@ OmniKeep 的分析、Ask Brain、雷達摘要要用 AI。
 每個選中、還沒接好的管道：
 
 1. 說明申請步驟，打開卡片的申請頁。
-2. 呼叫 `omnikeep_open_settings(card=<卡片 id>)` 取得設定頁連結。使用者打開後會直接看到那張卡片的新增表單（已經接過的就是編輯表單），請他自己貼金鑰、按儲存。
+2. 呼叫 `omnikeep_open_settings(card=<卡片 id>)` 取得設定頁連結。在執行 OmniKeep 的這台電腦上打開不用登入，使用者打開後會直接看到那張卡片的新增表單（已經接過的就是編輯表單），請他自己貼金鑰、按儲存。先出現登入頁時（免登入被關掉，或是從別台裝置打開），照第 0 步第 4 點處理，登入後再開一次連結。
 3. 使用者說貼好了，再呼叫一次 `omnikeep_list_provider_options`，從 `current.connections` 找到新連線的 `id`，用 `omnikeep_test_provider(connection_id=<id>)` 測試。它會實際送一筆中文 JSON 小請求。
 4. 失敗時照回傳的中文說明處理（金鑰錯、被停用、限流、模型不存在……）。一直失敗就先接下一個管道，不要卡住後面的步驟。
 
@@ -131,18 +134,22 @@ OmniKeep 的分析、Ask Brain、雷達摘要要用 AI。
 
 ```json
 {
-  "stage": "initial",
-  "about_me": "產線設備資料蒐集與分析，常用 Python，想追工業 AI 與邊緣推論",
+  "stage": "first",
+  "about_you": "產線設備資料蒐集與分析，常用 Python，想追工業 AI 與邊緣推論",
   "topics": ["工業 AI", "邊緣推論", "時序資料庫"],
-  "seed_urls": ["https://example.com/post"],
-  "radar_sources": [
-    {"type": "rss", "url": "https://example.com/feed.xml", "name": "Example Blog", "pack": "工業 AI"}
+  "seed_links": ["https://example.com/post"],
+  "sources": [
+    {"name": "Example Blog", "source_type": "rss", "url": "https://example.com/feed.xml", "pack": "工業 AI"}
   ],
-  "ai_connections": ["agnes", "ollama"]
+  "ai_order": [2, 1]
 }
 ```
 
-欄位名稱與格式以 `omnikeep_preview_setup` 的工具說明為準；它回「答案有問題」時，照訊息修正 JSON 再預覽，不要繞過它自己寫設定。
+- `source_type` 只能是 `youtube`、`github`、`rss`、`google_news`、`web_change`。
+- `ai_order` 是連線的數字 id（`omnikeep_list_provider_options` 回傳的 `current.connections` 裡的 `id`），主要在前、備援依序在後；不是服務商名稱。
+- 不認得的欄位會被拒絕，不會被忽略。
+
+欄位名稱與格式以 `omnikeep_preview_setup` 的工具說明為準；它回「答案格式有誤」時，照訊息修正 JSON 再預覽，不要繞過它自己寫設定。
 
 把預覽原樣給使用者看。預覽包含：
 
@@ -183,7 +190,7 @@ OmniKeep 的分析、Ask Brain、雷達摘要要用 AI。
 1. 網頁推播：打開 OmniKeep，按「允許」就好
 2. Telegram：要先建一個 Bot
 3. LINE：要先建一個官方帳號
-4. 不用送，我自己打開看 → `notification_mode` 用 `silent`，題 6 不用答
+4. 不用送，我自己打開看 → `notifications.mode` 用 `silent`，題 6 不用答
 
 > 題 6：什麼時候送？
 
@@ -205,11 +212,15 @@ OmniKeep 的分析、Ask Brain、雷達摘要要用 AI。
 {
   "stage": "followup",
   "analysis_depth": "concise",
-  "notification_channels": ["web_push", "telegram"],
-  "notification_mode": "daily_digest",
-  "daily_digest_hour": 8
+  "notifications": {
+    "mode": "daily_digest",
+    "daily_digest_hour": 8,
+    "channels": ["web_push", "telegram"]
+  }
 }
 ```
+
+`notifications.mode` 是 `silent`、`daily_digest` 或 `vip_alert`；選 `daily_digest` 一定要給 `daily_digest_hour`（0 到 23）。`channels` 可以放 `web_push`、`telegram`、`line`。第二次只能帶 `analysis_depth` 和 `notifications`，帶其他欄位會被拒絕。
 
 題 4 選了「剛好」以外的：下一篇開始用新寫法；想看效果，說「重新分析這篇」。
 
@@ -222,7 +233,7 @@ OmniKeep 的分析、Ask Brain、雷達摘要要用 AI。
 - 雷達摘要送到哪、幾點，下一份什麼時候到。
 - 之後想改，直接跟 agent 說，只會改那一項。例如：「多加幾個 X 的來源」「摘要改到晚上」「分析短一點」。
 - 想搬舊資料，說「匯入書籤」：可以搬 Chrome、Edge 書籤、GitHub 星標、Pocket 匯出檔、OPML，用 `omnikeep_import`，預設只存標題與網址，不跑 AI。
-- 每天滑卡一分鐘，推薦會越來越準。累積夠多互動後，Dreampass 會提議更新興趣設定檔，使用者批准才改。
+- 每天滑卡一分鐘，推薦會越來越準。
 
 ## 之後的單項修改
 
