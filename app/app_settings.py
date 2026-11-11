@@ -7,8 +7,8 @@ Values live in the `app_settings` table; credentials are encrypted with
 app.secret_box and are never returned to the browser (only "configured" and
 the last four characters). Saving applies the value to the running process at
 once. Bootstrap settings stay in .env: HOST, PORT and the paths are needed
-before the database opens, and API_KEY / LOCAL_AUTO_LOGIN guard the login that
-protects this very settings page.
+before the database opens, and API_KEY is the login that protects this very
+settings page.
 """
 import logging
 import re
@@ -77,6 +77,7 @@ GROUPS: Tuple[Tuple[str, str], ...] = (
     ("github", "GitHub"),
     ("backup", "備份"),
     ("push", "推播"),
+    ("system", "系統"),
 )
 
 SPECS: Tuple[Spec, ...] = (
@@ -149,6 +150,11 @@ SPECS: Tuple[Spec, ...] = (
     # A pair: both are written together by app/vapid.py and applied only together.
     Spec("VAPID_PUBLIC_KEY", "push", "推播公鑰", "text", generated=True),
     Spec("VAPID_PRIVATE_KEY", "push", "推播私鑰", "secret", generated=True),
+
+    # Read on every /api/session/local-auth request, so a change applies at once.
+    Spec("LOCAL_AUTO_LOGIN", "system", "這台電腦免登入", "bool",
+         help="開啟時，在執行 OmniKeep 的這台電腦上用瀏覽器打開，不必輸入存取金鑰就能進主畫面。"
+              "手機、其他電腦，以及經由 Tailscale 或反向代理連進來的裝置，一律要輸入存取金鑰或配對碼。"),
 )
 
 SPEC_BY_KEY: Dict[str, Spec] = {spec.key: spec for spec in SPECS}
@@ -514,7 +520,6 @@ def describe() -> Dict[str, Any]:
             {"key": "PORT", "value": settings.PORT},
             {"key": "DATABASE_PATH", "value": settings.DATABASE_PATH},
             {"key": "API_KEY", "value": "已設定" if configured_key() else "未設定"},
-            {"key": "LOCAL_AUTO_LOGIN", "value": settings.LOCAL_AUTO_LOGIN},
         ],
     }
 

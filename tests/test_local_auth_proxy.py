@@ -9,6 +9,8 @@ from app.config import settings
 from app.main import app
 
 SYNTHETIC_KEY = "test-synthetic-key-12345"
+# The address a browser on the same machine uses; local-auth refuses any other Host.
+LOCAL = "http://127.0.0.1:5000"
 DENIED = {"authenticated": False, "api_key": ""}
 
 
@@ -19,7 +21,7 @@ def auto_login(monkeypatch):
 
 
 def test_plain_loopback_still_auto_logs_in(auto_login):
-    with TestClient(app) as client:
+    with TestClient(app, base_url=LOCAL) as client:
         res = client.get("/api/session/local-auth")
     assert res.json() == {"authenticated": True, "api_key": SYNTHETIC_KEY}
 
@@ -48,7 +50,7 @@ def test_plain_loopback_still_auto_logs_in(auto_login):
     {"x-FORWARDED-for": "203.0.113.9"},
 ])
 def test_proxy_headers_block_auto_login(auto_login, headers):
-    with TestClient(app) as client:
+    with TestClient(app, base_url=LOCAL) as client:
         res = client.get("/api/session/local-auth", headers=headers)
     assert res.status_code == 200
     assert res.json() == DENIED
@@ -59,7 +61,7 @@ def test_spoofed_loopback_forwarded_for_is_refused_under_uvicorn(auto_login):
     # request.client from it. A proxy that passes the header through unchanged
     # lets a remote client claim to be 127.0.0.1.
     proxied = ProxyHeadersMiddleware(app, trusted_hosts="127.0.0.1,::1")
-    with TestClient(proxied, client=("127.0.0.1", 50000)) as client:
+    with TestClient(proxied, base_url=LOCAL, client=("127.0.0.1", 50000)) as client:
         res = client.get("/api/session/local-auth", headers={"X-Forwarded-For": "127.0.0.1"})
     assert res.json() == DENIED
 

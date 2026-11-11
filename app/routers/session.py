@@ -10,8 +10,9 @@ import asyncio
 import http.cookiejar
 import ipaddress
 import logging
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -194,15 +195,66 @@ def _is_trusted_client(client_host: str) -> bool:
         return False
 
 
+# The names a browser on this machine reaches it by; any port (a dev server proxies from its own).
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
+_AUTHORITY = re.compile(r"(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::(\d{1,5}))?")
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _authority(value: str) -> Optional[Tuple[str, Optional[int]]]:
+    """(host, port) of a Host header or of an origin's authority; None when it is not one."""
+    match = _AUTHORITY.fullmatch(value.strip().lower())
+    if not match:
+        return None
+    return match.group(1), int(match.group(2)) if match.group(2) else None
+
+
+def _asked_by_own_local_page(request: Request) -> bool:
+    """True when the request names this machine and no other site's page is behind it.
+
+    Host: a page that rebinds its own domain to 127.0.0.1 (DNS rebinding) reaches this
+    port from loopback, but the browser still sends that domain as Host.
+    Origin / Sec-Fetch-Site: a page on another site, or on another local port, says so.
+    """
+    hosts = request.headers.getlist("host")
+    host = _authority(hosts[0]) if len(hosts) == 1 else None
+    if not host or host[0] not in _LOCAL_HOSTS:
+        return False
+    scheme = request.url.scheme
+    default_port = _DEFAULT_PORTS.get(scheme)
+    for origin in request.headers.getlist("origin"):
+        origin_scheme, separator, rest = origin.strip().lower().partition("://")
+        asker = _authority(rest) if separator else None  # "null" (a sandboxed frame) has no authority
+        if not asker or origin_scheme != scheme:
+            return False
+        if (asker[0], asker[1] or default_port) != (host[0], host[1] or default_port):
+            return False
+    return all(site.strip().lower() in ("same-origin", "none")
+               for site in request.headers.getlist("sec-fetch-site"))
+
+
+# The answer may carry the key: never stored, and unreadable to other sites even where
+# the browser sends no Sec-Fetch-Site.
+_LOCAL_AUTH_HEADERS = {"Cache-Control": "no-store", "Cross-Origin-Resource-Policy": "same-origin"}
+
+
 @router.get("/local-auth")
 async def get_local_auth(request: Request):
-    """Zero-friction auto-auth for local users connecting via loopback (localhost),
-    refused when the request came through a reverse proxy."""
+    """Signs in a browser on this same machine without the key (LOCAL_AUTO_LOGIN, on by default).
+
+    Public, and the answer is the access key itself, so all of these must hold: the
+    setting is on, the connection comes from loopback, no reverse proxy relayed it, and
+    OmniKeep's own page asked under a local name. A refusal never says which one failed.
+    """
     client_host = request.client.host if request.client else ""
-    is_trusted = _is_trusted_client(client_host)
-    if not (is_trusted and settings.LOCAL_AUTO_LOGIN) or _came_through_proxy(request):
-        return {"authenticated": False, "api_key": ""}
-    return {"authenticated": True, "api_key": settings.API_KEY}
+    allowed = (
+        settings.LOCAL_AUTO_LOGIN
+        and _is_trusted_client(client_host)
+        and not _came_through_proxy(request)
+        and _asked_by_own_local_page(request)
+    )
+    body = {"authenticated": True, "api_key": settings.API_KEY} if allowed else {"authenticated": False, "api_key": ""}
+    return JSONResponse(body, headers=_LOCAL_AUTH_HEADERS)
 
 
 # ── Phone sign-in with a one-time code (app/pairing.py) ──────────────

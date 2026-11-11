@@ -133,7 +133,7 @@ def test_changing_the_address_requires_the_key_again(monkeypatch):
     {"TELEGRAM_ALLOWED_USER_IDS": ["123", "abc"]},
     {"VAPID_SUBJECT": "someone@example.com"},
     {"API_KEY": "x" * 40},           # bootstrap settings stay in .env
-    {"LOCAL_AUTO_LOGIN": True},
+    {"LOCAL_AUTO_LOGIN": "maybe"},
     {"DATABASE_PATH": "C:/elsewhere.db"},
 ])
 def test_invalid_or_bootstrap_values_are_refused(values):
