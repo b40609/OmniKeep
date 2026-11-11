@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { Link2, Package, ChevronRight, Camera, Sparkles, Network, ExternalLink, ArrowRight, List, Hash } from 'lucide-vue-next'
+import { Link2, Package, ChevronRight, Camera, Sparkles, Network, ExternalLink, ArrowRight, List, Hash, FileText, CornerUpLeft } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
 import ItemCover from '@/components/items/ItemCover.vue'
 import type { Item } from '@/lib/api'
@@ -116,8 +116,8 @@ function openItem(id: number | string) {
     </section>
 
     <!-- L1 highlight -->
-    <section class="border-t border-hairline pt-6" aria-label="內容摘要">
-      <h2 class="mb-2 text-base font-semibold text-foreground">內容摘要</h2>
+    <section class="border-t border-hairline pt-6" aria-label="摘要">
+      <h2 class="mb-2 text-base font-semibold text-foreground">摘要</h2>
       <p class="text-base leading-relaxed text-foreground">{{ ui.activeItem.summary_l1 }}</p>
       <div v-if="ui.activeItem.tech_tags?.length" class="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
         <span
@@ -168,7 +168,7 @@ function openItem(id: number | string) {
                 title="在 OmniKeep 閱讀相關項目"
                 @click="openItem(sub.target_item_id)"
               >
-                閱讀詳情 <ChevronRight class="size-3" />
+                開啟 <ChevronRight class="size-3" />
               </button>
               <a
                 v-if="sub.target_canonical_url"
@@ -200,12 +200,12 @@ function openItem(id: number | string) {
       <nav
         v-if="tocItems.length >= 2"
         class="mb-6 rounded-xl border border-white/[0.08] bg-muted/30 p-3.5 backdrop-blur-md"
-        aria-label="章節目錄導航"
+        aria-label="目錄"
       >
         <div class="mb-2.5 flex items-center justify-between text-xs font-semibold text-muted-foreground">
           <span class="flex items-center gap-1.5">
             <List class="size-3.5 text-primary" />
-            <span>章節目錄 (Table of Contents)</span>
+            <span>目錄</span>
           </span>
           <span class="font-mono text-2xs text-subtle-foreground">{{ tocItems.length }} 個章節</span>
         </div>
@@ -224,7 +224,7 @@ function openItem(id: number | string) {
       </nav>
       <div v-if="ui.activeItem.deep_analysis" ref="contentRef" class="prose-reader text-base" v-html="renderMarkdown(ui.activeItem.deep_analysis)" />
       <div v-else class="py-8 text-center text-sm text-muted-foreground">
-        這個項目尚無重點分析，可切換「原文」閱讀。
+        這個項目還沒有重點分析，可以改看「原文」。
       </div>
     </section>
 
@@ -232,16 +232,15 @@ function openItem(id: number | string) {
     <section
       v-if="ui.activeItem.related_items?.length"
       class="border-t border-hairline pt-6"
-      aria-label="語意關聯推薦"
+      aria-label="相關收藏"
     >
       <div class="mb-3 flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <Sparkles class="size-4 text-amber-500" />
+          <Sparkles class="size-4 text-muted-foreground" />
           <h2 class="text-base font-semibold text-foreground">
-            語意關聯推薦（{{ ui.activeItem.related_items.length }}）
+            相關收藏（{{ ui.activeItem.related_items.length }}）
           </h2>
         </div>
-        <span class="text-2xs font-mono text-muted-foreground">GPU 向量餘弦關聯</span>
       </div>
 
       <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -272,7 +271,7 @@ function openItem(id: number | string) {
           </div>
 
           <div class="mt-3 flex items-center justify-end text-3xs font-semibold text-primary">
-            <span>前往閱讀</span>
+            <span>開啟</span>
             <ArrowRight class="ml-1 size-3 transition-transform group-hover:translate-x-0.5" />
           </div>
         </div>
@@ -283,16 +282,15 @@ function openItem(id: number | string) {
     <section
       v-if="ui.activeItem.graph && ui.activeItem.graph.nodes.length > 1"
       class="border-t border-hairline pt-6"
-      aria-label="實體知識網絡"
+      aria-label="關聯圖"
     >
       <div class="mb-3 flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <Network class="size-4 text-primary" />
+          <Network class="size-4 text-muted-foreground" />
           <h2 class="text-base font-semibold text-foreground">
-            實體知識網絡（{{ ui.activeItem.graph.nodes.length }} 節點，{{ ui.activeItem.graph.edges.length }} 關聯）
+            關聯圖（{{ ui.activeItem.graph.nodes.length }} 個節點、{{ ui.activeItem.graph.edges.length }} 條關聯）
           </h2>
         </div>
-        <span class="text-2xs text-muted-foreground">雙向圖譜網絡</span>
       </div>
 
       <!-- Graph Cluster Chips -->
@@ -313,10 +311,10 @@ function openItem(id: number | string) {
             ]"
             @click="node.type !== 'center' && node.id && !String(node.id).startsWith('ent-') ? openItem(node.id) : null"
           >
-            <span v-if="node.type === 'center'">★</span>
-            <span v-else-if="node.type === 'backlink'">🔗</span>
-            <span v-else-if="node.type === 'entity'">📦</span>
-            <span v-else>⚡</span>
+            <FileText v-if="node.type === 'center'" class="size-3.5 shrink-0" aria-hidden="true" />
+            <CornerUpLeft v-else-if="node.type === 'backlink'" class="size-3.5 shrink-0" aria-hidden="true" />
+            <Package v-else-if="node.type === 'entity'" class="size-3.5 shrink-0" aria-hidden="true" />
+            <Sparkles v-else class="size-3.5 shrink-0" aria-hidden="true" />
 
             <span class="max-w-[12rem] truncate">{{ node.label }}</span>
 
@@ -334,10 +332,10 @@ function openItem(id: number | string) {
         </div>
 
         <div class="mt-3 flex items-center gap-4 text-3xs text-muted-foreground pt-2 border-t border-border/40">
-          <span class="flex items-center gap-1">★ 本文核心</span>
-          <span class="flex items-center gap-1">🔗 反向引用 (Backlink)</span>
-          <span class="flex items-center gap-1">📦 提及實體 (Entity)</span>
-          <span class="flex items-center gap-1">⚡ 語意相鄰 (Similar)</span>
+          <span class="flex items-center gap-1"><FileText class="size-3" aria-hidden="true" />這一則</span>
+          <span class="flex items-center gap-1"><CornerUpLeft class="size-3" aria-hidden="true" />引用這一則的收藏</span>
+          <span class="flex items-center gap-1"><Package class="size-3" aria-hidden="true" />文中提到的項目</span>
+          <span class="flex items-center gap-1"><Sparkles class="size-3" aria-hidden="true" />內容相近的收藏</span>
         </div>
       </div>
     </section>

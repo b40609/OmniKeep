@@ -1,11 +1,16 @@
 /* ============================================================
-   COVER WALL, SIDEBAR ROWS AND HEADER CONTROLS
-   Covers sit straight on the page with no card frame. Radius stays on
-   thumbnails (12px) and small controls only. Colours come from the theme
-   tokens in main.css, so every theme gets the same layout.
+   COVER WALL, LIST, SIDEBAR AND TOP BAR
+   Sizes follow the measured conventions of video-library layouts at 1920x1080:
+   16px/22px titles, 14px/20px secondary text, 40px rows and buttons, 24px icons,
+   16px between columns and 40px between rows. Covers sit straight on the page
+   with no card frame; radius stays on thumbnails (12px) and controls (8px).
+   Colours come from the theme tokens in main.css.
+   One interaction rule for everything clickable: hover and pressed are a step
+   and two steps of surface, focus is the ring, and every change takes 150ms.
    ============================================================ */
 @layer components {
-  /* 16:9 frame: the whole image shows, the backing fills what it leaves. */
+  /* ---------- Covers ---------- */
+  /* 16:9 frame the image fills edge to edge. */
   .item-cover {
     position: relative;
     aspect-ratio: 16 / 9;
@@ -13,21 +18,37 @@
     border-radius: 12px;
     background: var(--surface-1);
   }
+  /* Dimmed as a whole (image and backing together) so a white cover does not outshine the page. */
+  .item-cover--image {
+    filter: brightness(var(--cover-dim));
+    transition: filter 150ms ease-out;
+  }
   .item-cover img {
     display: block;
     width: 100%;
     height: 100%;
+    object-fit: cover;
+    object-position: center;
+  }
+  /* A generated repository card is shown whole, sitting on the white it is drawn on. */
+  .item-cover--pad {
+    background: #fff;
+  }
+  .item-cover--pad img {
     object-fit: contain;
-    filter: brightness(0.84);
-    transition: filter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    object-position: center bottom;
+  }
+  /* A screenshot taller than the frame keeps its top: the author and the first lines. */
+  .item-cover img.item-cover__top {
+    object-position: center top;
   }
   .item-cover__fallback {
     display: flex;
     height: 100%;
     flex-direction: column;
     justify-content: flex-end;
-    gap: 6px;
-    padding: 14px;
+    gap: 8px;
+    padding: 16px;
     font-size: 14px;
     font-weight: 600;
     line-height: 20px;
@@ -35,54 +56,58 @@
     overflow-wrap: anywhere;
   }
   .item-cover__fallback svg {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     flex: none;
+    stroke-width: 1.5;
     color: var(--muted-foreground);
-  }
-  .item-cover--thumb {
-    border-radius: 8px;
   }
   .item-cover--thumb .item-cover__fallback {
     align-items: center;
     justify-content: center;
     padding: 0;
   }
+  /* Reader: full column width, never taller than a third of the window. */
   .item-cover--hero {
-    aspect-ratio: auto;
-    height: clamp(120px, 22vh, 220px);
+    max-height: min(320px, 30vh);
+    width: 100%;
   }
-  .item-cover--hero img {
+  .item-cover--hero.item-cover--image {
     filter: none;
   }
-  .is-read .item-cover img {
-    filter: brightness(0.6);
+  .is-read .item-cover--image {
+    filter: brightness(var(--cover-dim-read));
   }
   .is-read .item-cover__fallback {
     color: var(--done-foreground);
   }
-  .cover-host:hover .item-cover img,
-  .cover-host:focus-within .item-cover img,
-  .cover-host.is-cursor .item-cover img {
+  .cover-host:hover .item-cover--image,
+  .cover-host:focus-within .item-cover--image,
+  .cover-host.is-cursor .item-cover--image,
+  .cover-host.is-active .item-cover--image {
     filter: none;
   }
 
+  /* ---------- Wall cells ---------- */
   .cover-card {
     position: relative;
     min-width: 0;
     border-radius: 12px;
+    /* Cells far off screen are not laid out or painted, so hundreds of them stay cheap. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 340px;
   }
   /* Keyboard position (J/K) and Tab focus share one ring around the whole cell. */
   .cover-card.is-cursor,
   .cover-card:has(.cover-card__open:focus-visible) {
     outline: 2px solid var(--ring);
-    outline-offset: 5px;
+    outline-offset: 6px;
   }
   .cover-card__title {
-    margin-top: 8px;
-    font-size: 14px;
+    margin-top: 12px;
+    font-size: 16px;
     font-weight: 600;
-    line-height: 20px;
+    line-height: 22px;
     color: var(--foreground);
   }
   .cover-card__open {
@@ -103,6 +128,7 @@
     inset: 0;
     border-radius: 12px;
   }
+  /* Two lines at most, broken evenly so the second is never one stray word. */
   .title-clamp {
     display: -webkit-box;
     overflow: hidden;
@@ -110,19 +136,38 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
     overflow-wrap: anywhere;
+    text-wrap: balance;
+  }
+  .cover-card__detail {
+    display: -webkit-box;
+    margin-top: 4px;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--muted-foreground);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
   }
   .unread-dot {
     display: inline-block;
-    width: 7px;
-    height: 7px;
-    margin-right: 6px;
+    width: 8px;
+    height: 8px;
+    margin-right: 8px;
     border-radius: 50%;
     background: var(--primary);
-    vertical-align: 1.5px;
+    vertical-align: 1px;
   }
   .is-read .cover-card__title,
-  .is-read .item-row__title {
+  .is-read .list-row__title {
     font-weight: 400;
+    color: var(--done-foreground);
+  }
+  .is-read .cover-card__detail,
+  .is-read .list-row__detail,
+  .is-read .list-row__summary {
     color: var(--done-foreground);
   }
 
@@ -130,21 +175,21 @@
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    line-height: 16px;
+    gap: 8px;
+    font-size: 14px;
+    line-height: 20px;
     color: var(--muted-foreground);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
-  .item-meta svg {
-    width: 14px;
-    height: 14px;
+  .item-meta > svg {
+    width: 16px;
+    height: 16px;
     flex: none;
   }
   .item-meta__sep {
-    width: 2px;
-    height: 2px;
+    width: 3px;
+    height: 3px;
     flex: none;
     border-radius: 50%;
     background: currentColor;
@@ -157,104 +202,143 @@
   .item-meta time {
     flex: none;
   }
+  /* Tall enough for the icon buttons, so they never push into the line above. */
   .cover-card__meta {
     position: relative;
-    min-height: 24px;
-    margin-top: 2px;
+    min-height: 36px;
   }
-  /* Laid over the end of the meta line, so the hidden buttons never squeeze the text. */
+  .cover-card__flag {
+    margin-left: auto;
+    color: var(--foreground);
+  }
+  /* Star and archive, laid over the end of the meta line when the cell is hovered,
+     focused or under the keyboard cursor. Their glyphs line up with the cover's edge. */
   .cover-card__acts {
     position: absolute;
-    inset: 0 0 0 auto;
+    inset: 0 -8px 0 auto;
     z-index: 1;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding-left: 10px;
+    padding-left: 8px;
     background: var(--shell);
     opacity: 0;
+    transition: opacity 150ms ease-out;
+  }
+  .cover-card__acts .item-action {
+    width: 36px;
+    height: 36px;
   }
   .cover-card:hover .cover-card__acts,
   .cover-card:focus-within .cover-card__acts,
   .cover-card.is-cursor .cover-card__acts {
     opacity: 1;
   }
-  .wall-action {
-    height: 24px;
-    padding: 0 10px;
-    border-radius: 6px;
-    background: var(--surface-2);
-    font-size: 12px;
-    font-weight: 500;
-    line-height: 24px;
-    color: var(--foreground);
-    cursor: pointer;
-  }
-  .wall-action:hover {
-    background: var(--surface-3);
-  }
-  .wall-action--primary {
-    background: var(--primary);
-    font-weight: 600;
-    color: var(--primary-foreground);
-  }
-  .wall-action--primary:hover {
-    background: var(--primary-hover);
-  }
-  /* No hover on touch screens: both actions stay visible, at a size a thumb can hit. */
+  /* No hover on touch screens: the buttons are simply there. */
   @media (hover: none) {
     .cover-card__acts {
       position: relative;
       inset: auto;
       flex: none;
-      margin-left: auto;
+      margin: 0 -8px 0 auto;
       padding-left: 0;
       opacity: 1;
     }
+    .cover-card__acts .item-action {
+      width: 40px;
+      height: 40px;
+    }
     .cover-card__meta {
-      min-height: 36px;
+      min-height: 40px;
     }
-    .wall-action {
-      height: 36px;
-      min-width: 56px;
-      padding: 0 12px;
-      font-size: 13px;
-      line-height: 36px;
-    }
-    /* Always on screen here, so the accent would repeat on every cell: keep both quiet. */
-    .wall-action--primary,
-    .wall-action--primary:hover {
-      background: var(--surface-2);
-      color: var(--foreground);
+    .cover-card__flag {
+      display: none;
     }
   }
 
+  /* ---------- Wall layout ---------- */
   .wall-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 20px 16px;
+    gap: 32px 16px;
+  }
+  /* Sections sit further apart than the rows inside them. */
+  .wall-section + .wall-section {
+    margin-top: 48px;
   }
   .wall-section-title {
     display: flex;
     align-items: baseline;
-    gap: 8px;
-    margin: 24px 0 10px;
-    font-size: 16px;
+    gap: 10px;
+    margin: 8px 0 16px;
+    font-size: 20px;
     font-weight: 600;
-    line-height: 20px;
+    line-height: 28px;
     color: var(--foreground);
   }
-  section:first-child > .wall-section-title {
-    margin-top: 8px;
-  }
   .wall-section-title span {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 400;
+    line-height: 20px;
     color: var(--muted-foreground);
     font-variant-numeric: tabular-nums;
   }
+  /* In the virtual list a heading is a row: spacing is padding, so the row measures right. */
+  .wall-section-title--row {
+    margin: 0;
+    padding: 32px 8px 8px;
+  }
+  /* Filter row: 56px, tabs 32px high and 12px apart. */
+  .wall-bar {
+    display: flex;
+    height: 56px;
+    flex: none;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+  }
+  .wall-bar .top-button {
+    height: 32px;
+    padding: 0 12px;
+  }
+  .wall-bar .top-button svg {
+    width: 20px;
+    height: 20px;
+  }
+  /* The list is one centred column; its filter row lines up with it. */
+  .wall-column {
+    width: 100%;
+    max-width: 1280px;
+    margin-inline: auto;
+  }
+  /* End of the loaded items: loading, failed (with retry) or everything shown. */
+  .wall-end {
+    display: flex;
+    min-height: 72px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding-top: 24px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  .wall-end svg {
+    width: 20px;
+    height: 20px;
+  }
+  .wall-end__retry {
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 8px;
+    background: var(--surface-2);
+    font-weight: 500;
+    color: var(--foreground);
+    cursor: pointer;
+    transition: background-color 150ms ease-out;
+  }
+  .wall-end__retry:hover {
+    background: var(--surface-3);
+  }
 
-  /* Kind tabs: the selected one inverts (light fill, dark text). */
   .kind-chip {
     height: 32px;
     flex: none;
@@ -266,17 +350,80 @@
     line-height: 32px;
     color: var(--foreground);
     cursor: pointer;
+    transition: background-color 150ms ease-out, color 150ms ease-out;
   }
   .kind-chip:hover {
     background: var(--surface-3);
   }
+  .kind-chip:active {
+    background: var(--border-strong);
+  }
+  /* The selected tab inverts: light fill, dark text. */
   .kind-chip[aria-pressed='true'],
   .kind-chip[aria-pressed='true']:hover {
     background: var(--foreground);
     color: var(--background);
   }
 
-  /* Sidebar: every row is an icon plus a label, 40px high, no gap between rows.
+  /* ---------- List rows ---------- */
+  .list-row {
+    display: flex;
+    gap: 16px;
+    padding: 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 150ms ease-out;
+  }
+  .list-row:hover {
+    background: var(--surface-1);
+  }
+  .list-row.is-active {
+    background: var(--surface-2);
+  }
+  .list-row__thumb {
+    width: 120px;
+    flex: none;
+    border-radius: 8px;
+  }
+  .list-row__title {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 22px;
+    color: var(--foreground);
+  }
+  .list-row__detail {
+    margin-top: 2px;
+    overflow: hidden;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--muted-foreground);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .list-row__meta {
+    margin-top: 6px;
+  }
+  /* About 46 characters a line, however wide the row is. */
+  .list-row__summary {
+    display: none;
+    max-width: 46em;
+    margin-top: 10px;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--muted-foreground);
+    text-wrap: pretty;
+  }
+  .list-row__acts {
+    display: none;
+    align-self: flex-start;
+  }
+
+  /* ---------- Sidebar ---------- */
+  /* 40px rows with no gap between them: a 24px icon, 24px of space, a 14px label.
      Selected is a filled block with bolder text; hover is one step fainter.
      No accent bar, no glow, no pill around the count. */
   .nav-row {
@@ -284,24 +431,29 @@
     width: 100%;
     height: 40px;
     align-items: center;
-    gap: 16px;
-    padding: 0 14px;
+    gap: 24px;
+    padding: 0 12px;
     border-radius: 10px;
     font-size: 14px;
+    font-weight: 500;
     line-height: 20px;
     color: var(--foreground);
     text-align: left;
     cursor: pointer;
+    transition: background-color 150ms ease-out;
   }
   .nav-row:hover,
   .nav-row[data-state='open'] {
     background: var(--surface-1);
   }
+  .nav-row:active {
+    background: var(--surface-2);
+  }
   .nav-row > svg {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     flex: none;
-    stroke-width: 1.75;
+    stroke-width: 1.5;
   }
   .nav-row[aria-pressed='true'] {
     background: var(--surface-2);
@@ -316,7 +468,7 @@
   }
   .nav-row__count {
     flex: none;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 400;
     color: var(--muted-foreground);
     font-variant-numeric: tabular-nums;
@@ -326,59 +478,70 @@
     width: 48px;
     gap: 0;
   }
-  /* A quieter row for "show more" and for disclosure headings */
+  /* A quieter row for "show more" */
   .nav-row--minor {
     color: var(--muted-foreground);
   }
+  /* Between groups: 12px, a rule, 12px. */
   .nav-divider {
     margin: 12px 0;
-    border-top: 1px solid var(--hairline);
+    border-top: 1px solid var(--border);
   }
   .nav-heading {
     display: flex;
-    height: 28px;
+    width: 100%;
+    height: 32px;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 4px;
-    padding-left: 14px;
-    font-size: 13px;
-    line-height: 20px;
-    color: var(--muted-foreground);
+    padding-left: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 22px;
+    color: var(--foreground);
   }
   .nav-heading__button {
     display: grid;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     flex: none;
     place-items: center;
     border-radius: 8px;
     color: var(--muted-foreground);
     cursor: pointer;
+    transition: background-color 150ms ease-out, color 150ms ease-out;
   }
   .nav-heading__button:hover {
     background: var(--surface-1);
     color: var(--foreground);
   }
-  .nav-heading__button svg,
+  .nav-heading__button:active {
+    background: var(--surface-2);
+  }
   .nav-heading svg {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     stroke-width: 1.75;
   }
   /* A heading that opens and closes its group is one button across the row. */
   button.nav-heading {
-    width: 100%;
     padding-right: 6px;
     border-radius: 8px;
     cursor: pointer;
+    transition: background-color 150ms ease-out;
   }
   button.nav-heading:hover {
     background: var(--surface-1);
-    color: var(--foreground);
+  }
+  button.nav-heading:active {
+    background: var(--surface-2);
+  }
+  button.nav-heading svg {
+    color: var(--muted-foreground);
   }
   .nav-tip {
     z-index: 70;
-    padding: 4px 8px;
+    padding: 6px 8px;
     border-radius: 6px;
     background: var(--surface-3);
     font-size: 12px;
@@ -387,14 +550,15 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Menus opened from the sidebar and the top bar: labelled rows, same density as the sidebar. */
+  /* ---------- Menus ---------- */
+  /* Opened from the top bar, the avatar and the item actions: labelled 40px rows. */
   .app-menu {
     z-index: 80;
-    min-width: 216px;
+    min-width: 224px;
     max-width: calc(100vw - 24px);
     max-height: var(--reka-dropdown-menu-content-available-height);
     overflow-y: auto;
-    padding: 6px;
+    padding: 8px;
     border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--popover);
@@ -405,13 +569,14 @@
     display: flex;
     min-height: 40px;
     align-items: center;
-    gap: 14px;
-    padding: 0 10px;
+    gap: 16px;
+    padding: 0 12px;
     border-radius: 8px;
     font-size: 14px;
     line-height: 20px;
     cursor: pointer;
     outline: none;
+    transition: background-color 150ms ease-out;
   }
   .app-menu__item > svg {
     width: 20px;
@@ -432,8 +597,8 @@
     flex: none;
     align-items: center;
     margin-left: auto;
-    padding-left: 12px;
-    font-size: 12px;
+    padding-left: 16px;
+    font-size: 13px;
     font-weight: 400;
     color: var(--muted-foreground);
     font-variant-numeric: tabular-nums;
@@ -443,14 +608,14 @@
     height: 16px;
   }
   .app-menu__label {
-    padding: 8px 10px 4px;
+    padding: 8px 12px 4px;
     font-size: 12px;
     line-height: 16px;
     color: var(--muted-foreground);
   }
   .app-menu__rule {
     height: 1px;
-    margin: 6px 4px;
+    margin: 8px 4px;
     background: var(--border);
   }
   .app-menu__swatch {
@@ -459,39 +624,32 @@
     flex: none;
     border-radius: 50%;
   }
-  /* The "/" hint inside the search box */
-  .key-hint {
-    min-width: 22px;
-    flex: none;
-    padding: 0 6px;
-    border-radius: 4px;
-    background: var(--surface-2);
-    font-family: inherit;
-    font-size: 12px;
-    line-height: 20px;
-    text-align: center;
-    color: var(--muted-foreground);
-  }
 
-  /* Header controls */
+  /* ---------- Top bar ---------- */
+  /* Buttons are 40px high; icons in them are 20px next to a label, 24px on their own. */
   .top-button {
     display: inline-flex;
-    height: 36px;
+    height: 40px;
     flex: none;
     align-items: center;
-    gap: 6px;
-    padding: 0 12px;
+    gap: 8px;
+    padding: 0 16px;
     border-radius: 8px;
     background: var(--surface-2);
     font-size: 14px;
+    font-weight: 500;
     line-height: 20px;
     color: var(--muted-foreground);
     cursor: pointer;
+    transition: background-color 150ms ease-out;
   }
   .top-button:hover,
   .top-button[data-state='open'],
   .top-button[aria-expanded='true'] {
     background: var(--surface-3);
+  }
+  .top-button:active {
+    background: var(--border-strong);
   }
   .top-button:disabled {
     cursor: default;
@@ -500,6 +658,12 @@
   .top-button strong {
     font-weight: 500;
     color: var(--foreground);
+  }
+  .top-button svg {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    stroke-width: 1.75;
   }
   /* The one filled button in the top bar: adding something. */
   .top-button--primary,
@@ -511,14 +675,50 @@
     background: var(--primary);
   }
   .top-button--primary:hover,
+  .top-button--primary:active,
   .top-button--primary[data-state='open'],
   .top-button--primary[aria-expanded='true'] {
     background: var(--primary-hover);
   }
-  .top-button svg {
-    width: 18px;
-    height: 18px;
+  /* Icon-only controls of the top bar: a 40px target around a 24px icon. */
+  .icon-button {
+    display: grid;
+    width: 40px;
+    height: 40px;
     flex: none;
+    place-items: center;
+    border-radius: 8px;
+    color: var(--foreground);
+    cursor: pointer;
+    transition: background-color 150ms ease-out;
+  }
+  .icon-button:hover,
+  .icon-button[data-state='open'],
+  .icon-button[aria-expanded='true'] {
+    background: var(--surface-2);
+  }
+  .icon-button:active {
+    background: var(--surface-3);
+  }
+  .icon-button > svg {
+    width: 24px;
+    height: 24px;
+    stroke-width: 1.5;
+  }
+  /* No account name to show: a neutral disc with a person in it stands for "you". */
+  .avatar {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--surface-3);
+    color: var(--foreground);
+  }
+  .avatar svg {
+    width: 20px;
+    height: 20px;
+    stroke-width: 1.75;
   }
   .view-switch {
     display: flex;
@@ -527,12 +727,13 @@
   }
   .view-switch button {
     display: grid;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     place-items: center;
     border-radius: 8px;
     color: var(--muted-foreground);
     cursor: pointer;
+    transition: background-color 150ms ease-out, color 150ms ease-out;
   }
   .view-switch button:hover {
     background: var(--surface-3);
@@ -542,28 +743,38 @@
     color: var(--foreground);
   }
   .view-switch svg {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
+    stroke-width: 1.75;
   }
   .search-box {
     height: 40px;
     min-width: 0;
     align-items: center;
-    gap: 10px;
-    padding: 0 10px 0 14px;
+    gap: 12px;
+    padding: 0 12px 0 16px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--input);
     color: var(--muted-foreground);
+    transition: border-color 150ms ease-out;
   }
   .search-box:focus-within {
     border-color: var(--ring);
+  }
+  .search-box > svg {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    stroke-width: 1.75;
   }
   .search-box input {
     height: 100%;
     min-width: 0;
     flex: 1;
     background: transparent;
+    font-size: 16px;
+    line-height: 22px;
     color: var(--foreground);
     outline: none;
   }
@@ -574,53 +785,96 @@
   .search-box input::-webkit-search-cancel-button {
     -webkit-appearance: none;
   }
+  /* The "/" hint inside the search box */
+  .key-hint {
+    min-width: 24px;
+    flex: none;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 20px;
+    text-align: center;
+    color: var(--muted-foreground);
+  }
 }
 
-/* Columns follow the wall's own width, so it also adapts when the reader opens beside it. */
-@container (min-width: 30rem) {
-  .wall-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
-  }
-  /* Side by side, every title takes two lines so the meta lines stay level. */
-  .cover-card__title {
-    height: 40px;
+/* The filter row and the wall share one side margin, wider from tablets up. */
+@media (min-width: 640px) {
+  .wall-bar {
+    padding: 0 24px;
   }
 }
-@container (min-width: 46rem) {
+
+/* Columns follow the wall's own width, so it also adapts when the reader opens
+   beside it. Larger and looser beats smaller and tighter: a cell is 300px or wider
+   wherever more than one fits (1440 wide: three; 1920 wide: four, five with the
+   sidebar collapsed). */
+@container (min-width: 36rem) {
+  .wall-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 40px 16px;
+  }
+}
+@container (min-width: 58rem) {
   .wall-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-@container (min-width: 64rem) {
+@container (min-width: 82rem) {
   .wall-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
-/* From here up a column is added whenever the cells would pass roughly 320px,
-   so a wide screen shows more covers instead of larger ones (1920 wide: five). */
-@container (min-width: 88rem) {
+@container (min-width: 108rem) {
   .wall-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
-@container (min-width: 110rem) {
+@container (min-width: 132rem) {
   .wall-grid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
-@container (min-width: 130rem) {
+@container (min-width: 156rem) {
   .wall-grid {
     grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 }
-@container (min-width: 150rem) {
-  .wall-grid {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+
+/* List rows grow with the column: thumbnail first, then the actions, the larger
+   title and the summary once there is room for them. */
+@container (min-width: 30rem) {
+  .list-row__thumb {
+    width: 168px;
+  }
+  .list-row__acts {
+    display: flex;
   }
 }
+@container (min-width: 48rem) {
+  .list-row__thumb {
+    width: 246px;
+    border-radius: 12px;
+  }
+  .list-row__title {
+    font-size: 18px;
+    line-height: 26px;
+  }
+  .list-row__summary {
+    display: -webkit-box;
+  }
+}
+@container (min-width: 64rem) {
+  .list-row__thumb {
+    width: 360px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .item-cover img {
+  .item-cover--image,
+  .cover-card__acts {
     transition: none;
   }
 }

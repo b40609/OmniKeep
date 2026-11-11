@@ -40,6 +40,62 @@ export function isIconSized(width: number, height: number): boolean {
   return width < 64 || height < 64
 }
 
+/**
+ * Which part of a cover stays in view when it fills a 16:9 frame. A screenshot of
+ * a post is taller than the frame and starts with who wrote it, so it keeps its
+ * top; anything about as wide as the frame, or wider, is cut evenly at the sides.
+ */
+export function coverFocus(width: number, height: number): 'top' | 'center' {
+  return width > 0 && height > 0 && width / height < 1.5 ? 'top' : 'center'
+}
+
+/**
+ * How a cover is fitted into the frame. Nearly everything fills it and loses a
+ * sliver at the edges. GitHub's generated repository cards are the exception:
+ * they are 2:1 with the repository name hard against the left margin and the
+ * avatar against the right, so filling the frame shaves both. They are always on
+ * white, so they are shown whole on a white backing instead: the strip the frame
+ * adds above the card is indistinguishable from the card itself.
+ */
+export function coverFit(url: string): 'fill' | 'pad' {
+  return /^https?:\/\/opengraph\.githubassets\.com\//i.test(url) ? 'pad' : 'fill'
+}
+
+/* ---------------- Titles ---------------- */
+
+/** Longest name, in characters, that still reads as a name in front of a colon. */
+const NAME_LIMIT = 24
+
+/**
+ * Saved titles are mostly "name: what it is" in one line. Shown as two levels they
+ * scan much faster, so this splits at the first colon that separates the two:
+ * a full-width colon, or a half-width one followed by a space or non-ASCII text.
+ * Colons inside an address, a time or a ratio do not count, and a title whose
+ * part before the colon is longer than a name stays whole.
+ */
+export function splitTitle(title: string | null | undefined): { name: string; detail: string } {
+  const text = (title || '').trim()
+  const chars = Array.from(text)
+  for (let i = 0; i < chars.length; i++) {
+    const colon = chars[i]
+    if (colon !== '：' && colon !== ':') continue
+    const before = chars[i - 1] ?? ''
+    const after = chars[i + 1] ?? ''
+    if (/\d/.test(before) && /\d/.test(after)) continue
+    if (colon === ':' && !/\s|[^\x00-\x7f]/.test(after)) continue
+    // The colon of "https://…", or one inside the same unbroken run as an address.
+    let start = i
+    while (start > 0 && !/\s/.test(chars[start - 1])) start--
+    if (chars.slice(start, i + 3).join('').includes('://')) continue
+    const name = chars.slice(0, i).join('').trim()
+    const detail = chars.slice(i + 1).join('').trim()
+    if (!name || !detail) continue
+    if (Array.from(name).length > NAME_LIMIT) break
+    return { name, detail }
+  }
+  return { name: text, detail: '' }
+}
+
 /* ---------------- Kinds ---------------- */
 
 export type ItemKind = 'project' | 'post' | 'video' | 'article'
@@ -154,12 +210,12 @@ export function daySection(createdAt: string | null | undefined, now: Date): { k
   if (!date) return { key: 'unknown', label: '更早' }
   const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
   const days = Math.round((midnight(now) - midnight(date)) / 86_400_000)
-  if (days <= 0) return { key: 'd0', label: '今天收的' }
+  if (days <= 0) return { key: 'd0', label: '今天' }
   if (days === 1) return { key: 'd1', label: '昨天' }
   if (days < 7) return { key: `d${days}`, label: `${days} 天前` }
   const year = date.getFullYear()
   const month = date.getMonth() + 1
-  return { key: `m${year}-${month}`, label: year === now.getFullYear() ? `${month} 月` : `${year} 年 ${month} 月` }
+  return { key: `m${year}-${month}`, label: `${year} 年 ${month} 月` }
 }
 
 /** Sections in the order their first item appears; an item never lands in two. */

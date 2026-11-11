@@ -44,6 +44,53 @@ test('only the rate-limited repository cards are asked for again, and only twice
   assert.equal(wall.coverRetryDelay('https://example.com/?u=https://opengraph.githubassets.com/x', 0), null)
 })
 
+test('a saved title splits into a name and what it is, at the colon that separates them', () => {
+  const split = (title) => { const { name, detail } = wall.splitTitle(title); return [name, detail] }
+  assert.deepEqual(split('polars_ta：基於 Polars 的高效能向量化量化指標庫'), ['polars_ta', '基於 Polars 的高效能向量化量化指標庫'])
+  assert.deepEqual(split('Kronos: A Foundation Model for Financial Markets'), ['Kronos', 'A Foundation Model for Financial Markets'])
+  assert.deepEqual(split('Taste Skill:讓 Agent 有設計品味'), ['Taste Skill', '讓 Agent 有設計品味'])
+  assert.deepEqual(split('  Playwright ：  跨瀏覽器自動化框架  '), ['Playwright', '跨瀏覽器自動化框架'])
+  assert.deepEqual(split('Claude Code 自動去 AI 感 UI 重構工具：unslop'), ['Claude Code 自動去 AI 感 UI 重構工具：unslop', ''])   // 28 characters before the colon
+  // No colon, or nothing on one side of it: the whole title is the name.
+  assert.deepEqual(split('ThreadsPulse 開源專案與 Meta 生態客戶端隱私攔截架構'), ['ThreadsPulse 開源專案與 Meta 生態客戶端隱私攔截架構', ''])
+  assert.deepEqual(split('結論：'), ['結論：', ''])
+  assert.deepEqual(split('：只有說明'), ['：只有說明', ''])
+  assert.deepEqual(split(''), ['', ''])
+  assert.deepEqual(split(null), ['', ''])
+  // More than 24 characters in front of the colon is a sentence, not a name.
+  const long = '這是一個非常非常長而且顯然不是名稱的句子開頭部分啊：後面才是說明'
+  assert.deepEqual(split(long), [long, ''])
+  assert.deepEqual(split('剛好二十四個字的名稱一二三四五六七八九十一二三四：說明')[1], '說明')
+  // Colons that are not separators: addresses, times, ratios, code.
+  assert.deepEqual(split('https://example.com/a 的讀後筆記'), ['https://example.com/a 的讀後筆記', ''])
+  assert.deepEqual(split('http://localhost:8080 連不上怎麼辦'), ['http://localhost:8080 連不上怎麼辦', ''])
+  assert.deepEqual(split('每天 10:30 的站立會議怎麼開'), ['每天 10:30 的站立會議怎麼開', ''])
+  assert.deepEqual(split('把封面裁成 16：9 的三種做法'), ['把封面裁成 16：9 的三種做法', ''])
+  assert.deepEqual(split('std::vector 的擴容策略'), ['std::vector 的擴容策略', ''])
+  assert.deepEqual(split('Re:Zero 的敘事結構'), ['Re:Zero 的敘事結構', ''])
+  // The first real separator wins, even after a colon that does not count.
+  assert.deepEqual(split('10:30 站立會議：三個常見問題'), ['10:30 站立會議', '三個常見問題'])
+  assert.deepEqual(split('看 https://a.b 的教學：重點整理'), ['看 https://a.b 的教學', '重點整理'])
+  assert.deepEqual(split('A：B：C'), ['A', 'B：C'])
+})
+
+test('covers fill the frame, except generated repository cards, which are shown whole', () => {
+  assert.equal(wall.coverFit('https://opengraph.githubassets.com/abc/owner/repo'), 'pad')
+  // An uploaded social preview can be any picture: it fills the frame like the rest.
+  assert.equal(wall.coverFit('https://repository-images.githubusercontent.com/1/abc'), 'fill')
+  assert.equal(wall.coverFit('https://i.ytimg.com/vi/abc/maxresdefault.jpg'), 'fill')
+  assert.equal(wall.coverFit('https://example.com/?u=https://opengraph.githubassets.com/x'), 'fill')
+})
+
+test('a tall cover keeps its top in the 16:9 frame; a wide one is cut evenly at the sides', () => {
+  assert.equal(wall.coverFocus(1080, 1350), 'top')     // a post screenshot
+  assert.equal(wall.coverFocus(1000, 1000), 'top')
+  assert.equal(wall.coverFocus(1200, 600), 'center')   // a 2:1 repository card
+  assert.equal(wall.coverFocus(1280, 720), 'center')
+  assert.equal(wall.coverFocus(1200, 800), 'center')   // 3:2 is close enough to the frame
+  assert.equal(wall.coverFocus(0, 0), 'center')
+})
+
 test('an image that loads at icon size is treated as no cover', () => {
   assert.equal(wall.isIconSized(32, 32), true)
   assert.equal(wall.isIconSized(1, 1), true)
@@ -126,16 +173,16 @@ test('date sections: today, yesterday, a section per day for a week, then per mo
   const now = new Date(2026, 10, 11, 15, 0, 0)
   const at = (y, m, d, h = 12) => new Date(y, m - 1, d, h, 0, 0).toISOString()
   const section = (...args) => wall.daySection(at(...args), now)
-  assert.deepEqual(section(2026, 11, 11, 0), { key: 'd0', label: '今天收的' })
-  assert.deepEqual(section(2026, 11, 11, 14), { key: 'd0', label: '今天收的' })
+  assert.deepEqual(section(2026, 11, 11, 0), { key: 'd0', label: '今天' })
+  assert.deepEqual(section(2026, 11, 11, 14), { key: 'd0', label: '今天' })
   assert.deepEqual(section(2026, 11, 10, 23), { key: 'd1', label: '昨天' })
   assert.deepEqual(section(2026, 11, 9), { key: 'd2', label: '2 天前' })
   assert.deepEqual(section(2026, 11, 5), { key: 'd6', label: '6 天前' })
-  assert.deepEqual(section(2026, 11, 4), { key: 'm2026-11', label: '11 月' })
-  assert.deepEqual(section(2026, 10, 20), { key: 'm2026-10', label: '10 月' })
+  assert.deepEqual(section(2026, 11, 4), { key: 'm2026-11', label: '2026 年 11 月' })
+  assert.deepEqual(section(2026, 10, 20), { key: 'm2026-10', label: '2026 年 10 月' })
   assert.deepEqual(section(2025, 12, 31), { key: 'm2025-12', label: '2025 年 12 月' })
   // A clock that is slightly ahead does not invent a "tomorrow".
-  assert.deepEqual(section(2026, 11, 12, 1), { key: 'd0', label: '今天收的' })
+  assert.deepEqual(section(2026, 11, 12, 1), { key: 'd0', label: '今天' })
   assert.deepEqual(wall.daySection('', now), { key: 'unknown', label: '更早' })
 })
 
@@ -145,7 +192,7 @@ test('sections keep the list order, count every item once, and stay few for a lo
   const loaded = [0, 0, 1, 1, 1, 2, 9, 30, 31, 400].map((daysAgo, index) => item(index, at(daysAgo)))
   const sections = wall.groupByDay(loaded, now)
   assert.deepEqual(sections.map((s) => [s.label, s.items.length]), [
-    ['今天收的', 2], ['昨天', 3], ['2 天前', 1], ['11 月', 1], ['10 月', 2], ['2025 年 10 月', 1],
+    ['今天', 2], ['昨天', 3], ['2 天前', 1], ['2026 年 11 月', 1], ['2026 年 10 月', 2], ['2025 年 10 月', 1],
   ])
   assert.deepEqual(sections.flatMap((s) => s.items.map((entry) => entry.id)), loaded.map((entry) => entry.id))
   // Oldest-first input gives the same sections in the opposite order.

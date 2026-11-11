@@ -45,6 +45,8 @@ export function useMutations() {
       itemsStore.loadStats()
     } catch (e) {
       rollbackLocal(item, prev)
+      // The item may already have left the loaded list: on this rare path, list it again from the server.
+      if (!itemsStore.items.some((i) => i.id === item.id)) void itemsStore.loadItems()
       toast.error('更新失敗，已還原', {
         description: (e as Error).message,
         action: { label: '重試', onClick: () => optimisticPatch(item, patch, opts) },
@@ -57,33 +59,45 @@ export function useMutations() {
     api.logBehaviorEvent({ event_type, item_id: item ? String(item.id) : undefined, meta }).catch(() => {})
   }
 
+  /**
+   * An item that no longer fits the view (archived out of the inbox, unstarred in
+   * the starred view) leaves the loaded list after a beat, in place; reloading
+   * would throw away every page scrolled so far. Undo puts it back where it was.
+   */
+  function settleAfter(item: Item) {
+    const at = itemsStore.items.findIndex((i) => i.id === item.id)
+    setTimeout(() => itemsStore.reconcile(item), 600)
+    return () => itemsStore.reconcile(item, at)
+  }
+
   /** Star toggle — optimistic, undo restores previous value. */
   function toggleStar(item: Item) {
     const next = item.is_starred ? 0 : 1
-    const undo = () => optimisticPatch(item, { is_starred: item.is_starred ? 0 : 1 }, { undoMsg: '', doneMsg: '已復原星標' })
+    const restore = settleAfter(item)
     void optimisticPatch(item, { is_starred: next }, {
       undoMsg: '',
-      doneMsg: next ? '已加星標' : '已取消星標',
-      undo,
+      doneMsg: next ? '已加星' : '已取消加星',
+      undo: () => {
+        void optimisticPatch(item, { is_starred: item.is_starred ? 0 : 1 }, { undoMsg: '', doneMsg: '已復原' })
+        restore()
+      },
     })
     track(next ? 'star' : 'unstar', item)
-    if (itemsStore.triageView === 'starred') itemsStore.loadItems()
   }
 
-  /** Archive/unarchive — item stays until list refresh; undo flips it back. */
+  /** Archive/unarchive — optimistic; undo flips it back. */
   function toggleRead(item: Item) {
     const next = item.is_read ? 0 : 1
+    const restore = settleAfter(item)
     void optimisticPatch(item, { is_read: next }, {
       undoMsg: '',
-      doneMsg: next ? '已封存' : '已移回待讀',
-      undo: () => void optimisticPatch(item, { is_read: item.is_read ? 0 : 1 }, { undoMsg: '', doneMsg: '已復原' }),
+      doneMsg: next ? '已封存' : '已取消封存',
+      undo: () => {
+        void optimisticPatch(item, { is_read: item.is_read ? 0 : 1 }, { undoMsg: '', doneMsg: '已復原' })
+        restore()
+      },
     })
     track(next ? 'archive' : 'unarchive', item)
-    // Inbox/Archive views filter on read-state — reload after a beat so the
-    // leave animation finishes first.
-    if (itemsStore.triageView === 'inbox' || itemsStore.triageView === 'archived') {
-      setTimeout(() => itemsStore.loadItems(), 600)
-    }
   }
 
   async function updateCategory(item: Item, category_name: string) {

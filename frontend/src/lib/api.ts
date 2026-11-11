@@ -199,17 +199,46 @@ export interface ItemFilters {
   read?: 'true' | 'false'
   starred?: 'true'
   origin?: 'manual' | 'radar' | 'all' | string
+  /** One kind only: project (a github.com address), post, video or article. */
+  kind?: 'project' | 'post' | 'video' | 'article'
+  /** By the time saved. A search is ranked by relevance whatever this says. */
+  sort?: 'newest' | 'oldest'
+  /** Page size (the server allows 1 to 100) and how many items to skip. */
+  limit?: number
+  offset?: number
 }
 
-export function getItems(filters: ItemFilters = {}): Promise<Item[]> {
+function itemsQuery(filters: ItemFilters): string {
   const params = new URLSearchParams()
   if (filters.category) params.append('category', filters.category)
   if (filters.q) params.append('q', filters.q)
   if (filters.read) params.append('read', filters.read)
   if (filters.starred) params.append('starred', filters.starred)
   if (filters.origin) params.append('origin', filters.origin)
+  if (filters.kind) params.append('kind', filters.kind)
+  if (filters.sort && filters.sort !== 'newest') params.append('sort', filters.sort)
+  if (filters.limit) params.append('limit', String(filters.limit))
+  if (filters.offset) params.append('offset', String(filters.offset))
   const qs = params.toString()
-  return request<Item[]>(`/api/items${qs ? `?${qs}` : ''}`)
+  return `/api/items${qs ? `?${qs}` : ''}`
+}
+
+export function getItems(filters: ItemFilters = {}): Promise<Item[]> {
+  return request<Item[]>(itemsQuery(filters))
+}
+
+export interface ItemsPage {
+  items: Item[]
+  /** Items in the whole result, every page counted; null if the server did not say. */
+  total: number | null
+}
+
+/** One page of the list, with the size of the whole result (the X-Total-Count header). */
+export function getItemsPage(filters: ItemFilters = {}): Promise<ItemsPage> {
+  return request<ItemsPage>(itemsQuery(filters), undefined, async (res) => {
+    const count = Number.parseInt(res.headers.get('X-Total-Count') ?? '', 10)
+    return { items: (await res.json()) as Item[], total: Number.isFinite(count) ? count : null }
+  })
 }
 
 export function getItem(id: number | string): Promise<Item> {

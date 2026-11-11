@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Inbox, Star, Bot, Plus, Search } from 'lucide-vue-next'
+import { Inbox, Star, MessageCircleQuestion, Plus, Search } from 'lucide-vue-next'
 import { useItemsStore, type TriageView } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
 
@@ -30,8 +30,8 @@ function setView(view: TriageView) {
       <span>搜尋</span>
     </button>
     <button class="bottom-tab" @click="ui.showBrainModal = true">
-      <Bot aria-hidden="true" />
-      <span>問大腦</span>
+      <MessageCircleQuestion aria-hidden="true" />
+      <span>問答</span>
     </button>
     <button class="bottom-tab" @click="ui.showNoteModal = true">
       <Plus aria-hidden="true" />

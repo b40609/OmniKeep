@@ -7,7 +7,7 @@ import AnalysisTab from './AnalysisTab.vue'
 import ReaderTab from './ReaderTab.vue'
 import ReadingProgress from './ReadingProgress.vue'
 import * as api from '@/lib/api'
-import { sourceMeta } from '@/lib/format'
+import { sourceName } from '@/lib/wall'
 import { useUiStore } from '@/stores/ui'
 import { useItemsStore } from '@/stores/items'
 import { useMutations } from '@/composables/useMutations'
@@ -66,7 +66,7 @@ function changeTab(event: KeyboardEvent) {
     :class="ui.focusMode ? 'lg:inset-0 lg:z-30 lg:fixed' : 'lg:static lg:z-auto'" aria-label="閱讀面板">
     <div class="flex min-h-14 shrink-0 items-center justify-between gap-1 border-b border-hairline px-2 sm:px-4">
       <button class="item-action lg:hidden" aria-label="返回清單" @click="closeReader"><ArrowLeft class="size-5" /></button>
-      <span class="min-w-0 flex-1 truncate text-sm text-muted-foreground">{{ sourceMeta(ui.activeItem.source_type).label }}</span>
+      <span class="min-w-0 flex-1 truncate text-sm text-muted-foreground">{{ sourceName(ui.activeItem) }}</span>
       <ItemActions :item="ui.activeItem" allow-delete />
       <button class="item-action hidden lg:flex" :aria-label="ui.focusMode ? '結束全寬閱讀' : '全寬閱讀'" :aria-pressed="ui.focusMode" @click="ui.focusMode = !ui.focusMode">
         <Minimize2 v-if="ui.focusMode" class="size-4" /><Maximize2 v-else class="size-4" />
@@ -81,7 +81,7 @@ function changeTab(event: KeyboardEvent) {
           <option value="Inbox">收件匣</option>
         </select>
       </label>
-      <span class="text-xs text-muted-foreground">{{ ui.activeItem.is_read ? '已封存' : '待讀' }}</span>
+      <span class="text-xs text-muted-foreground">{{ ui.activeItem.is_read ? '已封存' : '未封存' }}</span>
     </div>
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-hairline px-3 py-1 sm:px-4">
       <div class="flex items-center gap-1" role="tablist" aria-label="閱讀模式" @keydown="changeTab">

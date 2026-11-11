@@ -1,18 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onUnmounted, watch } from 'vue'
 import { useDebounceFn, onClickOutside } from '@vueuse/core'
-import {
-  Search, Download, List, LayoutGrid, Loader2, Menu, Plus, ChevronDown, Check,
-  Bot, Link2, FileText, FolderInput,
-} from 'lucide-vue-next'
-import {
-  DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuItemIndicator,
-} from 'reka-ui'
+import { Search, Download, Loader2, Menu, Plus, MessageCircleQuestion, Bell, Link2, FileText, FolderInput } from 'lucide-vue-next'
+import { DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuItem } from 'reka-ui'
+import AccountMenu from './AccountMenu.vue'
 import { useUiStore } from '@/stores/ui'
-import { useItemsStore, type SortOrder } from '@/stores/items'
+import { useItemsStore } from '@/stores/items'
 import { useMutations } from '@/composables/useMutations'
 import { useMenuAction } from '@/composables/useMenuAction'
+
+const emit = defineEmits<{ (e: 'logout'): void }>()
 
 const ui = useUiStore()
 const items = useItemsStore()
@@ -91,16 +88,12 @@ async function installPWA() {
 const viewTitle = computed(() => {
   switch (items.triageView) {
     case 'inbox': return '收件匣'
-    case 'radar': return '雷達'
+    case 'radar': return '雷達收件匣'
     case 'starred': return '加星'
     case 'archived': return '封存'
     default: return '全部'
   }
 })
-
-const SORT_LABELS: Record<SortOrder, string> = { newest: '最新收錄', oldest: '最早收錄' }
-// A search comes back ranked by relevance and is shown in that order.
-const sortLabel = computed(() => (items.ranked ? '最相關' : SORT_LABELS[items.sortOrder]))
 
 /** One button for both: the drawer on a phone, the sidebar (full or icon rail) on wider screens. */
 function toggleSidebar() {
@@ -117,18 +110,18 @@ function goInbox() {
 
 <template>
   <header class="safe-top relative z-30 shrink-0 bg-shell">
-    <div class="grid grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[3.5rem] items-center gap-x-2 px-2 md:pl-4 md:pr-6 lg:grid-cols-[minmax(max-content,1fr)_minmax(0,560px)_minmax(max-content,1fr)] lg:gap-x-4">
+    <div class="grid grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[3.5rem] items-center gap-x-2 px-2 md:px-4 lg:grid-cols-[minmax(max-content,1fr)_minmax(0,640px)_minmax(max-content,1fr)] lg:gap-x-4">
       <!-- Sidebar toggle + product name (on a phone: the view being shown) -->
       <div class="flex min-w-0 items-center gap-2">
         <button
           type="button"
-          class="item-action !size-10 shrink-0"
+          class="icon-button"
           aria-label="收合或展開側邊欄"
           title="側邊欄　Ctrl/Cmd+B"
           @click="toggleSidebar"
-        ><Menu class="size-5" /></button>
-        <button type="button" class="flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-1 text-[17px] font-bold tracking-[-0.01em] text-foreground" title="回到收件匣" @click="goInbox">
-          <svg class="size-6 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+        ><Menu /></button>
+        <button type="button" class="flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-1 text-lg font-bold tracking-[-0.01em] text-foreground" title="回到收件匣" @click="goInbox">
+          <svg class="size-7 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
             <rect width="24" height="24" rx="6" fill="var(--primary)" />
             <path d="M8 6h8v12l-4-3-4 3z" fill="var(--primary-foreground)" />
           </svg>
@@ -143,39 +136,38 @@ function goInbox() {
         class="search-box max-lg:order-last max-lg:col-span-3 max-lg:mx-2 max-lg:mb-2"
         :class="showMobileSearch ? 'flex' : 'hidden lg:flex'"
       >
-        <Search class="size-[18px] shrink-0" aria-hidden="true" />
+        <Search aria-hidden="true" />
         <input
           ref="searchInput"
           v-model="items.searchQuery"
           type="search"
           aria-label="搜尋收藏"
           :placeholder="items.searchMode === 'semantic' ? '用一句話描述想找的內容' : '搜尋標題、標籤或內容'"
-          class="text-base lg:text-sm"
           @input="debouncedSearch"
         />
         <button
           type="button"
-          class="shrink-0 rounded px-1.5 text-xs leading-5 hover:text-foreground"
+          class="shrink-0 rounded px-1.5 text-xs leading-5 transition-colors hover:text-foreground"
           :class="items.searchMode === 'semantic' ? 'bg-surface-2 text-foreground' : ''"
-          title="切換：依關鍵字，或依意思搜尋"
+          title="切換關鍵字搜尋與語意搜尋"
           :aria-pressed="items.searchMode === 'semantic'"
           @click="items.toggleSearchMode()"
-        >{{ items.searchMode === 'semantic' ? '依意思' : '關鍵字' }}</button>
+        >{{ items.searchMode === 'semantic' ? '語意' : '關鍵字' }}</button>
         <kbd class="key-hint max-lg:hidden" title="按 / 開始搜尋">/</kbd>
       </div>
 
-      <!-- Ask, add, sort, view -->
+      <!-- Ask, add, notifications, settings -->
       <div class="flex items-center justify-end gap-1 max-lg:col-start-3 md:gap-2">
-        <button class="item-action !size-10 lg:hidden" aria-label="搜尋收藏" title="搜尋　/" :aria-expanded="showMobileSearch" aria-controls="collection-search" @click="showMobileSearch ? (showMobileSearch = false) : focusSearchInput()"><Search class="size-5" /></button>
+        <button class="icon-button lg:hidden" aria-label="搜尋收藏" title="搜尋　/" :aria-expanded="showMobileSearch" aria-controls="collection-search" @click="showMobileSearch ? (showMobileSearch = false) : focusSearchInput()"><Search /></button>
 
-        <button type="button" class="top-button max-md:hidden max-xl:px-[9px]" title="問大腦　B" aria-label="問大腦" @click="ui.showBrainModal = true">
-          <Bot /><strong class="max-xl:hidden">問大腦</strong>
+        <button type="button" class="top-button max-md:hidden max-xl:px-2.5" title="用收藏的內容回答問題　B" aria-label="問答" @click="ui.showBrainModal = true">
+          <MessageCircleQuestion /><strong class="max-xl:hidden">問答</strong>
         </button>
 
         <!-- 新增: the one place to add things. 貼上連結 opens the panel below this button. -->
         <div ref="quickPanel" class="sm:relative">
           <DropdownMenuRoot>
-            <DropdownMenuTrigger class="top-button top-button--primary max-sm:px-[9px]" title="新增" aria-label="新增">
+            <DropdownMenuTrigger class="top-button top-button--primary max-sm:px-2.5" title="新增" aria-label="新增">
               <Loader2 v-if="ui.isIngesting || submitting" class="animate-spin" />
               <Plus v-else />
               <strong class="max-sm:hidden">新增</strong>
@@ -191,13 +183,13 @@ function goInbox() {
           <form
             v-if="showQuick"
             id="quick-ingest"
-            class="absolute top-full z-50 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-float max-sm:inset-x-3 max-sm:mt-1 sm:right-0 sm:mt-2 sm:w-[26rem]"
+            class="absolute top-full z-50 rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-float max-sm:inset-x-3 max-sm:mt-1 sm:right-0 sm:mt-2 sm:w-[28rem]"
             :aria-busy="ui.isIngesting || submitting"
             @submit.prevent="submitQuick"
             @keydown.esc.stop="showQuick = false"
           >
-            <label for="quick-url" class="text-xs text-muted-foreground">貼上網址或一段文字，讀完會寫成摘要</label>
-            <div class="mt-2 flex items-center gap-2">
+            <label for="quick-url" class="text-sm text-muted-foreground">貼上網址或一段文字，讀完會寫成摘要。</label>
+            <div class="mt-3 flex items-center gap-2">
               <input
                 id="quick-url"
                 ref="quickInput"
@@ -207,10 +199,10 @@ function goInbox() {
                 :aria-describedby="quickError ? 'quick-ingest-error' : undefined"
                 :disabled="ui.isIngesting || submitting"
                 placeholder="https://"
-                class="h-10 min-w-0 flex-1 rounded-lg border border-border bg-input px-3 text-base text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none md:text-sm"
+                class="h-10 min-w-0 flex-1 rounded-lg border border-border bg-input px-3 text-base text-foreground transition-colors placeholder:text-muted-foreground focus:border-ring focus:outline-none"
                 @input="quickError = ''"
               />
-              <button type="submit" class="h-10 shrink-0 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50" :disabled="!quickUrl.trim() || ui.isIngesting || submitting">
+              <button type="submit" class="h-10 shrink-0 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50" :disabled="!quickUrl.trim() || ui.isIngesting || submitting">
                 {{ ui.isIngesting || submitting ? '收錄中' : '收錄' }}
               </button>
             </div>
@@ -218,28 +210,12 @@ function goInbox() {
           </form>
         </div>
 
-        <DropdownMenuRoot>
-          <DropdownMenuTrigger class="top-button max-sm:hidden" :disabled="items.ranked" :title="items.ranked ? '搜尋結果依相關性排列' : '排序'">
-            <span class="max-xl:hidden">排序</span><strong>{{ sortLabel }}</strong><ChevronDown v-if="!items.ranked" />
-          </DropdownMenuTrigger>
-          <DropdownMenuPortal>
-            <DropdownMenuContent class="app-menu !min-w-40" align="end" :side-offset="8" :collision-padding="12">
-              <DropdownMenuRadioGroup :model-value="items.sortOrder" @update:model-value="items.sortOrder = $event as SortOrder">
-                <DropdownMenuRadioItem v-for="(label, order) in SORT_LABELS" :key="order" :value="order" class="app-menu__item">
-                  {{ label }}
-                  <span class="app-menu__end"><DropdownMenuItemIndicator><Check aria-hidden="true" /></DropdownMenuItemIndicator></span>
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenuPortal>
-        </DropdownMenuRoot>
+        <button v-if="deferredPrompt" type="button" class="icon-button max-md:hidden" aria-label="安裝 OmniKeep" title="安裝成應用程式" @click="installPWA"><Download /></button>
 
-        <div class="view-switch" role="group" aria-label="檢視方式">
-          <button type="button" aria-label="格狀" title="格狀" :aria-pressed="items.viewMode === 'cards'" @click="items.viewMode = 'cards'"><LayoutGrid /></button>
-          <button type="button" aria-label="清單" title="清單" :aria-pressed="items.viewMode === 'list'" @click="items.viewMode = 'list'"><List /></button>
-        </div>
+        <!-- The existing dialog behind the bell is the push settings, not a list of notifications: say so, and show no badge -->
+        <button type="button" class="icon-button max-md:hidden" aria-label="通知設定" title="通知設定" @click="ui.showPushModal = true"><Bell /></button>
 
-        <button v-if="deferredPrompt" type="button" class="top-button max-lg:px-[9px]" aria-label="安裝 OmniKeep" title="安裝成應用程式" @click="installPWA"><Download /><strong class="max-xl:hidden">安裝</strong></button>
+        <AccountMenu @logout="emit('logout')" />
       </div>
     </div>
   </header>

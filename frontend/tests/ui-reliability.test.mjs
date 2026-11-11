@@ -33,7 +33,7 @@ async function loadSource(path) {
       const bindings = statement.importClause?.namedBindings
       const names = bindings && ts.isNamedImports(bindings)
         ? bindings.elements.map(binding => (binding.propertyName || binding.name).text)
-        : ['getItems', 'searchSemantic', 'getItem', 'getStats', 'getCategories']
+        : ['getItems', 'getItemsPage', 'searchSemantic', 'getItem', 'getStats', 'getCategories']
       for (const name of names) {
         let value = '() => undefined'
         if (specifier.endsWith('/api')) value = `(...args) => globalThis.__uiTest.api.${name}(...args)`
@@ -135,7 +135,7 @@ test('empty states distinguish first use, search, cleared inbox and load failure
   const view = mount((await loadSource('components/items/ItemList.vue')).default)
   try {
     assert.equal(view.state.firstUse, true)
-    assert.equal(view.state.emptyState.action, '新增第一則筆記')
+    assert.equal(view.state.emptyState.action, '新增筆記')
     ctx.items.searchQuery = '沒有結果的搜尋'
     assert.equal(view.state.firstUse, false)
     assert.equal(view.state.emptyState.action, '清除搜尋條件')
@@ -143,7 +143,7 @@ test('empty states distinguish first use, search, cleared inbox and load failure
     assert.equal(ctx.items.searchQuery, '')
     assert.equal(ctx.ui.showNoteModal, undefined)
     ctx.items.stats.total = 5
-    assert.equal(view.state.emptyState.title, '待讀項目已清空')
+    assert.equal(view.state.emptyState.title, '收件匣已清空')
     ctx.items.error = '連線中斷'
     assert.equal(view.state.emptyState.action, '重新載入')
     assert.equal(view.state.firstUse, false)
@@ -193,12 +193,12 @@ test('list requests keep the newest result and ignore stale errors', async () =>
   const store = (await loadSource('stores/items.ts')).useItemsStore()
   const first = deferred(), second = deferred()
   const responses = [first, second]
-  ctx.api.getItems = () => responses.shift().promise
+  ctx.api.getItemsPage = () => responses.shift().promise
   store.searchQuery = '舊條件'
   const a = store.loadItems()
   store.searchQuery = '新條件'
   const b = store.loadItems()
-  second.resolve([{ id: 2 }])
+  second.resolve({ items: [{ id: 2 }], total: 1 })
   await b
   first.reject(new Error('stale request'))
   await a
@@ -212,12 +212,12 @@ test('list failure preserves previous items and a retry clears the error', async
   setActivePinia(createPinia())
   const store = (await loadSource('stores/items.ts')).useItemsStore()
   store.items = [{ id: 3 }]
-  ctx.api.getItems = async () => { throw new Error('offline') }
+  ctx.api.getItemsPage = async () => { throw new Error('offline') }
   await store.loadItems()
   assert.deepEqual(store.items, [{ id: 3 }])
   assert.match(store.error, /重試/)
   assert.equal(store.loading, false)
-  ctx.api.getItems = async () => [{ id: 4 }]
+  ctx.api.getItemsPage = async () => ({ items: [{ id: 4 }], total: 1 })
   await store.loadItems()
   assert.deepEqual(store.items, [{ id: 4 }])
   assert.equal(store.error, null)
@@ -336,4 +336,117 @@ test('a menu item runs after its menu has closed, once, and plain closes are lef
   assert.equal(chosen.prevented, 1)          // the dialog keeps focus instead of the menu button
   menu.flush(event())
   assert.equal(opened, 1)
+})
+
+test('scrolling loads the next page once, appends without repeats, and stops at the total', async () => {
+  const ctx = reset()
+  setActivePinia(createPinia())
+  const { useItemsStore, PAGE_SIZE } = await loadSource('stores/items.ts')
+  const store = useItemsStore()
+  const page = (from, count) => Array.from({ length: count }, (_, i) => ({ id: from + i }))
+  const asked = []
+  const second = deferred()
+  ctx.api.getItemsPage = filters => {
+    asked.push({ offset: filters.offset ?? 0, limit: filters.limit })
+    if (!filters.offset) return Promise.resolve({ items: page(1, PAGE_SIZE), total: PAGE_SIZE + 3 })
+    return second.promise
+  }
+  await store.loadItems()
+  assert.equal(store.items.length, PAGE_SIZE)
+  assert.equal(store.total, PAGE_SIZE + 3)
+  assert.equal(store.hasMore, true)
+  const more = store.loadMore()
+  await store.loadMore()                         // a second call while one is running does nothing
+  assert.equal(asked.length, 2)
+  assert.deepEqual(asked[1], { offset: PAGE_SIZE, limit: PAGE_SIZE })
+  assert.equal(store.loadingMore, true)
+  // Something was saved meanwhile: the page starts with an item that is already listed.
+  second.resolve({ items: page(PAGE_SIZE, 4), total: PAGE_SIZE + 3 })
+  await more
+  assert.equal(store.items.length, PAGE_SIZE + 3)
+  assert.equal(new Set(store.items.map(item => item.id)).size, PAGE_SIZE + 3)
+  assert.equal(store.loadingMore, false)
+  assert.equal(store.hasMore, false)
+  await store.loadMore()
+  assert.equal(asked.length, 2)                  // nothing left to ask for
+})
+
+test('a failed page keeps what is loaded and can be retried; a new list drops a page still in flight', async () => {
+  const ctx = reset()
+  setActivePinia(createPinia())
+  const { useItemsStore, PAGE_SIZE } = await loadSource('stores/items.ts')
+  const store = useItemsStore()
+  const first = { items: Array.from({ length: PAGE_SIZE }, (_, i) => ({ id: i + 1 })), total: PAGE_SIZE * 3 }
+  let fail = true
+  const slow = deferred()
+  ctx.api.getItemsPage = filters => {
+    if (!filters.offset) return Promise.resolve(filters.kind ? { items: [{ id: 900 }], total: 1 } : first)
+    if (fail) return Promise.reject(new Error('offline'))
+    return slow.promise
+  }
+  await store.loadItems()
+  await store.loadMore()
+  assert.match(store.moreError, /載入失敗/)
+  assert.equal(store.items.length, PAGE_SIZE)
+  assert.equal(store.hasMore, true)
+  fail = false
+  const retry = store.loadMore()
+  assert.equal(store.moreError, null)
+  // Picking a kind tab asks the server for that kind from the first page...
+  store.kindFilter = 'video'
+  await nextTick()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(store.items, [{ id: 900 }])
+  assert.equal(store.total, 1)
+  // ...and the page of the old list that was still on its way is not appended to it.
+  slow.resolve({ items: [{ id: 500 }], total: PAGE_SIZE * 3 })
+  await retry
+  assert.deepEqual(store.items, [{ id: 900 }])
+  assert.equal(store.loadingMore, false)
+})
+
+test('the list asks the server for the kind and the order instead of filtering what is loaded', async () => {
+  const ctx = reset()
+  setActivePinia(createPinia())
+  const store = (await loadSource('stores/items.ts')).useItemsStore()
+  const asked = []
+  ctx.api.getItemsPage = async filters => { asked.push(filters); return { items: [], total: 0 } }
+  await store.loadItems()
+  assert.equal(asked[0].kind, undefined)
+  assert.equal(asked[0].sort, 'newest')
+  assert.equal(asked[0].read, 'false')            // the inbox view
+  store.kindFilter = 'project'
+  await nextTick()
+  store.sortOrder = 'oldest'
+  await nextTick()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(asked.at(-1).kind, 'project')
+  assert.equal(asked.at(-1).sort, 'oldest')
+  assert.equal(asked.at(-1).offset, 0)
+})
+
+test('an archived item leaves the inbox in place, and undo puts it back where it was', async () => {
+  const ctx = reset()
+  setActivePinia(createPinia())
+  const store = (await loadSource('stores/items.ts')).useItemsStore()
+  ctx.api.getItemsPage = async () => ({ items: [{ id: 1 }, { id: 2, is_read: 0 }, { id: 3 }], total: 40 })
+  await store.loadItems()
+  const item = store.items[1]
+  store.reconcile(item)
+  assert.equal(store.items.length, 3)             // still unarchived: stays
+  item.is_read = 1
+  store.reconcile(item)
+  assert.deepEqual(store.items.map(i => i.id), [1, 3])
+  assert.equal(store.total, 39)
+  store.reconcile(item, 1)                        // still archived: an undo position alone changes nothing
+  assert.deepEqual(store.items.map(i => i.id), [1, 3])
+  item.is_read = 0
+  store.reconcile(item, 1)
+  assert.deepEqual(store.items.map(i => i.id), [1, 2, 3])
+  assert.equal(store.total, 40)
+  // Starring does not move anything in the inbox, but unstarring empties the starred view.
+  store.triageView = 'starred'
+  item.is_starred = 0
+  store.reconcile(item)
+  assert.deepEqual(store.items.map(i => i.id), [1, 3])
 })

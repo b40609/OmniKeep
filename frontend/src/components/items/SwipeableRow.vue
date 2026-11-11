@@ -98,7 +98,7 @@ function onTouchCancel() {
         class="size-5 transition-transform duration-200"
         :class="dx >= THRESHOLD ? 'fill-warning scale-125' : 'scale-100'"
       />
-      <span class="text-xs font-semibold">{{ dx >= THRESHOLD ? '放開標星' : '星標' }}</span>
+      <span class="text-xs font-semibold">{{ dx >= THRESHOLD ? '放開加星' : '加星' }}</span>
     </div>
     <div
       class="absolute inset-y-0 right-0 flex w-36 items-center justify-end gap-2.5 bg-success/15 pr-5 text-success transition-all duration-200"

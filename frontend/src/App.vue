@@ -354,12 +354,12 @@ onUnmounted(() => {
   </form>
   <div v-else class="relative z-10 flex h-[100dvh] w-screen flex-col overflow-hidden bg-shell text-foreground">
     <!-- Top bar spans the full width; the sidebar and the workspace sit under it -->
-    <AppHeader ref="headerRef" />
+    <AppHeader ref="headerRef" @logout="handleLogout" />
     <ServiceStatusBanner />
 
     <div class="flex min-h-0 flex-1">
       <!-- Collapsible sidebar (a drawer on phones) -->
-      <AppSidebar @logout="handleLogout" />
+      <AppSidebar />
 
       <!-- Master–detail workbench body -->
       <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">

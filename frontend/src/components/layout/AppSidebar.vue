@@ -2,33 +2,24 @@
 import { computed } from 'vue'
 import { useLocalStorage, useMediaQuery } from '@vueuse/core'
 import {
-  Inbox, Star, Archive, Layers, Folder, Plus, X, ChevronDown, ChevronUp, ChevronRight, Check,
+  Inbox, Star, Archive, Layers, Folder, Plus, X, ChevronDown, ChevronUp,
   FlaskConical, Radar, ScanEye, Sparkles,
-  Settings, Palette, Bell, KeyRound, FolderInput, Keyboard, LogOut,
 } from 'lucide-vue-next'
 import {
   DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
-  DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuItemIndicator, TooltipProvider,
+  DropdownMenuLabel, DropdownMenuSeparator, TooltipProvider,
 } from 'reka-ui'
 import SidebarRow from './SidebarRow.vue'
 import { useItemsStore, type TriageView } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
-import { useTheme, type AccentColor } from '@/composables/useTheme'
 import { useMenuAction } from '@/composables/useMenuAction'
-import { THEME_MODES, type ThemeMode } from '@/lib/themeMode'
 
 /**
- * The sidebar only holds places to go: views, categories, experimental features.
- * Creating things lives in the top bar; settings, theme, sign-out and the like
- * sit behind the single 設定 row at the bottom.
+ * The sidebar is navigation only: views, categories, experimental features.
+ * Adding things, notifications and settings live at the end of the top bar.
  */
-const emit = defineEmits<{ (e: 'logout'): void }>()
-
 const items = useItemsStore()
 const ui = useUiStore()
-const { mode, accent, accents, labels, set: setTheme, setAccent } = useTheme()
-const appVersion = __APP_VERSION__
 const desktop = useMediaQuery('(min-width: 768px)')
 /** Collapsed on a wide screen is an icon-only rail; the phone drawer is always the full list. */
 const rail = computed(() => desktop.value && !ui.sidebarOpen)
@@ -48,8 +39,12 @@ function setView(v: TriageView) {
 
 /* Categories: the fullest first, six showing until asked for more. */
 const CATEGORY_LIMIT = 6
+/** Categories the project watcher files its own records under (app/watch), not ones the owner made. */
+const WATCH_CATEGORIES = ['監看', '提案']
 const showAllCategories = useLocalStorage('omnikeep-nav-all-categories', false)
-const categories = computed(() => [...items.categories].sort((a, b) => (b.item_count ?? 0) - (a.item_count ?? 0)))
+const byCount = computed(() => [...items.categories].sort((a, b) => (b.item_count ?? 0) - (a.item_count ?? 0)))
+const categories = computed(() => byCount.value.filter((c) => !WATCH_CATEGORIES.includes(c.name)))
+const watchCategories = computed(() => byCount.value.filter((c) => WATCH_CATEGORIES.includes(c.name)))
 const shownCategories = computed(() => {
   const all = categories.value
   if (showAllCategories.value || all.length <= CATEGORY_LIMIT) return all
@@ -96,12 +91,12 @@ const menu = useMenuAction()
   >
     <TooltipProvider :delay-duration="150">
       <!-- Drawer header (phones only; on wider screens the product name is in the top bar) -->
-      <div class="flex h-14 shrink-0 items-center justify-between pl-[26px] pr-2 md:hidden">
-        <span class="text-[17px] font-bold tracking-[-0.01em]">OmniKeep</span>
-        <button class="item-action" aria-label="關閉選單" @click="ui.sidebarMobileOpen = false"><X class="size-5" /></button>
+      <div class="flex h-14 shrink-0 items-center justify-between pl-6 pr-2 md:hidden">
+        <span class="text-lg font-bold tracking-[-0.01em]">OmniKeep</span>
+        <button class="icon-button" aria-label="關閉選單" @click="ui.sidebarMobileOpen = false"><X /></button>
       </div>
 
-      <nav class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-3 pt-2" aria-label="收藏與分類">
+      <nav class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3" aria-label="收藏與分類">
         <!-- 1. Views -->
         <SidebarRow
           v-for="v in views"
@@ -137,7 +132,7 @@ const menu = useMenuAction()
           <SidebarRow
             v-if="categories.length > CATEGORY_LIMIT"
             minor
-            :label="showAllCategories ? '顯示較少' : `顯示更多（${categories.length - shownCategories.length}）`"
+            :label="showAllCategories ? '顯示較少' : `顯示另外 ${categories.length - shownCategories.length} 個`"
             :aria-expanded="showAllCategories"
             @click="showAllCategories = !showAllCategories"
           >
@@ -166,7 +161,7 @@ const menu = useMenuAction()
 
         <div class="nav-divider" />
 
-        <!-- 3. Experimental: folded away until asked for -->
+        <!-- 3. Experimental: folded away until asked for. The watcher's own categories sit with it. -->
         <template v-if="!rail">
           <h2>
             <button type="button" class="nav-heading" :aria-expanded="experimentalOpen" aria-controls="nav-experimental" @click="experimentalOpen = !experimentalOpen">
@@ -176,11 +171,21 @@ const menu = useMenuAction()
             </button>
           </h2>
           <div v-if="experimentalOpen" id="nav-experimental">
-            <SidebarRow label="雷達" :count="items.stats.radar || null" :active="items.triageView === 'radar'" title="雷達找來的候選內容" @click="setView('radar')">
+            <SidebarRow label="雷達" :count="items.stats.radar || null" :active="items.triageView === 'radar'" title="雷達自動找到的內容" @click="setView('radar')">
               <Radar aria-hidden="true" />
             </SidebarRow>
             <SidebarRow label="專案監看" @click="openPanel(() => (ui.showWatchModal = true))">
               <ScanEye aria-hidden="true" />
+            </SidebarRow>
+            <SidebarRow
+              v-for="cat in watchCategories"
+              :key="cat.id"
+              :label="`專案監看：${cat.name}`"
+              :count="cat.item_count ?? 0"
+              :active="items.currentCategory === cat.name"
+              @click="selectCategory(cat.name)"
+            >
+              <Folder aria-hidden="true" />
             </SidebarRow>
             <SidebarRow label="每日回顧" title="每日回顧　Shift+D" @click="openPanel(() => (ui.showDailyDeckModal = true))">
               <Sparkles aria-hidden="true" />
@@ -200,60 +205,14 @@ const menu = useMenuAction()
                 <Radar aria-hidden="true" />雷達<span v-if="items.stats.radar" class="app-menu__end">{{ items.stats.radar }}</span>
               </DropdownMenuItem>
               <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => (ui.showWatchModal = true))"><ScanEye aria-hidden="true" />專案監看</DropdownMenuItem>
+              <DropdownMenuItem v-for="cat in watchCategories" :key="cat.id" class="app-menu__item" @select="selectCategory(cat.name)">
+                <Folder aria-hidden="true" />專案監看：{{ cat.name }}<span class="app-menu__end">{{ cat.item_count ?? 0 }}</span>
+              </DropdownMenuItem>
               <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => (ui.showDailyDeckModal = true))"><Sparkles aria-hidden="true" />每日回顧</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenuPortal>
         </DropdownMenuRoot>
       </nav>
-
-      <!-- 4. Settings: one labelled row; everything that used to be an icon is a named item in its menu -->
-      <div class="shrink-0 border-t border-hairline px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
-        <DropdownMenuRoot>
-          <DropdownMenuTrigger as-child>
-            <SidebarRow label="設定" :rail="rail">
-              <Settings aria-hidden="true" />
-            </SidebarRow>
-          </DropdownMenuTrigger>
-          <DropdownMenuPortal>
-            <DropdownMenuContent class="app-menu" :side="rail ? 'right' : 'top'" :align="rail ? 'end' : 'start'" :side-offset="8" :collision-padding="12" @close-auto-focus="menu.flush">
-              <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => ui.openSettings())"><Settings aria-hidden="true" />設定</DropdownMenuItem>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger class="app-menu__item">
-                  <Palette aria-hidden="true" />外觀主題
-                  <span class="app-menu__end">{{ labels[mode] }}<ChevronRight aria-hidden="true" /></span>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent class="app-menu" :side-offset="10" :collision-padding="12">
-                    <DropdownMenuLabel class="app-menu__label">主題</DropdownMenuLabel>
-                    <!-- Choosing keeps the menu open, so themes can be tried one after another -->
-                    <DropdownMenuRadioGroup :model-value="mode" @update:model-value="setTheme($event as ThemeMode)">
-                      <DropdownMenuRadioItem v-for="option in THEME_MODES" :key="option" :value="option" class="app-menu__item" @select.prevent>
-                        {{ labels[option] }}
-                        <span class="app-menu__end"><DropdownMenuItemIndicator><Check aria-hidden="true" /></DropdownMenuItemIndicator></span>
-                      </DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                    <DropdownMenuSeparator class="app-menu__rule" />
-                    <DropdownMenuLabel class="app-menu__label">強調色</DropdownMenuLabel>
-                    <DropdownMenuRadioGroup :model-value="accent" @update:model-value="setAccent($event as AccentColor)">
-                      <DropdownMenuRadioItem v-for="opt in accents" :key="opt.id" :value="opt.id" class="app-menu__item" @select.prevent>
-                        <span class="app-menu__swatch" :style="{ backgroundColor: opt.color }" aria-hidden="true" />{{ opt.label }}
-                        <span class="app-menu__end"><DropdownMenuItemIndicator><Check aria-hidden="true" /></DropdownMenuItemIndicator></span>
-                      </DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
-              <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => openPanel(() => (ui.showPushModal = true)))"><Bell aria-hidden="true" />通知</DropdownMenuItem>
-              <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => openPanel(() => (ui.showSessionModal = true)))"><KeyRound aria-hidden="true" />社群平台登入</DropdownMenuItem>
-              <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => openPanel(() => (ui.showImportModal = true)))"><FolderInput aria-hidden="true" />匯入書籤</DropdownMenuItem>
-              <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => openPanel(() => (ui.showShortcutsModal = true)))"><Keyboard aria-hidden="true" />鍵盤快捷鍵</DropdownMenuItem>
-              <DropdownMenuSeparator class="app-menu__rule" />
-              <DropdownMenuItem class="app-menu__item" @select="emit('logout')"><LogOut aria-hidden="true" />登出</DropdownMenuItem>
-              <DropdownMenuLabel class="app-menu__label">OmniKeep v{{ appVersion }}</DropdownMenuLabel>
-            </DropdownMenuContent>
-          </DropdownMenuPortal>
-        </DropdownMenuRoot>
-      </div>
     </TooltipProvider>
   </aside>
 </template>

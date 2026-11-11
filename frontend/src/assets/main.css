@@ -67,6 +67,9 @@
   --surface-2: #e2e5e9;
   --surface-3: #d3d7dd;
   --done-foreground: #5f6168;
+  /* How much a cover is dimmed at rest, and once its item is archived (1 = as is). */
+  --cover-dim: 1;
+  --cover-dim-read: 0.7;
   --selection: var(--primary);
   --selection-foreground: var(--primary-foreground);
 }
@@ -123,6 +126,8 @@
   --surface-2: #272931;
   --surface-3: #353741;
   --done-foreground: #9a9aa6;
+  --cover-dim: 0.8;
+  --cover-dim-read: 0.55;
 }
 
 /* OLED Pure Black (High Contrast / Zero-Glass) */
@@ -176,6 +181,8 @@
   --surface-2: #1d1d20;
   --surface-3: #2b2b2f;
   --done-foreground: #8e8e96;
+  --cover-dim: 0.8;
+  --cover-dim-read: 0.55;
 }
 
 /* ============================================================
@@ -347,6 +354,8 @@
   --surface-2: #272727;
   --surface-3: #3a3a3a;
   --done-foreground: #8e8e8e;
+  --cover-dim: 0.64;
+  --cover-dim-read: 0.45;
   --selection: #2b4c7e;
   --selection-foreground: #f1f1f1;
 
@@ -567,45 +576,33 @@ option {
 .glass, .glass-strong, .glass-tint { border: 1px solid var(--hairline); }
 .glass-strong { box-shadow: var(--float-shadow); }
 @layer components {
+/* Icon button on an item: star, archive, more. A 40px target around a 20px icon. */
 .item-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 8px;
   color: var(--muted-foreground);
-}
-.item-action:hover, .item-action[data-state="open"] { background: var(--accent); color: var(--foreground); }
-.item-action:disabled { opacity: 0.45; }
-.item-menu {
-  z-index: 80;
-  min-width: 220px;
-  max-width: calc(100vw - 24px);
-  max-height: var(--reka-dropdown-menu-content-available-height);
-  overflow-y: auto;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--popover);
-  color: var(--popover-foreground);
-  box-shadow: var(--float-shadow);
-}
-.item-menu-entry {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 14px;
   cursor: pointer;
+  transition: background-color 150ms ease-out, color 150ms ease-out, opacity 150ms ease-out;
 }
-.item-menu-entry[data-highlighted] {
-  background: var(--accent);
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
+.item-action > svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.75;
+}
+.item-action:hover, .item-action[data-state="open"] { background: var(--surface-2); color: var(--foreground); }
+.item-action:active { background: var(--surface-3); }
+.item-action:disabled { opacity: 0.45; }
+/* A state that is on (starred): the filled glyph in the text colour, no accent. */
+.item-action--on { color: var(--foreground); }
+.item-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
 }
 }
 input, textarea { caret-color: var(--primary); }
