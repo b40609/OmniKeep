@@ -637,24 +637,148 @@ def _ensure_trigram_fts(cursor) -> None:
                        f"SELECT id, {', '.join(FTS_COLUMNS)} FROM items")
 
 
-def fts_filter(query: str):
-    """SQL condition and params finding items whose text contains any of the query words.
+# bm25() weight of each items_fts column, in table order: id (UNINDEXED, never matched), then
+# FTS_COLUMNS. One occurrence in the title counts like ten in the raw content.
+FTS_BM25_WEIGHTS = (0.0, 10.0, 5.0, 5.0, 2.0, 1.0)
+# The trigram index cannot match a word shorter than this (兩字中文詞、"AI"); those use LIKE.
+FTS_MIN_WORD_LENGTH = 3
+# Words past this many are ignored, so a pasted paragraph cannot grow the statement without limit.
+SEARCH_MAX_WORDS = 16
 
-    Words of three or more characters use the trigram index; shorter ones (常見的兩字中文詞、
-    "AI") cannot, so they are matched with LIKE over the same columns.
+
+def search_words(query: str) -> List[str]:
+    """The distinct words of a search query, in the order typed. A double quote is the one
+    character with a meaning inside an FTS5 string (and NUL would end it), so they only
+    separate words here."""
+    words, seen = [], set()
+    for word in (query or "").replace('"', " ").replace("\x00", " ").split():
+        if word.lower() not in seen:
+            seen.add(word.lower())
+            words.append(word)
+    return words[:SEARCH_MAX_WORDS]
+
+
+def _like_pattern(word: str) -> str:
+    """LIKE pattern (with ESCAPE '~') that finds `word` as literal text."""
+    return "%" + word.replace("~", "~~").replace("%", "~%").replace("_", "~_") + "%"
+
+
+def _item_filters(category, is_starred, is_read, origin):
+    """The list filters of get_items as SQL conditions on `items i`, with named parameters."""
+    conditions, params = [], {}
+    if category and category != "全部":
+        conditions.append("i.category_name = :category")
+        params["category"] = category
+    if is_starred is not None:
+        conditions.append("i.is_starred = :is_starred")
+        params["is_starred"] = 1 if is_starred else 0
+    if is_read is not None:
+        conditions.append("i.is_read = :is_read")
+        params["is_read"] = 1 if is_read else 0
+    if origin == "curated":
+        conditions.append("(i.origin != 'radar' OR i.is_starred = 1)")
+    elif origin == "radar":
+        conditions.append("i.origin = 'radar'")
+    elif origin and origin != "all":
+        conditions.append("i.origin = :origin")
+        params["origin"] = origin
+    return conditions, params
+
+
+def _search_statement(words: List[str], require_all: bool, filters, use_fts: bool = True):
+    """SQL and named parameters (all but :limit and :offset) of one search, best match first.
+
+    Words of three or more characters go through the trigram index and are scored with
+    bm25(); shorter ones are found with LIKE and ranked by the column they are found in
+    (title, summary, tags, deep analysis, raw content). With both kinds, each column a
+    short word is found higher in raises the bm25 score by a fifth, up to double for the
+    title. Without bm25 the order is the column rank; the newest item wins a tie.
+    `require_all` asks for every word; otherwise any word is enough and items holding
+    more of them come first. `use_fts=False` finds every word with LIKE.
     """
-    words = [w for w in (query or "").replace('"', " ").split() if w]
-    parts, params = [], []
-    long_words = [w for w in words if len(w) >= 3]
-    if long_words:
-        parts.append("i.id IN (SELECT id FROM items_fts WHERE items_fts MATCH ?)")
-        params.append(" OR ".join(f'"{w}"' for w in long_words))
-    for w in words:
-        if len(w) < 3:
-            pattern = f"%{w}%"
-            parts.append("(" + " OR ".join(f"i.{c} LIKE ?" for c in FTS_COLUMNS) + ")")
-            params.extend([pattern] * len(FTS_COLUMNS))
-    return ("(" + " OR ".join(parts) + ")") if parts else "1=0", params
+    indexed = [w for w in words if use_fts and len(w) >= FTS_MIN_WORD_LENGTH]
+    scanned = [w for w in words if not (use_fts and len(w) >= FTS_MIN_WORD_LENGTH)]
+    filter_conditions, params = filters
+    params = dict(params)
+    nowhere = len(FTS_COLUMNS)
+
+    # Per scanned word: 0 when it is in the title ... 4 in the raw content, 5 when absent.
+    column_ranks = []
+    for n, word in enumerate(scanned):
+        params[f"w{n}"] = _like_pattern(word)
+        cases = " ".join(f"WHEN i.{column} LIKE :w{n} ESCAPE '~' THEN {rank}"
+                         for rank, column in enumerate(FTS_COLUMNS))
+        column_ranks.append(f"(CASE {cases} ELSE {nowhere} END)")
+    found = [f"({rank} < {nowhere})" for rank in column_ranks]
+
+    matches, join, conditions, order = "", "", [], []
+    if indexed:
+        params["fts"] = (" AND " if require_all else " OR ").join(f'"{w}"' for w in indexed)
+        weights = ", ".join(str(w) for w in FTS_BM25_WEIGHTS)
+        # MATERIALIZED (SQLite >= 3.35): the index is queried once, whichever table the
+        # planner starts from. Left to itself it may run the MATCH again for every item.
+        matches = f"""WITH m AS MATERIALIZED (
+            SELECT id, bm25(items_fts, {weights}) AS score FROM items_fts WHERE items_fts MATCH :fts
+        )"""
+        # An item found only through its short words has no row in m, hence the LEFT JOIN.
+        join = ("JOIN" if require_all or not scanned else "LEFT JOIN") + " m ON m.id = i.id"
+    if require_all:
+        conditions.extend(found)
+    else:
+        if scanned:
+            conditions.append("(" + " OR ".join(found + (["m.id IS NOT NULL"] if indexed else [])) + ")")
+        hits = list(found)
+        for n, word in enumerate(indexed):
+            params[f"p{n}"] = f'"{word}"'
+            hits.append(f"(i.id IN (SELECT id FROM items_fts WHERE items_fts MATCH :p{n}))")
+        order.append("(" + " + ".join(hits) + ") DESC")
+    if indexed:
+        score = "COALESCE(m.score, 0.0)"  # bm25: the better the match, the lower the number
+        if scanned:
+            worst = nowhere * len(scanned)
+            score += f" * (1.0 + ({worst} - ({' + '.join(column_ranks)})) / {float(worst)})"
+        order.append(score)
+    if scanned:
+        order.append(" + ".join(column_ranks))
+    order.append("i.created_at DESC")
+
+    sql = f"""
+        {matches}
+        SELECT i.*,
+               (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
+               (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
+        FROM items i {join}
+        WHERE {" AND ".join(conditions + filter_conditions) or "1=1"}
+        ORDER BY {", ".join(order)}
+        LIMIT :limit OFFSET :offset
+    """
+    return sql, params
+
+
+def _search_items(cursor, words: List[str], filters, limit: int, offset: int) -> list:
+    """Rows for a search, best match first. Every word has to be found; only when no item
+    (within the filters) holds them all does the search widen to items holding any of them."""
+    def run(require_all, use_fts, page_limit=limit, page_offset=offset):
+        sql, params = _search_statement(words, require_all, filters, use_fts)
+        return cursor.execute(sql, {**params, "limit": page_limit, "offset": page_offset}).fetchall()
+
+    def search(use_fts):
+        rows = run(True, use_fts)
+        if rows or len(words) < 2:
+            return rows
+        if offset and run(True, use_fts, 1, 0):
+            return rows  # a page past the end of the all-words results
+        return run(False, use_fts)
+
+    try:
+        return search(use_fts=True)
+    except sqlite3.Error as exc:
+        if not any(len(w) >= FTS_MIN_WORD_LENGTH for w in words):
+            raise
+        # A missing or damaged index must not empty the search box: scan with LIKE instead.
+        logging.getLogger("omnikeep.database").warning(
+            "Full-text query failed (%s); searching with LIKE instead", exc)
+        return search(use_fts=False)
 
 
 def get_items(
@@ -669,74 +793,11 @@ def get_items(
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    if query and query.strip():
-        # Any query word as a substring (trigram index, LIKE for words under 3 characters),
-        # with the older LIKE-on-the-whole-query fallback kept below.
-        clean_q = query.strip().replace('"', '')
-        condition, params = fts_filter(clean_q)
-        sql = f"""
-            SELECT i.*,
-                   (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
-                   (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
-            FROM items i
-            WHERE {condition}
-        """
-        if category and category != "全部":
-            sql += " AND i.category_name = ?"
-            params.append(category)
-        if is_starred is not None:
-            sql += " AND i.is_starred = ?"
-            params.append(1 if is_starred else 0)
-        if is_read is not None:
-            sql += " AND i.is_read = ?"
-            params.append(1 if is_read else 0)
-        if origin == "curated":
-            sql += " AND (i.origin != 'radar' OR i.is_starred = 1)"
-        elif origin == "radar":
-            sql += " AND i.origin = 'radar'"
-        elif origin and origin != "all":
-            sql += " AND i.origin = ?"
-            params.append(origin)
-        sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-
-        try:
-            cursor.execute(sql, params)
-            db_rows = cursor.fetchall()
-        except Exception:
-            db_rows = []
-
-        if not db_rows:
-            # Fallback to LIKE matching
-            fallback_sql = """
-                SELECT i.*,
-                       (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
-                       (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
-                FROM items i
-                WHERE (i.title_l1 LIKE ? OR i.summary_l1 LIKE ? OR i.tech_tags LIKE ? OR i.deep_analysis LIKE ?)
-            """
-            like_param = f"%{clean_q}%"
-            f_params = [like_param, like_param, like_param, like_param]
-            if category and category != "全部":
-                fallback_sql += " AND i.category_name = ?"
-                f_params.append(category)
-            if is_starred is not None:
-                fallback_sql += " AND i.is_starred = ?"
-                f_params.append(1 if is_starred else 0)
-            if is_read is not None:
-                fallback_sql += " AND i.is_read = ?"
-                f_params.append(1 if is_read else 0)
-            if origin == "curated":
-                fallback_sql += " AND (i.origin != 'radar' OR i.is_starred = 1)"
-            elif origin == "radar":
-                fallback_sql += " AND i.origin = 'radar'"
-            elif origin and origin != "all":
-                fallback_sql += " AND i.origin = ?"
-                f_params.append(origin)
-            fallback_sql += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
-            f_params.extend([limit, offset])
-            cursor.execute(fallback_sql, f_params)
-            db_rows = cursor.fetchall()
+    # A query of nothing but quotes or spaces has no words: it lists like no query at all.
+    words = search_words(query)
+    if words:
+        # Ranked by relevance (see _search_statement); the list below stays newest first.
+        db_rows = _search_items(cursor, words, _item_filters(category, is_starred, is_read, origin), limit, offset)
     else:
         sql = """
             SELECT i.*,

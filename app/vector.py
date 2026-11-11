@@ -550,7 +550,8 @@ async def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5)
     """
     from app.database import get_items
 
-    # 1. Lexical search (FTS)
+    # 1. Lexical search. get_items returns matches best first (bm25, column rank), and that
+    #    order is the lexical rank fused below.
     fts_items = get_items(query=query, limit=limit * 2)
 
     # 2. Vector search: same embedding path as indexing (app.pipeline), so the
