@@ -54,6 +54,12 @@
     max-width: 760px;
     margin-inline: auto;
   }
+  /* On a wide screen the content stays near the navigation instead of drifting to the middle. */
+  @media (min-width: 1280px) {
+    .settings__content {
+      margin-inline: min(96px, 5vw) auto;
+    }
+  }
   .settings__title {
     font-size: 24px;
     font-weight: 600;
@@ -413,7 +419,8 @@
     transition: transform 150ms ease-out, background-color 150ms ease-out;
   }
   .ui-switch[data-state='checked'] .ui-switch__thumb {
-    background: var(--primary-foreground);
+    /* White on the accent in every theme: the thumb has to read as the moving part. */
+    background: #fff;
     transform: translateX(23px);
   }
 
