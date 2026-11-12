@@ -413,7 +413,7 @@ async def test_rate_limit_retries_used_up_fail_with_what_to_do(notices):
     with patch("app.queue.worker.run_pipeline", new=AsyncMock(side_effect=_rate_limit())):
         await TaskWorker()._process_task(task)
     stored = db.get_ingest_task(task["id"])
-    assert stored["status"] == "failed" and "設定 › AI 服務商" in stored["error_message"]
+    assert stored["status"] == "failed" and "設定 › AI」" in stored["error_message"]
     assert ".env" not in stored["error_message"]
     notices[0].assert_awaited_once()
 

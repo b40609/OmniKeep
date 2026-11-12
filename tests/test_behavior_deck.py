@@ -98,7 +98,7 @@ def test_telegram_deck_keyboard_and_cards():
 
     card = build_deck_card_html({"title_l1": "<b>標題</b>", "summary_l1": "摘要",
                                  "tech_tags": ["AI", "量化"]}, 7)
-    assert "剩 7 張" in card
+    assert "還有 7 則" in card
     assert "&lt;b&gt;標題&lt;/b&gt;" in card          # HTML escaped
     assert "#AI #量化" in card
 

@@ -12,6 +12,8 @@ const transpile = (source) => ts.transpileModule(source, {
 
 const setupSource = transpile(await readFile(new URL('../src/lib/setup.ts', import.meta.url), 'utf8'))
 const setup = await import(moduleUrl(setupSource))
+const guideSource = transpile(await readFile(new URL('../src/lib/telegramGuide.ts', import.meta.url), 'utf8'))
+const guide = await import(moduleUrl(guideSource))
 
 // The shape GET /api/ai/catalog returns (app/provider_catalog.py), trimmed to what the wizard reads.
 const CARDS = [
@@ -29,6 +31,12 @@ const CARDS = [
     limits: '', notes: '', training_note: '', verified: '2026-11-05' },
   { id: 'custom', label: '自訂 OpenAI 相容端點', kind: 'openai', base_url: '', model: '', models: [],
     key_mode: 'optional', key_url: '', editable_url: true, cost: '', limits: '', notes: '', training_note: '', verified: '2026-11-05' },
+  { id: 'kilo', label: 'Kilo Gateway', kind: 'openai', base_url: 'https://api.kilo.ai/api/gateway', model: 'm', models: [],
+    key_mode: 'none', key_url: '', editable_url: false, cost: '免費（不用金鑰）', limits: '', notes: '', training_note: '',
+    no_signup: true, verified: '2026-11-05' },
+  { id: 'itera', label: 'Itera Compute', kind: 'openai', base_url: 'https://api.example.test/v1', model: 'm', models: [],
+    key_mode: 'none', key_url: '', editable_url: false, cost: '免費（限時活動）', limits: '', notes: '', training_note: '',
+    no_signup: true, ended: true, verified: '2026-11-05' },
 ]
 const card = (id) => setup.cardById(CARDS, id)
 
@@ -67,6 +75,20 @@ test('the form explains what is missing before a test is allowed', () => {
   assert.equal(setup.formProblem(custom, { baseUrl: 'http://192.168.1.5:1234/v1', apiKey: '', model: 'm' }), null)
 })
 
+test('the cards listed first are the ones that need no account or no key, judged from the card alone', () => {
+  const starters = CARDS.filter(setup.isStarterCard).map((c) => c.id)
+  assert.deepEqual(starters, ['ollama', 'kilo']) // not the paid or keyed ones, and not an offer that has ended
+})
+
+test('a pasted Telegram token gets a hint when it does not look like one; the server still decides', () => {
+  assert.equal(guide.tokenProblem(''), '')
+  assert.equal(guide.tokenProblem(` ${guide.TELEGRAM_TOKEN_EXAMPLE} `), '')
+  assert.match(guide.tokenProblem('110201543:AAHdq TcvCH1vGWJxfSeofSAs0K5PALDsaw'), /空白/)
+  assert.match(guide.tokenProblem('AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw'), /冒號/)
+  assert.equal(guide.TELEGRAM_STEPS.length, 3)
+  assert.match(guide.TELEGRAM_DOC_URL, /docs\/telegram_bot\.md$/)
+})
+
 test('sameValues compares exactly what would be saved', () => {
   const a = { A: '1', B: '2' }
   assert.equal(setup.sameValues(null, a), false)
@@ -100,6 +122,7 @@ async function loadComponent(path) {
     let url
     if (specifier === 'vue') url = import.meta.resolve('vue')
     else if (specifier === '@/lib/setup') url = moduleUrl(setupSource)
+    else if (specifier === '@/lib/telegramGuide') url = moduleUrl(guideSource)
     else {
       const mocks = []
       if (statement.importClause?.name) mocks.push('export default {}')
@@ -124,13 +147,24 @@ function context(status = { services: {}, needs_setup: true, undecryptable: [] }
   globalThis.sessionStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) }
   globalThis.window = new EventTarget()
   const ctx = {
-    ui: reactive({ showSetupWizard: false, showSettingsModal: false, settingsVersion: 0, openSettings(tab) { ctx.opened = tab } }),
+    ui: reactive({
+      showSetupWizard: false, showSettingsModal: false, settingsVersion: 0,
+      openSettings(tab) { ctx.opened = tab }, openAdd() { ctx.addOpened = true },
+    }),
     api: {
       getServiceStatus: async () => status,
       getAiCatalog: async () => ({ verified: '2026-11-05', cards: CARDS }),
       testAiDraft: async (draft) => { ctx.tests.push(draft); return ctx.nextTest },
       createAiConnection: async (input) => { ctx.created.push(input); return {} },
+      getTelegramStatus: async () => ctx.telegram,
+      saveSettings: async (values) => {
+        if (ctx.refuseToken) throw new Error(ctx.refuseToken)
+        ctx.saved.push(values)
+        ctx.telegram = { ...ctx.telegram, configured: true }
+        return {}
+      },
     },
+    telegram: { configured: false, bound_user_ids: [], pairing_expires_at: null }, saved: [], refuseToken: '',
     tests: [], created: [], errors: [], nextTest: { ok: true, status: 200, message: 'ok', detail: '' }, store,
   }
   globalThis.__wizard = ctx
@@ -215,9 +249,67 @@ test('saving needs a successful test of exactly the values being saved, then fil
       card: 'agnes', base_url: 'https://apihub.agnes-ai.com/v1', key: 'sk-wizard-typed', model: 'agnes-3.5-flash',
       slot: 'analysis',
     }])
-    assert.equal(s.step, 'done')
+    assert.equal(s.step, 'telegram') // the AI is connected: Telegram comes next
+    assert.equal(s.aiSaved, true)
     assert.equal(s.form.apiKey, '') // the key does not linger in the page
     assert.equal(ctx.ui.settingsVersion, 1)
+  } finally { view.unmount() }
+})
+
+test('only the easy cards are listed until the owner asks for all of them', async () => {
+  context()
+  const view = await mountWizard()
+  try {
+    await settle()
+    const s = view.state
+    assert.deepEqual(s.shownCards.map((c) => c.id), ['ollama', 'kilo'])
+    assert.equal(s.hiddenCount, CARDS.length - 2)
+    s.showAll = true
+    await nextTick()
+    assert.equal(s.shownCards.length, CARDS.length)
+    assert.deepEqual(s.shownCards.slice(0, 2).map((c) => c.id), ['ollama', 'kilo']) // still first
+    s.choose('agnes')
+    s.showAll = false
+    await nextTick()
+    assert.deepEqual(s.shownCards.map((c) => c.id), ['ollama', 'kilo', 'agnes']) // the picked one stays in view
+  } finally { view.unmount() }
+})
+
+test('the AI step can be skipped; the Telegram step saves the token, then waits for the pairing', async () => {
+  const ctx = context()
+  const view = await mountWizard()
+  try {
+    await settle()
+    const s = view.state
+    s.step = 'telegram' // 先不接 AI
+    await settle()
+    assert.equal(s.aiSaved, false)
+    assert.deepEqual(s.telegram, { configured: false, bound_user_ids: [], pairing_expires_at: null })
+
+    s.token = 'not-a-token'
+    await nextTick()
+    assert.match(s.tokenHint, /冒號/) // a hint only: saving is still allowed
+    ctx.refuseToken = 'Telegram 不接受這個權杖'
+    await s.saveToken()
+    assert.equal(s.tokenError, 'Telegram 不接受這個權杖')
+    assert.deepEqual(ctx.saved, [])
+
+    ctx.refuseToken = ''
+    s.token = ` ${guide.TELEGRAM_TOKEN_EXAMPLE} `
+    await s.saveToken()
+    assert.deepEqual(ctx.saved, [{ TELEGRAM_BOT_TOKEN: guide.TELEGRAM_TOKEN_EXAMPLE }])
+    assert.equal(s.token, '') // the token does not linger in the page
+    assert.equal(s.telegram.configured, true)
+    assert.equal(s.telegramBound, false)
+
+    s.onPaired([4242]) // what the pairing component reports once the link was used
+    await nextTick()
+    assert.equal(s.telegramBound, true)
+
+    s.step = 'done'
+    s.addFirstLink()
+    assert.equal(ctx.ui.showSetupWizard, false)
+    assert.equal(ctx.addOpened, true)
   } finally { view.unmount() }
 })
 

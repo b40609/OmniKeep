@@ -49,7 +49,7 @@ async def test_writeback_insight_and_retrieval():
         category="DemoOS",
         tech_tags=["DemoOS", "Concurrency", "Lease"]
     )
-    assert "成功將技術決策回寫" in result
+    assert "存進 OmniKeep" in result
     assert "ID" in result
 
     # Extract ID

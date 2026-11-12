@@ -18,6 +18,19 @@ if (Test-Path $venvPy -PathType Leaf) {
 $logDir = Join-Path $env:LOCALAPPDATA 'OmniKeep\logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
+# The port the service listens on: PORT in .env, 5000 when it is not set there.
+function Get-ServicePort([string]$root) {
+    $envFile = Join-Path $root '.env'
+    if (Test-Path $envFile -PathType Leaf) {
+        foreach ($line in [IO.File]::ReadAllLines($envFile)) {
+            if ($line -match '^\s*PORT\s*=\s*["'']?(\d{1,5})["'']?\s*(#.*)?$') { return [int]$Matches[1] }
+        }
+    }
+    return 5000
+}
+$port = Get-ServicePort $projectRoot
+$healthUrl = "http://127.0.0.1:$port/health"
+
 function Write-WatchdogEvent([string]$message) {
     $line = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $message
     Add-Content -Path (Join-Path $logDir 'watchdog.log') -Value $line -Encoding UTF8
@@ -34,7 +47,7 @@ try {
     if (-not $ownsMutex) { return }
 
     try {
-        $response = Invoke-RestMethod -Uri 'http://127.0.0.1:5000/health' -TimeoutSec 4
+        $response = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 4
         if ($response.status -eq 'healthy' -and $response.service -eq 'OmniKeep') {
             return
         }
@@ -52,9 +65,9 @@ try {
     }
 
     # Do not steal another service's TCP port or launch conflicting instances.
-    $portOwners = @(Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue)
+    $portOwners = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
     if ($portOwners.Count -gt 0) {
-        Write-WatchdogEvent 'Health unavailable; port 5000 belongs to another process. Recovery skipped.'
+        Write-WatchdogEvent "Health unavailable; port $port belongs to another process. Recovery skipped."
         return
     }
 
@@ -79,7 +92,7 @@ try {
             return
         }
         try {
-            $response = Invoke-RestMethod -Uri 'http://127.0.0.1:5000/health' -TimeoutSec 2
+            $response = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2
             if ($response.status -eq 'healthy' -and $response.service -eq 'OmniKeep') {
                 Write-WatchdogEvent "OmniKeep healthy (PID $($proc.Id))."
                 return

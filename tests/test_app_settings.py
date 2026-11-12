@@ -364,14 +364,14 @@ def test_telegram_check_reports_the_bot_and_scrubs_the_token(fake_http):
     with TestClient(app) as client:
         ok = client.post("/api/settings/check/telegram", headers=HEADERS,
                          json={"values": {"TELEGRAM_BOT_TOKEN": token}}).json()
-    assert ok == {**ok, "ok": True, "message": "Bot 正常：@omni_bot"}
+    assert ok == {**ok, "ok": True, "message": "機器人正常：@omni_bot"}
     assert calls[0].url.path == f"/bot{token}/getMe"
 
     fake_http(lambda request: httpx.Response(401, text=f"bad token {token}"))
     with TestClient(app) as client:
         bad = client.post("/api/settings/check/telegram", headers=HEADERS,
                           json={"values": {"TELEGRAM_BOT_TOKEN": token}}).json()
-    assert bad["ok"] is False and bad["message"] == "Bot Token 無效"
+    assert bad["ok"] is False and bad["message"] == "機器人權杖無效"
     assert token not in str(bad)
 
 
@@ -438,7 +438,7 @@ def test_brain_check_looks_for_the_configured_model(monkeypatch):
                             json={"values": {"BRAIN_PROVIDER": "cloud"}}).json()
     assert ok["ok"] is True and "qwen3:8b" in ok["message"]
     assert missing["ok"] is False and "ollama pull llama3.1" in missing["message"]
-    assert cloud["ok"] is True and "主要服務商" in cloud["message"]
+    assert cloud["ok"] is True and "設定 › AI" in cloud["message"]
 
 
 def test_unknown_check_is_404():

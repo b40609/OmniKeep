@@ -73,9 +73,9 @@ def daily_digest(monkeypatch):
 
     async def fake_generate(item_ids, digest_type="evening"):
         made.append((list(item_ids), digest_type))
-        digest_id = save_radar_digest({"title": "每日雷達摘要", "digest_type": digest_type,
+        digest_id = save_radar_digest({"title": "每日探索精選", "digest_type": digest_type,
                                        "markdown_content": "摘要", "item_ids": item_ids})
-        return {"success": True, "digest_id": digest_id, "title": "每日雷達摘要"}
+        return {"success": True, "digest_id": digest_id, "title": "每日探索精選"}
 
     announced = AsyncMock()
     monkeypatch.setattr(scheduler, "generate_radar_digest", fake_generate)
@@ -205,27 +205,27 @@ async def test_vip_items_reach_every_outlet(outlets):
     pushed, bot, line = outlets
     await scheduler._announce_vip([{"title_l1": "高分一"}, {"title_l1": "高分二"}])
 
-    assert pushed == [{"title": "🔔 雷達重要項目", "body": "• 高分一\n• 高分二", "tag": "radar-vip"}]
-    assert len(bot.sent) == 1 and "雷達重要項目" in bot.sent[0][1]
-    assert line == [("U_owner", [{"type": "text", "text": "🔔 雷達重要項目\n\n• 高分一\n• 高分二"}])]
+    assert pushed == [{"title": "探索的重要內容", "body": "• 高分一\n• 高分二", "tag": "radar-vip"}]
+    assert len(bot.sent) == 1 and "探索的重要內容" in bot.sent[0][1]
+    assert line == [("U_owner", [{"type": "text", "text": "探索的重要內容\n\n• 高分一\n• 高分二"}])]
 
 
 async def test_digest_reaches_line_and_a_failing_recipient_does_not_block_others(outlets):
     _, _, line = outlets
     ranked = [{"title_l1": "Rust 年度回顧"}, {"title_l1": "SQLite 向量檢索"}]
 
-    await scheduler._announce_digest({"success": True, "title": "每日雷達摘要"}, ranked)
+    await scheduler._announce_digest({"success": True, "title": "每日探索精選"}, ranked)
 
     assert [user for user, _ in line] == ["U_owner"]
     text = line[0][1][0]["text"]
-    assert text.startswith("📰 每日雷達摘要") and "• Rust 年度回顧\n• SQLite 向量檢索" in text
+    assert text.startswith("📰 每日探索精選") and "• Rust 年度回顧\n• SQLite 向量檢索" in text
 
 
 async def test_line_stays_silent_until_it_is_set_up(outlets, monkeypatch):
     _, _, line = outlets
     monkeypatch.setattr(settings, "LINE_CHANNEL_ACCESS_TOKEN", "")
 
-    await scheduler._announce_digest({"success": True, "title": "每日雷達摘要"}, [{"title_l1": "a"}])
+    await scheduler._announce_digest({"success": True, "title": "每日探索精選"}, [{"title_l1": "a"}])
     await scheduler._announce_autostar([{"title_l1": "收藏", "auto_starred": True}])
 
     assert line == []

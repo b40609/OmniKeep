@@ -229,6 +229,16 @@ test('every dark theme carries the dark class; only the neutral one carries neut
   assert.equal(theme.themeColor('system', false), '#f4f5f7')
 })
 
+test('an item kept without analysis is told apart, and its summary shown without the tag', () => {
+  assert.equal(wall.isNotAnalysed({ analysis_status: 'pending', origin: 'manual' }), true)
+  assert.equal(wall.isNotAnalysed({ analysis_status: 'pending', origin: 'radar' }), false) // a radar stub waits for the radar
+  assert.equal(wall.isNotAnalysed({ analysis_status: 'done' }), false)
+  assert.equal(wall.isNotAnalysed({}), false)
+  assert.equal(wall.plainSummary(wall.NOT_ANALYSED_TAG + '原文開頭'), '原文開頭')
+  assert.equal(wall.plainSummary('一般摘要'), '一般摘要')
+  assert.equal(wall.plainSummary(null), '')
+})
+
 test('the first-paint script in index.html follows the same rules as startingTheme', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8')
   const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)[1]

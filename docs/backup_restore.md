@@ -6,9 +6,9 @@ OmniKeep 每天自動備份一次，必要時用 `scripts/restore_backup.py` 還
 
 | 有備份 | 沒有備份，請自己另外保存 |
 |---|---|
-| SQLite 資料庫：收藏、分析結果、全文索引、向量、提案、行為紀錄、推播訂閱 | 主金鑰檔 `omnikeep.secret.key`（資料庫旁邊） |
-| 在 App「設定」輸入的值：AI 金鑰、Bot token、推播金鑰等，**加密後**存在資料庫裡 | `.env`：`API_KEY`，以及還留在 `.env` 的舊設定 |
-| HTML 抗腐快照：`SNAPSHOT_DIR/<項目 id>.html` | 平台登入狀態：cookie 檔、CDP 瀏覽器設定檔 |
+| SQLite 資料庫：收藏、分析結果、全文索引、向量、專案監看的建議、行為紀錄、推播訂閱 | 主金鑰檔 `omnikeep.secret.key`（資料庫旁邊） |
+| 在 App「設定」輸入的值：AI 金鑰、機器人權杖、推播金鑰等，**加密後**存在資料庫裡 | `.env`：`API_KEY`，以及還留在 `.env` 的舊設定 |
+| HTML 快照：`SNAPSHOT_DIR/<收藏 id>.html` | 社群平台登入的登入狀態：cookie 檔、CDP 瀏覽器設定檔 |
 
 - 備份裡的金鑰只有加密後的內容，解密要靠主金鑰檔，而主金鑰檔刻意**不放進備份**。請把它和 `.env` 一起放在密碼管理器或另一個安全的地方。
 - 只有備份、沒有主金鑰檔：收藏都還在，只是 App 內輸入的金鑰解不開。設定頁會列出哪些要重新輸入，推播金鑰則要重新產生（各裝置重新開啟推播）。
@@ -17,7 +17,7 @@ OmniKeep 每天自動備份一次，必要時用 `scripts/restore_backup.py` 還
 
 ### 主金鑰
 
-- 位置：預設在資料庫旁的 `omnikeep.secret.key`，「設定 › 系統」會顯示完整路徑。可以用環境變數 `OMNIKEEP_SECRET_KEY_FILE` 指到別處，或用 `OMNIKEEP_SECRET_KEY` 直接提供（這種方式不能用下面的輪替指令）。
+- 位置：預設在資料庫旁的 `omnikeep.secret.key`，「設定 › 進階」的「金鑰加密」會顯示完整路徑。可以用環境變數 `OMNIKEEP_SECRET_KEY_FILE` 指到別處，或用 `OMNIKEEP_SECRET_KEY` 直接提供（這種方式不能用下面的輪替指令）。
 - 第一次在 App 儲存金鑰時自動建立。Linux、macOS 上檔案權限只限擁有者；Windows 沿用所在資料夾的權限。
 - **更換（輪替）**：在伺服器的專案目錄執行
 
@@ -30,7 +30,8 @@ OmniKeep 每天自動備份一次，必要時用 `scripts/restore_backup.py` 還
 
 ## 2. 什麼時候、備份到哪裡
 
-- 每天 `BACKUP_HOUR`（預設 4 點）之後的第一次檢查會自動備份。也可以在監看中心的「備份」分頁按「立即備份」。
+- 每天 `BACKUP_HOUR`（預設 4 點）之後的第一次檢查會自動備份。備份方式、每日備份時間與保留份數在右上角頭像選單 ›「設定」› 資料與備份 ›「備份」設定。
+- 要馬上備份一次：目前「立即備份」按鈕在「專案監看」面板的「備份」分頁。專案監看是預設關閉的實驗功能，要先在 設定 › 實驗功能 開啟才看得到。
 - 一律先在本機 `BACKUP_DIR` 產生 `omnikeep-backup-<時間>.zip`，再依 `BACKUP_SINK` 送出：
 
 | `BACKUP_SINK` | 送去哪裡 | 舊備份怎麼處理 |
@@ -97,7 +98,7 @@ python scripts/restore_backup.py backups/omnikeep-prerestore-20261104-101500-000
 
 確認不需要之後，這些資料夾可以自己刪除，程式不會自動清理。
 
-**換到新機器**：先放好原本的 `.env`，把舊主機的 `omnikeep.secret.key` 複製到新主機資料庫所在的資料夾（還原指令放資料庫的位置，也就是 `DATABASE_PATH` 的資料夾），安裝依賴並建置前端（見 README 與 `docs/tailscale_pwa_deploy.md`），再照上面的步驟還原。啟動後到「設定 › 系統」確認沒有「無法解密」的提示。
+**換到新機器**：先放好原本的 `.env`，把舊主機的 `omnikeep.secret.key` 複製到新主機資料庫所在的資料夾（還原指令放資料庫的位置，也就是 `DATABASE_PATH` 的資料夾），安裝依賴並建置前端（見 README 與 `docs/tailscale_pwa_deploy.md`），再照上面的步驟還原。啟動後到「設定 › 進階」確認沒有「無法解密」的提示。
 
 **Docker**：資料在 `omnikeep_data` volume 的 `/data`。先 `docker compose stop`，再用 `docker compose run --rm omnikeep python scripts/restore_backup.py --latest --yes` 還原；服務名稱以你的 `docker-compose.yml` 為準。
 

@@ -3,7 +3,7 @@
 translate() returns:
   hint             what happened and what to do, in Traditional Chinese
   kind             rate_limit | server | auth | disabled | not_found | quota |
-                   connection | blocked | bad_request | empty | invalid_output | other
+                   connection | blocked | bad_request | empty | invalid_output | no_ai | other
   action_required  True when retrying cannot help and a person must fix it
                    (a disabled key, a suspended account, an empty balance)
   fix_url          where to fix it, when known
@@ -38,7 +38,7 @@ _PATTERNS: Tuple[Tuple[str, str, str, bool, Optional[str]], ...] = (
      "quota", "額度或餘額用完：到服務商後台儲值或升級方案。", True, None),
     (r"quota exceeded|exceeded.*quota", "rate_limit", _FREE_TIER_USED_UP, False, None),
     (r"incorrect api key|invalid api key|invalid token|invalid_api_key|api key not valid|invalid authentication|unauthorized|authentication fails|invalid x-api-key",
-     "auth", "金鑰錯誤：重新貼上金鑰（注意不要多複製到空白或換行），或確認這把金鑰屬於這個服務商。", False, None),
+     "auth", "金鑰錯誤：到「設定 › AI」檢查這條連線的金鑰（注意不要多複製到空白或換行），或確認這把金鑰屬於這個服務商。", False, None),
     (r"model[_ ]not[_ ]found|model .*(does not exist|not found|is not available)|no such model|unknown model|invalid model",
      "not_found", "模型名稱不存在或這把金鑰不能用：按「測試」列出可用的模型再選。", False, None),
     (r"context[_ ]length|maximum context|too many tokens|prompt is too long", "bad_request",
@@ -58,19 +58,19 @@ _PATTERNS: Tuple[Tuple[str, str, str, bool, Optional[str]], ...] = (
 # a person reads the failure, that retry is over.
 _FAILED_FOR_GOOD = {
     "rate_limit": "AI 服務限流（請求太頻繁，或免費額度暫時用完）：過幾分鐘再試一次；"
-                  "常發生的話到「設定 › AI 服務商」把請求間隔調長，或加一條備援連線。",
-    "server": "AI 服務商暫時故障：過幾分鐘再試一次，或到「設定 › AI 服務商」加一條備援連線。",
+                  "常發生的話到「設定 › AI」把請求間隔調長，或加一條備援連線。",
+    "server": "AI 服務商暫時故障：過幾分鐘再試一次，或到「設定 › AI」加一條備援連線。",
     "connection": "連不上 AI 服務（連線失敗或逾時）：確認網路和服務位址，本機的服務要先啟動，再試一次。",
 }
 
 # Exceptions of the AI layer, by where their class lives: the SDKs, and OmniKeep's own
 # (matched by name, so this module stays importable without loading the providers).
 _AI_SDK_PACKAGES = ("openai", "google.genai", "google.api_core")
-_AI_ERROR_NAMES = ("ProviderUnavailableError", "EmptyResponseError", "AnalysisFailedError")
+_AI_ERROR_NAMES = ("ProviderUnavailableError", "EmptyResponseError", "AnalysisFailedError", "NoAIConnectionError")
 _AI_MARK = "_omnikeep_ai_failure"
 
 _BY_STATUS = (
-    (lambda s: s in (401,), "auth", "金鑰無效、已停用，或沒有這項權限：重新貼上金鑰再測試。"),
+    (lambda s: s in (401,), "auth", "金鑰無效、已停用，或沒有這項權限：到「設定 › AI」檢查這條連線的金鑰再測試。"),
     (lambda s: s == 402, "quota", "需要付款或儲值：到服務商後台處理。"),
     (lambda s: s == 403, "auth", "沒有權限：金鑰沒有這個模型或功能的權限，或帳號受限。"),
     (lambda s: s == 404, "not_found", "找不到：API 位址或模型名稱可能有誤，按「測試」確認。"),
@@ -120,6 +120,8 @@ def classify(exc: BaseException) -> Dict[str, Any]:
         info = {"kind": "blocked", "hint": translate(None, "封鎖")["hint"], "action_required": False, "fix_url": None}
     elif name == "EmptyResponseError":
         info = translate(None, "空白內容")
+    elif name == "NoAIConnectionError":  # app.providers.base: nothing was sent, there is no key to fix
+        info = {"kind": "no_ai", "hint": str(exc), "action_required": True, "fix_url": None}
     elif name == "AnalysisFailedError":  # app.schemas.intelligence: its message is the explanation
         info = {"kind": "invalid_output", "hint": str(exc), "action_required": False, "fix_url": None}
     elif status is None and name in ("JSONDecodeError", "ValueError", "KeyError", "TypeError"):

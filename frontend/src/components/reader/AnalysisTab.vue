@@ -1,16 +1,53 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { Link2, Package, ChevronRight, Camera, Sparkles, Network, ExternalLink, ArrowRight, List, Hash, FileText, CornerUpLeft } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
+import { Link2, Package, ChevronRight, Camera, Sparkles, Network, ExternalLink, ArrowRight, List, Hash, FileText, CornerUpLeft, Loader2 } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
 import ItemCover from '@/components/items/ItemCover.vue'
-import type { Item } from '@/lib/api'
+import { analyzeItem, getServiceStatus, type Item } from '@/lib/api'
+import { isNotAnalysed, plainSummary } from '@/lib/wall'
+import { useItemsStore } from '@/stores/items'
 import { cleanHost, formatRelativeTime, estimateReadTime, sourceMeta } from '@/lib/format'
 import { renderMarkdown, useCodeCopy, extractToc } from '@/lib/markdown'
 import { useUiStore } from '@/stores/ui'
 import { useMutations } from '@/composables/useMutations'
 
 const ui = useUiStore()
+const itemsStore = useItemsStore()
 const { openSnapshot } = useMutations()
+
+// An item kept while no AI was connected: say so, and offer the next step.
+const notAnalysed = computed(() => !!ui.activeItem && isNotAnalysed(ui.activeItem))
+/** null until the server has said whether an AI connection exists. */
+const aiConnected = ref<boolean | null>(null)
+const analysing = ref(false)
+
+async function checkAi() {
+  try {
+    aiConnected.value = !(await getServiceStatus()).needs_setup
+  } catch {
+    aiConnected.value = null
+  }
+}
+// Asked when such an item is opened, and again after settings are saved (a connection was added).
+watch(() => [notAnalysed.value, ui.settingsVersion] as const, ([waiting]) => { if (waiting) void checkAi() }, { immediate: true })
+
+async function analyseNow() {
+  const item = ui.activeItem
+  if (!item || analysing.value) return
+  analysing.value = true
+  try {
+    const { item: analysed } = await analyzeItem(item.id)
+    if (ui.activeItem?.id === item.id) ui.activeItem = { ...ui.activeItem, ...analysed }
+    toast.success('分析完成')
+    void itemsStore.refreshAll()
+  } catch (e) {
+    toast.error('這次沒有分析成功', { description: e instanceof Error ? e.message : String(e) })
+    void checkAi()
+  } finally {
+    analysing.value = false
+  }
+}
 const contentRef = ref<HTMLElement | null>(null)
 let detachCodeCopy: (() => void) | null = null
 
@@ -116,9 +153,41 @@ function openItem(id: number | string) {
     </section>
 
     <!-- L1 highlight -->
-    <section class="border-t border-hairline pt-6" aria-label="摘要">
-      <h2 class="mb-2 text-base font-semibold text-foreground">摘要</h2>
-      <p class="text-base leading-relaxed text-foreground">{{ ui.activeItem.summary_l1 }}</p>
+    <!-- Kept without analysis: what that means, and the one thing to do next -->
+    <section v-if="notAnalysed" class="border-t border-hairline pt-6" aria-label="尚未分析">
+      <h2 class="mb-2 text-base font-semibold text-foreground">尚未分析</h2>
+      <p class="text-sm leading-relaxed text-muted-foreground">
+        <template v-if="aiConnected">這則收藏已經存下標題、網址和原文，還沒有經過 AI 分析。會在背景自動補上，也可以現在就分析。</template>
+        <template v-else>這則收藏已經存下標題、網址和原文，搜尋找得到。接上 AI 之後，會自動補上摘要、分類和重點。</template>
+      </p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button
+          v-if="aiConnected"
+          type="button"
+          class="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
+          :disabled="analysing"
+          @click="analyseNow"
+        >
+          <Loader2 v-if="analysing" class="size-4 animate-spin" aria-hidden="true" />
+          {{ analysing ? '分析中…' : '現在分析' }}
+        </button>
+        <button
+          v-else
+          type="button"
+          class="inline-flex min-h-10 cursor-pointer items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary-hover"
+          @click="ui.openSettings('ai')"
+        >接上 AI</button>
+        <button
+          type="button"
+          class="inline-flex min-h-10 cursor-pointer items-center rounded-lg px-3 text-sm font-medium text-foreground hover:bg-accent"
+          @click="ui.detailTab = 'reader'"
+        >看原文</button>
+      </div>
+    </section>
+
+    <section v-if="plainSummary(ui.activeItem.summary_l1)" class="border-t border-hairline pt-6" :aria-label="notAnalysed ? '原文開頭' : '摘要'">
+      <h2 class="mb-2 text-base font-semibold text-foreground">{{ notAnalysed ? '原文開頭' : '摘要' }}</h2>
+      <p class="text-base leading-relaxed text-foreground">{{ plainSummary(ui.activeItem.summary_l1) }}</p>
       <div v-if="ui.activeItem.tech_tags?.length" class="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
         <span
           v-for="tag in ui.activeItem.tech_tags.slice(0, 2)"
@@ -224,7 +293,7 @@ function openItem(id: number | string) {
       </nav>
       <div v-if="ui.activeItem.deep_analysis" ref="contentRef" class="prose-reader text-base" v-html="renderMarkdown(ui.activeItem.deep_analysis)" />
       <div v-else class="py-8 text-center text-sm text-muted-foreground">
-        這個項目還沒有重點分析，可以改看「原文」。
+        這則收藏還沒有重點分析，可以改看「原文」。
       </div>
     </section>
 

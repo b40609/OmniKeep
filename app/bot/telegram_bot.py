@@ -128,7 +128,7 @@ async def notify_task_failed(chat_id: int, message_id: int, error_text: str):
         except Exception:
             pass
 
-        err_msg = f"⚠️ <b>情報處理失敗</b>\n\n原因: <code>{html.escape(error_text)}</code>"
+        err_msg = f"⚠️ <b>這個連結沒有收藏成功</b>\n\n原因：<code>{html.escape(error_text)}</code>"
         kb = build_failure_keyboard(task_id=task_id, message_id=message_id)
         result = await bot.edit_message_text(chat_id, message_id, err_msg, reply_markup=kb)
         if isinstance(result, dict) and result.get("ok") is False:
@@ -211,7 +211,7 @@ def build_deck_card_html(item: Dict[str, Any], remaining: int) -> str:
         shown = "\n".join(f"· {html.escape(r)}" for r in reasons[:3])
         reason_block = f"\n<b>為什麼給你看：</b>\n{shown}\n"
     return (
-        f"<b>雷達候選情報</b> <i>（剩 {remaining} 張）</i>\n\n"
+        f"<b>探索找到的內容</b> <i>（還有 {remaining} 則）</i>\n\n"
         f"<b>{title}</b>\n"
         f"{summary}\n"
         f"{reason_block}\n"
@@ -327,7 +327,7 @@ class TelegramBot:
     def __init__(self, token: Optional[str] = None):
         self.token = token or settings.TELEGRAM_BOT_TOKEN
         if not self.token:
-            raise ValueError("TELEGRAM_BOT_TOKEN 未配置，請於 .env 填入 Bot Token。")
+            raise ValueError("還沒有設定機器人權杖：到 OmniKeep 的「設定 › 收錄管道」貼上（或在 .env 設定 TELEGRAM_BOT_TOKEN）。")
         self.api_url = f"https://api.telegram.org/bot{self.token}"
         self.running = False
         self._client: Optional[httpx.AsyncClient] = None
@@ -365,10 +365,10 @@ class TelegramBot:
         """Bind the sender of a one-time pairing link (/start <code>) as an owner."""
         chat_id = chat.get("id")
         if chat.get("type") != "private" or not user_id:
-            await self.send_message(chat_id, "⛔ 只能在與 Bot 的私人對話中配對。")
+            await self.send_message(chat_id, "⛔ 只能在和機器人的私人對話裡配對。")
             return
         if not redeem_pairing_code(code):
-            await self.send_message(chat_id, "⛔ <b>配對連結無效或已過期</b>。請在 OmniKeep 網頁的「設定 → Telegram」重新產生。")
+            await self.send_message(chat_id, "⛔ <b>配對連結無效或已過期</b>。請在 OmniKeep 網頁的「設定 › 收錄管道」重新產生。")
             return
         earlier_owners = [owner for owner in settings.telegram_allowed_ids if owner != user_id]
         persisted = bind_telegram_user(user_id)
@@ -382,7 +382,7 @@ class TelegramBot:
             await self.send_message(
                 owner,
                 f"🔐 Telegram 帳號 <code>{user_id}</code> 剛透過配對連結取得 OmniKeep 存取權。"
-                f"如果不是你操作的，請到 OmniKeep 網頁的「設定 → Telegram」移除它。",
+                f"如果不是你操作的，請到 OmniKeep 網頁的「設定 › 收錄管道」移除它。",
             )
 
     async def set_message_reaction(self, chat_id: int, message_id: int, emoji: str = "") -> bool:
@@ -463,7 +463,7 @@ class TelegramBot:
         })
 
     def build_item_card_html(self, item: Dict[str, Any]) -> str:
-        title = html.escape(item.get("title_l1", "未命名情報"))
+        title = html.escape(item.get("title_l1", "未命名的收藏"))
         category = html.escape(item.get("category_name", "INBOX")).upper()
         source = html.escape(item.get("source_type", "WEB")).upper()
         author = html.escape((item.get("author") or "").strip())
@@ -583,6 +583,11 @@ class TelegramBot:
             except Exception as e:
                 logger.debug(f"[Telegram Card] Error getting sub-entities: {e}")
 
+        # Kept while no AI was connected (app/pipeline.py NOT_ANALYSED): say what happens next.
+        pending_section = ""
+        if item.get("analysis_status") == "pending" and item.get("origin") != "radar":
+            pending_section = "\n\n已收藏，還沒有經過 AI 分析。在 OmniKeep 的「設定 › AI」接上 AI 之後會自動補上。"
+
         card = (
             f"<b>{title}</b>\n"
             f"{meta_line}\n\n"
@@ -590,6 +595,7 @@ class TelegramBot:
             f"{note_section}"
             f"{tools_section}"
             f"{tags_section}"
+            f"{pending_section}"
         )
         return card
 
@@ -599,7 +605,7 @@ class TelegramBot:
         is_read = item.get("is_read", 0)
 
         star_btn = {
-            "text": "★ 已收藏" if is_starred else "☆ 收藏",
+            "text": "★ 已加星" if is_starred else "☆ 加星",
             "callback_data": f"star:{item_id}"
         }
         archive_btn = {
@@ -684,8 +690,8 @@ class TelegramBot:
         if not self.is_authorized(user_id):
             if not settings.telegram_allowed_ids:
                 msg = (
-                    f"⚠️ <b>OmniKeep Bot 尚未綁定擁有者</b>\n\n"
-                    f"請在 OmniKeep 網頁開啟「設定 → Telegram」，按「產生 Telegram 配對連結」，再用這個帳號開啟連結。\n"
+                    f"⚠️ <b>這個機器人還沒有綁定擁有者</b>\n\n"
+                    f"請在 OmniKeep 網頁開啟「設定 › 收錄管道」，在 Telegram 區塊按「產生配對連結」，再用這個帳號開啟連結並按「開始」。\n"
                     f"你的 User ID 是 <code>{user_id}</code>。"
                 )
             else:
@@ -696,18 +702,18 @@ class TelegramBot:
         # Commands
         if text.startswith("/start") or text.startswith("/help"):
             help_text = (
-                f"<b>OmniKeep 情報工作台</b>\n\n"
+                f"<b>OmniKeep</b>\n\n"
                 f"已成功驗證！你的 User ID: <code>{user_id}</code>\n\n"
                 f"<b>使用方式：</b>\n"
-                f"• <b>隨手轉發/貼上</b>：直接發送任何網址、YouTube 或短影音連結，後端佇列即時收件並非同步解析。\n"
+                f"• <b>丟連結</b>：把網址、YouTube 或短影音連結傳過來，就會收藏並在讀完後回覆摘要。\n"
                 f"• <b>指令支援：</b>\n"
-                f"  /deck - 🃏 雷達滑卡（👍/👎/⭐ 教它你的品味，稍後）\n"
-                f"  /proposals - 待決提案審閱（核准 / 忽略）\n"
+                f"  /deck - 逐則篩選探索找到的內容（實驗功能）\n"
+                f"  /proposals - 審閱專案監看的建議（實驗功能）\n"
                 f"  /mode [heartbeat|quiet] - 切換即時心跳或安靜模式\n"
-                f"  /stats - 庫存狀態統計\n"
-                f"  /profile [內容] - 檢視或更新自由文字興趣設定檔（織入 LLM Prompt）\n"
-                f"  /inbox - 檢視最近 5 則未讀情報\n"
-                f"  /search [關鍵字] - 快速檢索庫存"
+                f"  /stats - 收藏數量\n"
+                f"  /profile [內容] - 查看或更新興趣設定檔（分析時會參考）\n"
+                f"  /inbox - 最近 5 則還沒封存的收藏\n"
+                f"  /search [關鍵字] - 搜尋收藏"
             )
             await self.send_message(chat_id, help_text)
             return
@@ -787,9 +793,9 @@ class TelegramBot:
                 return
             items = get_items(query=query, limit=5)
             if not items:
-                await self.send_message(chat_id, f"找不到與「{html.escape(query)}」相關的情報。")
+                await self.send_message(chat_id, f"找不到和「{html.escape(query)}」有關的收藏。")
                 return
-            await self.send_message(chat_id, f"找到 {len(items)} 筆與「{html.escape(query)}」相關的情報：")
+            await self.send_message(chat_id, f"找到 {len(items)} 則和「{html.escape(query)}」有關的收藏：")
             for item in items:
                 card = self.build_item_card_html(item)
                 kb = self.build_item_keyboard(item)
@@ -799,7 +805,7 @@ class TelegramBot:
         if text.startswith("/deck"):
             deck = get_swipe_deck(limit=50)
             if not deck:
-                await self.send_message(chat_id, "雷達卡片已審閱完畢。")
+                await self.send_message(chat_id, "探索找到的內容都看完了。")
                 return
             card = build_deck_card_html(deck[0], len(deck))
             await self.send_message(chat_id, card, reply_markup=build_deck_keyboard(deck[0]["id"]))
@@ -1016,7 +1022,7 @@ class TelegramBot:
                 await self.send_api("editMessageText", {
                     "chat_id": chat_id,
                     "message_id": message_id,
-                    "text": "雷達卡片已審閱完畢。",
+                    "text": "探索找到的內容都看完了。",
                     "parse_mode": "HTML",
                     "reply_markup": {"inline_keyboard": []},
                 })
@@ -1258,7 +1264,7 @@ def run_bot():
     if not settings.TELEGRAM_BOT_TOKEN:
         print("=" * 60)
         print("OmniKeep Telegram Bot")
-        print("請先在 OmniKeep 網頁「設定 › Telegram」填入 Bot Token（或在 .env 設定 TELEGRAM_BOT_TOKEN）。")
+        print("請先在 OmniKeep 網頁的「設定 › 收錄管道」貼上機器人權杖（或在 .env 設定 TELEGRAM_BOT_TOKEN）。")
         print("教學請參閱 docs/telegram_bot.md")
         print("=" * 60)
         return

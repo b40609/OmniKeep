@@ -348,15 +348,15 @@ async def _check_gemini(values: Dict[str, Any]) -> Dict[str, Any]:
 async def _check_telegram(values: Dict[str, Any]) -> Dict[str, Any]:
     token = _candidate(values, "TELEGRAM_BOT_TOKEN")
     if not token:
-        return _fail(None, message="還沒有設定 Bot Token")
+        return _fail(None, message="還沒有設定機器人權杖")
     resp, failure = await _get(f"https://api.telegram.org/bot{token}/getMe", {}, [token])
     if failure:
         return failure
     if resp.status_code != 200:
         return _fail(resp.status_code, resp.text[:300], [token],
-                     message="Bot Token 無效" if resp.status_code in (401, 404) else "")
+                     message="機器人權杖無效" if resp.status_code in (401, 404) else "")
     username = (resp.json().get("result") or {}).get("username", "")
-    return _ok(f"Bot 正常：@{username}")
+    return _ok(f"機器人正常：@{username}")
 
 
 async def _check_line(values: Dict[str, Any]) -> Dict[str, Any]:
@@ -418,7 +418,7 @@ async def _check_ollama(values: Dict[str, Any]) -> Dict[str, Any]:
 async def _check_brain(values: Dict[str, Any]) -> Dict[str, Any]:
     provider = _candidate(values, "BRAIN_PROVIDER")
     if provider not in ("ollama", "strata"):
-        return _ok("Ask Brain 直接使用主要服務商，請用「AI 服務商」頁的測試")
+        return _ok("提問直接使用分析的 AI 連線，請到「設定 › AI」測試那條連線")
     base_url = str(_candidate(values, "BRAIN_BASE_URL")).rstrip("/")
     model = _candidate(values, "BRAIN_MODEL")
     try:

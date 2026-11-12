@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { FileText, Loader2, Paperclip, X } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
+import { useMediaQuery } from '@vueuse/core'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import Select from '@/components/ui/select/Select.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
@@ -36,6 +37,8 @@ const error = ref('')
 const progress = ref('')
 const submitting = ref(false)
 const dragDepth = ref(0)
+/** A phone cannot drag a file in, so the box does not suggest it there. */
+const canDrag = useMediaQuery('(min-width: 640px)')
 
 /** What the text is on its own, before either switch: it decides which switch is offered. */
 const natural = computed(() => planAdd(text.value))
@@ -73,6 +76,9 @@ watch(() => natural.value.kind, () => {
 function close() {
   ui.showAddModal = false
 }
+
+/** Shown when the server kept the item without analysis because no AI is connected. */
+const NOT_ANALYSED_HINT = '還沒有接上 AI，先存下原文。接上之後會自動補分析。'
 
 function reason(e: unknown): string {
   return explainFailure((e as Error)?.message)
@@ -115,7 +121,8 @@ async function saveNote(content: string) {
   }
   text.value = ''
   close()
-  toast.success('筆記已儲存')
+  if (item?.analysis_status === 'pending') toast.success('筆記已儲存，尚未分析', { description: NOT_ANALYSED_HINT })
+  else toast.success('筆記已儲存')
   await itemsStore.refreshAll()
   if (item) ui.activeItem = item
 }
@@ -142,6 +149,7 @@ async function saveLinks(urls: string[]) {
     text.value = ''
     close()
     if (queued) toast.success(`已排入 ${saved} 個連結`, { description: '讀完後會出現在收件匣。' })
+    else if (item?.analysis_status === 'pending') toast.success('已收藏，尚未分析', { description: NOT_ANALYSED_HINT })
     else toast.success('已收藏', { description: item?.title_l1?.slice(0, 70) })
     if (item) ui.activeItem = item
     return
@@ -229,7 +237,7 @@ function onKeydown(event: KeyboardEvent) {
           aria-label="要新增的內容"
           :aria-invalid="!!error"
           aria-describedby="add-outcome add-error"
-          placeholder="貼上連結、寫筆記，或把檔案拖進來"
+          :placeholder="canDrag ? '貼上連結、寫筆記，或把檔案拖進來' : '貼上連結或寫筆記'"
           :disabled="busy"
           @input="error = ''"
           @keydown="onKeydown"

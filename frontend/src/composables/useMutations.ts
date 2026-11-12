@@ -141,13 +141,15 @@ export function useMutations() {
   /** Quick ingest from the omnibox. */
   async function quickIngest(content: string, page: Pick<api.IngestOptions, 'pageTitle' | 'pageDescription'> = {}): Promise<boolean> {
     ui.isIngesting = true
-    const t = toast.loading('正在收錄並整理摘要…')
+    const t = toast.loading('正在收錄…')
     try {
       const data = await api.ingest(content, page)
       if (data.success) {
-        toast.success('已成功收錄', {
+        // No AI connected: the link is kept with its text, and analysed once one is.
+        const kept = data.item?.analysis_status === 'pending'
+        toast.success(kept ? '已收藏，尚未分析' : '已成功收錄', {
           id: t,
-          description: data.item?.title_l1?.slice(0, 70),
+          description: kept ? '還沒有接上 AI，先存下原文。接上之後會自動補分析。' : data.item?.title_l1?.slice(0, 70),
           action: data.item
             ? {
                 label: '查看',

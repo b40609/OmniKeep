@@ -152,7 +152,7 @@ async def test_payload_is_encrypted_for_the_browser_and_signed_with_vapid(vapid,
     _subscribe(browser)
     seen = _mock_push_service(monkeypatch)
 
-    result = await push.send_push("📰 晨間戰報", "• 第一則\n• 第二則", url="/", tag="radar-digest")
+    result = await push.send_push("📰 晨間精選", "• 第一則\n• 第二則", url="/", tag="radar-digest")
 
     assert result == {"sent": 1, "removed": 0, "failed": 0}
     request = seen[0]
@@ -161,7 +161,7 @@ async def test_payload_is_encrypted_for_the_browser_and_signed_with_vapid(vapid,
     assert request.headers["ttl"] == str(24 * 3600)
     assert request.headers["topic"] == "radar-digest"
     assert browser.decrypt(request.content) == {
-        "title": "📰 晨間戰報", "body": "• 第一則\n• 第二則", "url": "/", "tag": "radar-digest"}
+        "title": "📰 晨間精選", "body": "• 第一則\n• 第二則", "url": "/", "tag": "radar-digest"}
 
     # RFC 8292: "vapid t=<ES256 JWT>,k=<server public key>"
     scheme, params = request.headers["authorization"].split(" ", 1)
@@ -276,9 +276,9 @@ def radar_outlets(monkeypatch):
 async def test_digest_goes_to_telegram_and_web(radar_outlets):
     scheduler, pushed, bot = radar_outlets
     ranked = [{"title_l1": "Rust 年度回顧"}, {"title_l1": "SQLite 向量檢索"}]
-    await scheduler._announce_digest({"success": True, "title": "晨間雷達戰報"}, ranked)
-    assert len(bot.sent) == 1 and "晨間雷達戰報" in bot.sent[0][1]
-    assert pushed == [{"title": "📰 晨間雷達戰報", "body": "• Rust 年度回顧\n• SQLite 向量檢索",
+    await scheduler._announce_digest({"success": True, "title": "晨間探索精選"}, ranked)
+    assert len(bot.sent) == 1 and "晨間探索精選" in bot.sent[0][1]
+    assert pushed == [{"title": "📰 晨間探索精選", "body": "• Rust 年度回顧\n• SQLite 向量檢索",
                        "tag": "radar-digest"}]
 
 
@@ -293,7 +293,7 @@ async def test_autostar_announces_only_starred_items(radar_outlets):
     items = [{"title_l1": "收藏一", "auto_starred": True}, {"title_l1": "沒收藏"},
              {"title_l1": "收藏二", "auto_starred": True}]
     await scheduler._announce_autostar(items)
-    assert pushed == [{"title": "🤖 雷達自動收藏", "body": "⭐ 收藏一\n⭐ 收藏二", "tag": "radar-autostar"}]
+    assert pushed == [{"title": "探索自動加星", "body": "⭐ 收藏一\n⭐ 收藏二", "tag": "radar-autostar"}]
     assert len(bot.sent) == 1
     await scheduler._announce_autostar([{"title_l1": "沒收藏"}])
     assert len(pushed) == 1
@@ -302,7 +302,7 @@ async def test_autostar_announces_only_starred_items(radar_outlets):
 async def test_web_push_works_without_telegram(radar_outlets, monkeypatch):
     scheduler, pushed, _ = radar_outlets
     monkeypatch.setattr("app.bot.telegram_bot.get_telegram_bot", lambda: None)
-    await scheduler._announce_digest({"success": True, "title": "戰報"}, [{"title_l1": "a"}])
+    await scheduler._announce_digest({"success": True, "title": "精選"}, [{"title_l1": "a"}])
     assert len(pushed) == 1
 
 

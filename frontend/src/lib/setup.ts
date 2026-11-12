@@ -19,6 +19,20 @@ export interface SetupCard {
   key_mode: KeyMode
   key_url?: string
   editable_url?: boolean
+  /** usable with no account at all */
+  no_signup?: boolean
+  /** a limited-time free offer that is over */
+  ended?: boolean
+}
+
+/**
+ * The cards the first-run guide lists before "顯示全部": the ones a newcomer can start with
+ * right away, judged from the card's own fields only. Either the service needs no account
+ * (`no_signup`) or the card takes no key at all (a local Ollama). An offer that has ended is
+ * not one of them.
+ */
+export function isStarterCard(card: SetupCard): boolean {
+  return !card.ended && (card.no_signup === true || card.key_mode === 'none')
 }
 
 export interface SetupForm {

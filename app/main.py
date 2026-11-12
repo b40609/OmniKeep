@@ -57,7 +57,7 @@ async def _service_lifespan(app: FastAPI):
     if settings.LOCAL_AUTO_LOGIN:
         # On by default since the sign-in switch moved to 設定 › 系統, so this is a note, not a warning.
         logger.info(
-            "LOCAL_AUTO_LOGIN is on (設定 › 系統 › 這台電腦免登入): /api/session/local-auth hands the "
+            "LOCAL_AUTO_LOGIN is on (設定 › 進階 › 這台電腦免登入): /api/session/local-auth hands the "
             "API key to loopback clients. Requests with reverse-proxy headers are refused; turn it "
             "off if another process on this machine forwards traffic to this port."
         )
@@ -122,7 +122,7 @@ async def _service_lifespan(app: FastAPI):
 
 app = FastAPI(
     title="OmniKeep",
-    description="Self-hosted Multimodal Information Radar & Second Brain",
+    description="Self-hosted: send a link, have it read, find it later",
     version=__version__,
     lifespan=lifespan
 )

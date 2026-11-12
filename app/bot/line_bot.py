@@ -98,14 +98,14 @@ async def notify_line_failed(user_id: str, error_text: str):
     if not settings.LINE_CHANNEL_ACCESS_TOKEN or not user_id:
         return
     try:
-        err_msg = f"❌ 情報提煉失敗：{error_text}"
+        err_msg = f"這個連結沒有收藏成功：{error_text}"
         await push_line_messages(user_id, [{"type": "text", "text": err_msg}])
     except Exception as e:
         logger.warning(f"[LINE Failed] Failed to push error to {user_id}: {e}")
 
 def create_item_flex_bubble(item: Dict[str, Any]) -> Dict[str, Any]:
     """Generates an industrial-grade dark theme Flex Message bubble for LINE."""
-    title = item.get("title_l1", "未命名情報")
+    title = item.get("title_l1", "未命名的收藏")
     category = item.get("category_name", "Inbox")
     source = item.get("source_type", "web").upper()
     summary = item.get("summary_l1", "")
@@ -115,7 +115,7 @@ def create_item_flex_bubble(item: Dict[str, Any]) -> Dict[str, Any]:
     is_read = item.get("is_read", 0)
 
     tags = item.get("tech_tags", [])
-    tag_str = " ".join([f"#{t}" for t in tags[:4]]) if tags else "#情報"
+    tag_str = " ".join([f"#{t}" for t in tags[:4]]) if tags else "#收藏"
 
     bubble = {
         "type": "bubble",
@@ -264,9 +264,9 @@ async def process_line_event(event: Dict[str, Any]):
         allowed = settings.line_allowed_ids
         if not allowed:
             msg = (
-                f"⚠️ OmniKeep LINE Bot 尚未綁定擁有者\n\n"
+                f"⚠️ 這個 LINE 官方帳號還沒有綁定擁有者\n\n"
                 f"你的 LINE User ID 是：\n{user_id}\n\n"
-                f"請將此 ID 填入 .env 的 LINE_ALLOWED_USER_IDS 即可完成綁定！"
+                f"把這個 ID 加到 OmniKeep 網頁「設定 › 收錄管道」LINE 區塊的允許名單，就完成綁定。"
             )
         else:
             msg = f"⛔ 未授權的 LINE 帳號。\n你的 ID: {user_id}"
@@ -291,7 +291,7 @@ async def process_line_event(event: Dict[str, Any]):
         if action == "star":
             next_star = 0 if item.get("is_starred") else 1
             update_item_field(item_id, {"is_starred": next_star})
-            msg_text = "已標記為星標 ⭐" if next_star else "已取消星標"
+            msg_text = "已加星" if next_star else "已取消加星"
             if reply_token:
                 await reply_line_messages(reply_token, [{"type": "text", "text": f"[{item.get('title_l1')[:20]}] {msg_text}"}])
 
@@ -320,7 +320,7 @@ async def process_line_event(event: Dict[str, Any]):
                 f"OmniKeep LINE 助手\n\n"
                 f"綁定身分: {user_id}\n\n"
                 f"• 隨手存入：直接傳送任何網址、YouTube 或技術段落，AI 會在幾秒內提煉出核心重點與深度架構解析。\n"
-                f"• 輸入「庫存」或 /stats：查詢當前大腦未讀數\n"
+                f"• 輸入「庫存」或 /stats：查看收藏數量\n"
                 f"• 輸入「待讀」：列出最近待讀清單"
             )
             if reply_token:
@@ -354,5 +354,5 @@ async def process_line_event(event: Dict[str, Any]):
         # Hoarder Mode Ingestion: Immediate receipt via replyToken (<50ms) + async background execution via push
         await start_line_loading(user_id, seconds=30)
         if reply_token:
-            await reply_line_messages(reply_token, [{"type": "text", "text": "[Queued] 已收件排隊中，正在進行情報提煉..."}])
+            await reply_line_messages(reply_token, [{"type": "text", "text": "已收到，正在讀取並分析…"}])
         create_ingest_task(url=text, source="line", chat_id=user_id, message_id=None)

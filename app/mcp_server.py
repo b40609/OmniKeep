@@ -57,7 +57,7 @@ async def search_brain(
         limit=min(limit, 20)
     )
     if not items:
-        return f"在 OmniKeep 大腦中未找到與「{query}」相關的情報項目。"
+        return f"OmniKeep 裡找不到和「{query}」有關的收藏。"
 
     results = []
     for item in items:
@@ -72,8 +72,8 @@ async def search_brain(
             f"- **白話核心**: {item.get('summary_l1')}"
         )
 
-    output = f"找到 {len(results)} 筆相關情報：\n\n" + "\n\n".join(results)
-    output += "\n\n---\n💡 提示：使用 `get_item_architecture(item_id)` 取得 L2 架構規格；使用 `writeback_insight(...)` 可將對話結論寫回大腦。"
+    output = f"找到 {len(results)} 則相關的收藏：\n\n" + "\n\n".join(results)
+    output += "\n\n---\n💡 提示：使用 `get_item_architecture(item_id)` 取得完整的重點分析；使用 `writeback_insight(...)` 可將對話結論寫回大腦。"
     return output
 
 
@@ -114,7 +114,7 @@ async def hybrid_search_brain(
     notice_line = f"\n\n注意：{notice}" if notice else ""
 
     if not filtered:
-        return f"在 OmniKeep 大腦中未找到與「{query}」相關的語意情報項目。{notice_line}"
+        return f"OmniKeep 裡找不到和「{query}」語意相近的收藏。{notice_line}"
 
     results = []
     for item in filtered:
@@ -143,8 +143,8 @@ async def hybrid_search_brain(
         )
 
     heading = "【關鍵字檢索】" if notice else "【混合檢索 (FTS5 + 向量)】"
-    output = f"{heading}找到 {len(results)} 筆相關情報：\n\n" + "\n\n".join(results) + notice_line
-    output += "\n\n---\n💡 提示：使用 `get_item_architecture(item_id)` 取得 L2 架構規格；使用 `read_sql_query(...)` 進行結構化唯讀查詢。"
+    output = f"{heading}找到 {len(results)} 則相關的收藏：\n\n" + "\n\n".join(results) + notice_line
+    output += "\n\n---\n💡 提示：使用 `get_item_architecture(item_id)` 取得完整的重點分析；使用 `read_sql_query(...)` 進行結構化唯讀查詢。"
     return output
 
 
@@ -158,11 +158,11 @@ async def get_item_architecture(item_id: str) -> str:
     """
     item = get_item_by_id(item_id)
     if not item:
-        return f"錯誤：找不到 ID 為「{item_id}」的情報項目。"
+        return f"錯誤：找不到 ID 為「{item_id}」的收藏。"
 
     tags = ", ".join(item.get("tech_tags", []))
     status = "已封存" if item.get("is_read") else "待讀 (Inbox)"
-    star = "⭐ 已星標" if item.get("is_starred") else "未星標"
+    star = "已加星" if item.get("is_starred") else "未加星"
 
     output = [
         f"# {item.get('title_l1')}",
@@ -187,7 +187,7 @@ async def get_item_raw(item_id: str, max_chars: int = 2500) -> str:
     """
     item = get_item_by_id(item_id)
     if not item:
-        return f"錯誤：找不到 ID 為「{item_id}」的情報項目。"
+        return f"錯誤：找不到 ID 為「{item_id}」的收藏。"
 
     raw = item.get("content_raw", "")
     if not raw:
@@ -288,7 +288,7 @@ async def writeback_insight(
             "is_read": 0
         }
         saved_id = save_item(item_data)
-        mode = "✅ 成功將技術決策回寫至 OmniKeep 第二大腦！"
+        mode = "✅ 已把這次的結論存進 OmniKeep。"
 
     try:
         if not existing:
@@ -338,9 +338,17 @@ async def save_to_brain(
     from app.pipeline import run_pipeline
     try:
         item = await run_pipeline(clean_input, manual_category=category, origin="agent")
+        if item.get("analysis_status") == "pending":
+            # No AI is connected: the content is stored, nothing was analysed.
+            return (
+                f"✅ 已存入 OmniKeep（尚未分析）。\n"
+                f"- **ID**: {item.get('id')}\n"
+                f"- **標題**: {item.get('title_l1')}\n"
+                f"- 還沒有接上 AI，所以只存了標題、網址與原文。到「設定 › AI」接上 AI 連線後會自動補分析。"
+            )
         tags = ", ".join(item.get("tech_tags", []))
         return (
-            f"✅ 成功存入 OmniKeep 第二大腦！\n"
+            f"✅ 已存入 OmniKeep。\n"
             f"- **ID**: {item.get('id')}\n"
             f"- **標題**: {item.get('title_l1')}\n"
             f"- **自動分類**: {item.get('category_name')}\n"
@@ -387,9 +395,9 @@ async def list_recent_items(
     )
 
     if not items:
-        return f"在「{triage_status}」狀態下沒有找到任何情報項目。"
+        return f"「{triage_status}」裡沒有收藏。"
 
-    lines = [f"### OmniKeep 最近情報清單 ({triage_status})："]
+    lines = [f"### OmniKeep 最近的收藏（{triage_status}）："]
     for i, item in enumerate(items, 1):
         star = " ⭐" if item.get("is_starred") else ""
         tags = " ".join([f"#{t}" for t in item.get("tech_tags", [])[:3]])
@@ -429,7 +437,7 @@ async def update_item_status(
     if is_read is not None:
         status_str.append("已封存" if is_read else "設為待讀 Inbox")
     if is_starred is not None:
-        status_str.append("已加星標" if is_starred else "已取消星標")
+        status_str.append("已加星" if is_starred else "已取消加星")
 
     return f"✅ 項目 [{item_id}] 狀態已更新為：{', '.join(status_str)}"
 
@@ -444,7 +452,7 @@ async def ask_brain_synthesis(topic: str, top_k: int = 5) -> str:
     """
     items = get_items(query=topic, limit=min(top_k, 10))
     if not items:
-        return f"大腦中無與「{topic}」相關的庫存項目，無法生成跨篇綜述。"
+        return f"OmniKeep 裡沒有和「{topic}」有關的收藏，沒辦法寫跨篇綜述。"
 
     context_blocks = []
     for item in items:
@@ -476,7 +484,7 @@ async def ask_brain_synthesis(topic: str, top_k: int = 5) -> str:
 
     try:
         report = await primary.generate_text(prompt, system_prompt=system_prompt)
-        return f"## 🧠 OmniKeep 第二大腦跨篇情報綜述：{topic}\n\n{report}"
+        return f"## OmniKeep 跨篇綜述：{topic}\n\n{report}"
     except Exception as e:
         return f"跨篇合成失敗：{str(e)}"
 

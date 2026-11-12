@@ -1,6 +1,6 @@
-# 🔌 OmniKeep MCP 整合指南
+# OmniKeep MCP 整合指南
 
-外部的 coding agent（Claude Code、Codex、Antigravity 等）可以透過 Model Context Protocol（MCP）查詢、寫入 OmniKeep。
+這是什麼：讓外部的 coding agent（Claude Code、Codex、Antigravity 等）透過 Model Context Protocol（MCP）查詢你的收藏、把結論寫回 OmniKeep。不用 agent 的話不需要看這份文件。
 
 **一般使用者不用手動設定。** 安裝腳本（`scripts/install.ps1`、`scripts/install.sh`）最後會執行 `scripts/register_agents.py`，把 stdio MCP 與 `omnikeep-setup` Skill 註冊到這台電腦的 Claude Code、Codex、Antigravity。裝好後開一個新的 agent session 就能用。
 
@@ -89,9 +89,9 @@ claude mcp add --transport http omnikeep --scope user https://<主機名>.<tailn
 
 ---
 
-## 🛠️ 工具清單（25 個）
+## 工具清單（25 個）
 
-以 `app/mcp_server.py` 裡的 `@mcp.tool()` 為準。
+以 `app/mcp_server.py` 裡的 `@mcp.tool()` 為準。工具名稱與參數是程式識別字，維持原文（例如 `search_brain`、`omnikeep_run_radar`）；名稱裡的 brain 指你的收藏，radar 指探索，proposal 指專案監看的建議。
 
 ### 查詢（8 個）
 
@@ -99,28 +99,30 @@ claude mcp add --transport http omnikeep --scope user https://<主機名>.<tailn
 | :--- | :--- | :--- |
 | `search_brain` | `query`、`category`、`limit`（預設 5，最多 20）、`is_starred` | 全文檢索，回傳精簡的摘要卡（標題、標籤、白話核心） |
 | `hybrid_search_brain` | `query`、`category`、`is_starred`、`is_read`、`limit`（預設 5） | 全文檢索加向量語意檢索，用 RRF 合併；關鍵字對不上時也找得到相關內容 |
-| `get_item_architecture` | `item_id` | 單一項目的 L1 摘要與 L2 深入分析，不含原文 |
+| `get_item_architecture` | `item_id` | 單一則收藏的摘要與重點分析，不含原文 |
 | `get_item_raw` | `item_id`、`max_chars`（預設 2500） | 原文節錄；要看原始程式碼或逐字引述時才用 |
 | `get_item_detail` | `item_id`、`include_raw`（預設 false） | 同 `get_item_architecture`；`include_raw=true` 時附上原文節錄 |
-| `list_recent_items` | `triage_status`（`inbox`、`starred`、`archived`、`all`）、`category`、`limit`（預設 5） | 列出最近的項目 |
+| `list_recent_items` | `triage_status`（`inbox`、`starred`、`archived`、`all`）、`category`、`limit`（預設 5） | 列出最近的收藏 |
 | `read_sql_query` | `query`、`limit`（預設 50） | 唯讀 SQL（`SELECT`、`PRAGMA`、`EXPLAIN`、`WITH`）；連線本身是唯讀的，寫入會被拒絕 |
-| `ask_brain_synthesis` | `topic`、`top_k`（預設 5） | 找出和主題相關的多篇項目，交給 AI 寫跨篇比較 |
+| `ask_brain_synthesis` | `topic`、`top_k`（預設 5） | 找出和主題相關的多則收藏，交給 AI 寫跨篇比較 |
 
 ### 寫入（3 個）
 
 | 工具 | 參數 | 說明 |
 | :--- | :--- | :--- |
 | `save_to_brain` | `content_or_url`、`category` | 存入網址、筆記或程式碼片段，照一般流程分析 |
-| `writeback_insight` | `title`、`summary`、`architecture_details`、`category`、`tech_tags`、`related_item_id` | 把和 agent 討論出的結論寫成一筆新項目；給 `related_item_id` 會建立引用關聯 |
-| `update_item_status` | `item_id`、`is_read`、`is_starred` | 標記已讀或加星標 |
+| `writeback_insight` | `title`、`summary`、`architecture_details`、`category`、`tech_tags`、`related_item_id` | 把和 agent 討論出的結論寫成一則新收藏；給 `related_item_id` 會建立引用關聯 |
+| `update_item_status` | `item_id`、`is_read`、`is_starred` | 封存（標記已讀）或加星 |
 
-### 專案監看與提案（3 個，實驗功能）
+### 專案監看與建議（3 個，實驗功能）
+
+專案監看是預設關閉的實驗功能，在 設定 › 實驗功能 開啟，見 [專案監看](watch_proposals.md)。
 
 | 工具 | 參數 | 說明 |
 | :--- | :--- | :--- |
-| `list_proposals` | `status`（預設 `pending`）、`limit`（預設 10） | 列出提案卡 |
-| `decide_proposal` | `proposal_id`、`approve`、`user_impact`、`user_confidence`、`user_effort`、`reason` | 核准或略過提案，可以修正分數 |
-| `scan_watch_target` | `target_id`（留空掃全部） | 掃描監看目標 |
+| `list_proposals` | `status`（預設 `pending`）、`limit`（預設 10） | 列出建議 |
+| `decide_proposal` | `proposal_id`、`approve`、`user_impact`、`user_confidence`、`user_effort`、`reason` | 核准或忽略建議，可以修正分數 |
+| `scan_watch_target` | `target_id`（留空掃全部） | 掃描監看的專案 |
 
 ### 首次設定（11 個）
 
@@ -128,17 +130,17 @@ claude mcp add --transport http omnikeep --scope user https://<主機名>.<tailn
 
 | 工具 | 說明 |
 | :--- | :--- |
-| `omnikeep_scan` | 硬體、OmniKeep 狀態、已接的 AI 管道、上次的答案、書籤與星標筆數 |
+| `omnikeep_scan` | 硬體、OmniKeep 狀態、已接的 AI 連線、上次的答案、書籤與 GitHub 加星的專案筆數 |
 | `omnikeep_peek` | 解析一個網址，不跑 AI、不存 |
-| `omnikeep_check_sources` | 驗證候選的雷達來源，首頁會自動找 RSS |
-| `omnikeep_list_provider_options` | AI 管道的選項卡片與目前的設定 |
+| `omnikeep_check_sources` | 驗證候選的探索來源，首頁會自動找 RSS（探索是實驗功能） |
+| `omnikeep_list_provider_options` | AI 服務的選項卡片與目前的 AI 連線 |
 | `omnikeep_open_settings` | 指向設定頁某個分頁或某張卡片的連結 |
-| `omnikeep_test_provider` | 用已存的金鑰送一筆小請求測試 |
+| `omnikeep_test_provider` | 用已存的金鑰或權杖送一筆小請求測試（AI 連線，或 `telegram`、`line`、`github`） |
 | `omnikeep_preview_setup` | 驗證答案 JSON，回傳設定差異與確認碼，不寫入 |
 | `omnikeep_apply_setup` | 套用設定，要帶確認碼 |
-| `omnikeep_ingest` | 分析一個網址並存入 |
-| `omnikeep_run_radar` | 跑一次雷達巡檢並產生摘要 |
-| `omnikeep_import` | 匯入書籤、GitHub 星標、Pocket 匯出檔、OPML |
+| `omnikeep_ingest` | 收藏一個網址並分析。回傳的 `analysed` 是 false 時，表示還沒接上 AI，只存了標題、網址與原文，接上 AI 連線後會自動補分析（`note` 欄位會說明） |
+| `omnikeep_run_radar` | 探索檢查一次並產生精選（探索是實驗功能） |
+| `omnikeep_import` | 匯入書籤、GitHub 加星的專案、Pocket 匯出檔、OPML |
 
 ### 資源（4 個）
 

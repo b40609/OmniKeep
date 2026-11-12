@@ -307,7 +307,7 @@ def test_an_agent_is_told_too(monkeypatch):
     assert "會議錄音工具" in found and "【關鍵字檢索】" in found
     assert "語意搜尋目前沒有運作" in found
     nothing = asyncio.run(mcp_server.hybrid_search_brain("zzzz-no-such-thing"))
-    assert "未找到" in nothing and "語意搜尋目前沒有運作" in nothing
+    assert "找不到" in nothing and "語意搜尋目前沒有運作" in nothing
 
 
 # ── Items with nothing to cite ──────────────────────────────────

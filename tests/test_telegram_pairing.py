@@ -71,7 +71,7 @@ async def test_messaging_first_binds_nobody(bot, no_owners):
     await bot.handle_update(_message(STRANGER, "/start"))
     assert settings.telegram_allowed_ids == []
     assert _saved_owners() is None
-    assert len(bot.sent) == 2 and all("尚未綁定" in text for _, text in bot.sent)
+    assert len(bot.sent) == 2 and all("還沒有綁定擁有者" in text for _, text in bot.sent)
     assert str(STRANGER) in bot.sent[0][1]  # their ID, so they can tell the owner
 
 

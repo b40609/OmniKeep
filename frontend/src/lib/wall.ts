@@ -96,6 +96,22 @@ export function splitTitle(title: string | null | undefined): { name: string; de
   return { name: text, detail: '' }
 }
 
+/* ---------------- Not analysed yet ---------------- */
+
+/** What the server puts in front of the summary of an item kept without analysis (app/pipeline.py). */
+export const NOT_ANALYSED_TAG = '（尚未分析）'
+
+/** Kept while no AI was connected: its text is stored, nothing was analysed. */
+export function isNotAnalysed(item: { analysis_status?: string | null; origin?: string | null }): boolean {
+  return item.analysis_status === 'pending' && item.origin !== 'radar'
+}
+
+/** The summary without that tag, for places that show the state as a label of its own. */
+export function plainSummary(summary: string | null | undefined): string {
+  const text = summary || ''
+  return text.startsWith(NOT_ANALYSED_TAG) ? text.slice(NOT_ANALYSED_TAG.length) : text
+}
+
 /* ---------------- Kinds ---------------- */
 
 export type ItemKind = 'project' | 'post' | 'video' | 'article'

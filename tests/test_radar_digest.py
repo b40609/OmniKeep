@@ -40,7 +40,7 @@ def llm(monkeypatch):
 async def test_the_daily_digest_has_its_own_title(llm):
     made = await digest.generate_radar_digest([_item("a")], digest_type="daily")
 
-    assert made["success"] is True and "每日摘要" in made["title"] and "焦點戰報" not in made["title"]
+    assert made["success"] is True and "每日精選" in made["title"] and "戰報" not in made["title"]
     stored = get_latest_radar_digests(limit=5)
     assert [d["digest_type"] for d in stored] == ["daily"] and stored[0]["title"] == made["title"]
 
@@ -88,7 +88,7 @@ async def test_a_failed_daily_digest_is_not_pushed_and_is_tried_again(daily, llm
     later = now + timedelta(minutes=scheduler.DAILY_DIGEST_RETRY_MINUTES)
     sent = await scheduler.maybe_send_daily_digest(now=later)
     assert sent["success"] is True and llm.calls == 2
-    assert pushed.await_count == 1 and "每日摘要" in pushed.await_args.args[0]
+    assert pushed.await_count == 1 and "每日精選" in pushed.await_args.args[0]
     assert len(get_latest_radar_digests(limit=5)) == 1
     assert await scheduler.maybe_send_daily_digest(now=later + timedelta(minutes=1)) is None  # once a day
 

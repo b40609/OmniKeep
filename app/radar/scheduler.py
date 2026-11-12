@@ -293,8 +293,8 @@ async def _push_digest_to_telegram(digest_info: Dict[str, Any], ranked_items: Li
             return
         titles = "\n".join(f"• {html.escape(it.get('title_l1', '')[:60])}" for it in ranked_items[:5])
         text = (
-            f"<b>{html.escape(digest_info.get('title', '雷達摘要'))}</b>\n\n{titles}\n\n"
-            f"<i>完整戰報請至工作台查閱；卡片審閱請輸入 /deck。</i>"
+            f"<b>{html.escape(digest_info.get('title', '探索精選'))}</b>\n\n{titles}\n\n"
+            f"<i>完整精選請到 OmniKeep 查看；要逐則篩選請輸入 /deck。</i>"
         )
         for chat_id in settings.telegram_allowed_ids:
             await bot.send_message(chat_id, text)
@@ -308,7 +308,7 @@ async def _push_digest_to_web(digest_info: Dict[str, Any], ranked_items: List[Di
         return
     try:
         titles = "\n".join(f"• {it.get('title_l1', '')[:60]}" for it in ranked_items[:5])
-        await send_push(f"📰 {digest_info.get('title', '雷達摘要')}", titles, tag="radar-digest")
+        await send_push(f"📰 {digest_info.get('title', '探索精選')}", titles, tag="radar-digest")
     except Exception:
         logger.exception("Web Push for radar digest failed")
 
@@ -317,22 +317,22 @@ async def _push_digest_to_line(digest_info: Dict[str, Any], ranked_items: List[D
     if not digest_info or not digest_info.get("success"):
         return
     titles = "\n".join(f"• {it.get('title_l1', '')[:60]}" for it in ranked_items[:5])
-    await _push_text_to_line(f"📰 {digest_info.get('title', '雷達摘要')}\n\n{titles}\n\n完整摘要請到 OmniKeep 查看。")
+    await _push_text_to_line(f"📰 {digest_info.get('title', '探索精選')}\n\n{titles}\n\n完整摘要請到 OmniKeep 查看。")
 
 
 async def _announce_autostar(items: List[Dict[str, Any]]) -> None:
     """Auto-collected items only (legacy auto_star_push)."""
     starred = [it for it in items if it.get("auto_starred")]
-    await _push_items_to_telegram(starred, "雷達精選推薦")
-    await _push_items_to_web(starred, "🤖 雷達自動收藏", "radar-autostar", "⭐")
-    await _push_items_to_line(starred, "🤖 雷達自動收藏", "⭐")
+    await _push_items_to_telegram(starred, "探索自動加星")
+    await _push_items_to_web(starred, "探索自動加星", "radar-autostar", "⭐")
+    await _push_items_to_line(starred, "探索自動加星", "⭐")
 
 
 async def _announce_vip(items: List[Dict[str, Any]]) -> None:
     """vip_alert: every item that reached the threshold, whether or not auto-star collected it."""
-    await _push_items_to_telegram(items, "雷達重要項目")
-    await _push_items_to_web(items, "🔔 雷達重要項目", "radar-vip", "•")
-    await _push_items_to_line(items, "🔔 雷達重要項目", "•")
+    await _push_items_to_telegram(items, "探索的重要內容")
+    await _push_items_to_web(items, "探索的重要內容", "radar-vip", "•")
+    await _push_items_to_line(items, "探索的重要內容", "•")
 
 
 async def _announce_digest(digest_info: Dict[str, Any], ranked_items: List[Dict[str, Any]]) -> None:

@@ -6,6 +6,9 @@ doubling (2 h, 4 h, 8 h ...) for 7 days. An X post whose replies could not be re
 whose transcript could not be read (app/parsers/transcript.py), are retried the same way. A try that still gets the error page costs one fetch and no AI call; the first one that
 gets the content runs the normal pipeline on the URL, the same as collecting it again, which
 rewrites the item in place.
+
+The same loop analyses items that were kept while no AI was connected ("（尚未分析）",
+app/pipeline.py): once a connection exists, a few per tick, oldest first, from their stored text.
 """
 import asyncio
 import logging
@@ -25,7 +28,11 @@ TICK_SECONDS = 600
 PER_TICK = 10  # at most this many fetches per tick, so a backlog cannot burst
 SOURCE_TYPES = ("web", "threads")  # content scraped from the page (pipeline.BLOCK_CHECKED_KINDS)
 
+ANALYSE_PER_TICK = 5  # items kept without analysis that one tick analyses, so a backlog cannot burst
+ANALYSE_GIVE_UP = 3  # failures after which this process leaves an item to the "現在分析" button
+
 _last_try: Dict[str, datetime] = {}  # item id -> last try by this process
+_analysis_failures: Dict[str, int] = {}  # item id -> failed analyses by this process
 
 
 def _when(text: str) -> Optional[datetime]:
@@ -118,6 +125,47 @@ async def run_once(now: Optional[datetime] = None) -> Dict[str, int]:
     return stats
 
 
+def waiting_for_analysis(limit: int = 50) -> List[Dict[str, Any]]:
+    """Items kept while no AI was connected, oldest first (radar stubs have their own backfill)."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM items WHERE analysis_status = 'pending' AND origin != 'radar' "
+            "ORDER BY created_at ASC LIMIT ?", (limit,)).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+async def analyse_waiting() -> Dict[str, int]:
+    """Analyse a few of the items kept without analysis. Does nothing while no AI is connected.
+
+    The first failure ends the tick: a rate limit or an outage would fail the rest as well.
+    """
+    from app.pipeline import analyse_saved_item
+    from app.providers import ai_connected
+    stats = {"waiting": 0, "analysed": 0, "failed": 0}
+    if not ai_connected():
+        return stats
+    items = await asyncio.to_thread(waiting_for_analysis)
+    stats["waiting"] = len(items)
+    for item in items:
+        if stats["analysed"] >= ANALYSE_PER_TICK:
+            break
+        if _analysis_failures.get(item["id"], 0) >= ANALYSE_GIVE_UP:
+            continue
+        try:
+            await analyse_saved_item(item)
+        except Exception as exc:
+            _analysis_failures[item["id"]] = _analysis_failures.get(item["id"], 0) + 1
+            stats["failed"] += 1
+            logger.warning("[Refetch] analysis of %s failed (%s: %s)", item["url"], type(exc).__name__, str(exc)[:200])
+            break
+        _analysis_failures.pop(item["id"], None)
+        stats["analysed"] += 1
+    return stats
+
+
 async def refetch_loop(tick_seconds: int = TICK_SECONDS, initial_delay: float = 120.0) -> None:
     await asyncio.sleep(initial_delay)
     while True:
@@ -127,4 +175,10 @@ async def refetch_loop(tick_seconds: int = TICK_SECONDS, initial_delay: float = 
                 logger.info("[Refetch] %s", stats)
         except Exception as exc:
             logger.error("[Refetch] tick failed (%s)", type(exc).__name__)
+        try:
+            stats = await analyse_waiting()
+            if stats["analysed"] or stats["failed"]:
+                logger.info("[Refetch] items kept without analysis: %s", stats)
+        except Exception as exc:
+            logger.error("[Refetch] analysis tick failed (%s)", type(exc).__name__)
         await asyncio.sleep(tick_seconds)

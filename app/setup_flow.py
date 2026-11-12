@@ -819,8 +819,8 @@ def build_plan(answers: SetupAnswers) -> Dict[str, Any]:
         radar_after["notification_mode"] = answers.notifications.mode
         if answers.notifications.daily_digest_hour is not None:
             radar_after["daily_digest_hour"] = answers.notifications.daily_digest_hour
-    labels = {"enabled": "雷達開關", "interval_minutes": "巡檢間隔（分鐘）",
-              "notification_mode": "通知方式", "daily_digest_hour": "每日摘要時間（點）"}
+    labels = {"enabled": "探索開關", "interval_minutes": "檢查間隔（分鐘）",
+              "notification_mode": "通知方式", "daily_digest_hour": "每日精選時間（點）"}
     radar_changes = {}
     for key, value in radar_after.items():
         if radar_before.get(key) != value:
@@ -850,16 +850,16 @@ def build_plan(answers: SetupAnswers) -> Dict[str, Any]:
         if answers.notifications.mode != "silent" and not chosen:
             warnings.append("選了要送通知但沒選管道（web_push、telegram、line）")
         if "telegram" in chosen and not state["telegram"]:
-            warnings.append("Telegram 還沒設定 Bot Token：請使用者到設定頁的 Telegram 分頁貼上，再用配對連結綁定")
+            warnings.append("Telegram 還沒設定機器人權杖：請使用者到「設定 › 收錄管道」的 Telegram 區塊貼上，再用配對連結綁定")
         if "line" in chosen and not state["line"]:
-            warnings.append("LINE 還沒設定 Channel Access Token：請使用者到設定頁的 LINE 分頁貼上")
+            warnings.append("LINE 還沒設定 Channel Access Token：請使用者到「設定 › 收錄管道」的 LINE 區塊貼上")
         if "web_push" in chosen and not state["web_push"]:
             warnings.append("網頁推播還沒有裝置訂閱：請使用者打開 OmniKeep，在推播設定按「允許」")
     if add:
-        changes.append({"key": "radar.sources", "label": "新增雷達來源", "before": None,
+        changes.append({"key": "radar.sources", "label": "新增探索來源", "before": None,
                         "after": [f"{s['name']}（{s['source_type']}）" for s in add]})
     if reactivate:
-        changes.append({"key": "radar.sources.reactivate", "label": "重新啟用雷達來源", "before": None,
+        changes.append({"key": "radar.sources.reactivate", "label": "重新啟用探索來源", "before": None,
                         "after": [f"{s['name']}（{s['source_type']}）" for s in reactivate]})
 
     plan = {
@@ -961,7 +961,7 @@ async def run_radar_once(max_digest_items: int = 20) -> Dict[str, Any]:
         "deferred_count": result.get("deferred_count", 0),
         "digest_basis": basis if digest else None,
         "digest": digest,
-        "message": None if digest else "這次沒有抓到可整理的項目：確認雷達來源已啟用，或稍後再跑一次",
+        "message": None if digest else "這次沒有抓到可整理的內容：確認探索來源已啟用，或稍後再跑一次",
     }
 
 
@@ -1001,7 +1001,7 @@ def import_opml(content: str) -> Dict[str, Any]:
         added.append(save_radar_source({"name": feed["name"], "source_type": "rss", "url": feed["url"],
                                         "tier": 2, "check_interval_minutes": 60, "is_active": 1}))
     return {"kind": "opml", "total_parsed": len(feeds), "added_count": len(added), "skipped_count": skipped,
-            "note": "來源已加入雷達，但雷達目前關閉，不會巡檢" if added and not get_radar_settings()["enabled"] else None}
+            "note": "來源已加入探索，但探索目前關閉，不會檢查" if added and not get_radar_settings()["enabled"] else None}
 
 
 def _read_file(path: str) -> Tuple[str, str]:
@@ -1036,7 +1036,7 @@ def _github_stars(limit: int) -> List[Dict[str, Any]]:
     code, out = _run(["gh", "api", "user/starred", "--paginate", "--jq",
                       ".[] | {title: .full_name, url: .html_url, tags: .topics}"], 120.0)
     if code != 0:
-        raise SetupError("讀取 GitHub 星標失敗（gh api user/starred）")
+        raise SetupError("讀取 GitHub 加星的專案失敗（gh api user/starred）")
     stars = []
     for line in out.splitlines():
         try:
@@ -1092,7 +1092,7 @@ async def ingest(url: str) -> Dict[str, Any]:
         raise SetupError(f"這個連結沒有分析成功，也沒有存檔。原因：{exc}") from exc
     item = result.get("item") or {}
     analysis = item.get("deep_analysis") or ""
-    return {
+    out = {
         "id": item.get("id"),
         "url": item.get("url"),
         "title": item.get("title_l1"),
@@ -1101,4 +1101,9 @@ async def ingest(url: str) -> Dict[str, Any]:
         "summary": item.get("summary_l1"),
         "deep_analysis": analysis[:6000],
         "deep_analysis_truncated": len(analysis) > 6000,
+        # False: no AI is connected, so the link was saved with its text and no analysis.
+        "analysed": item.get("analysis_status") != "pending",
     }
+    if not out["analysed"]:
+        out["note"] = "已收藏，但還沒有接上 AI，所以沒有分析。接上 AI 連線後會自動補分析。"
+    return out

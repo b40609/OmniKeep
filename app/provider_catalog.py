@@ -254,7 +254,7 @@ CARDS: List[Dict[str, Any]] = [
         "editable_url": True,
         "cost": "0",
         "limits": "沒有額度上限、可以離線；速度看顯示卡。",
-        "notes": "要先安裝 Ollama 並下載模型，例如 ollama pull qwen3:8b。Ask Brain 與向量都可以用。",
+        "notes": "要先安裝 Ollama 並下載模型，例如 ollama pull qwen3:8b。提問與向量都可以用。",
         "min_interval": 0.1, "max_concurrency": 2,
         "caps": {"json_mode": True, "embeddings": True},
     },

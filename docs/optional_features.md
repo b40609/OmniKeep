@@ -4,7 +4,7 @@
 
 | 功能 | 套件 | 怎麼安裝 | 沒裝的話 |
 |---|---|---|---|
-| 自動化 Chrome 登入、CDP cookie 橋接、網頁瀏覽器回退 | `playwright` | Windows：`requirements.txt` 會自動安裝。其他系統：不安裝 | 會話面板顯示「這台沒有安裝 playwright」，按「登入」會出現安裝說明；cookies.txt 匯入仍然可用 |
+| 自動化 Chrome 登入、CDP cookie 橋接、網頁瀏覽器回退 | `playwright` | Windows：`requirements.txt` 會自動安裝。其他系統：不安裝 | 「設定 › 收錄管道 › 社群平台登入」會提示這台電腦沒有安裝 playwright、沒辦法開登入視窗；cookies.txt 匯入仍然可用 |
 | 本機語音轉錄（YouTube、Reels、Bilibili、X、Threads） | `faster-whisper`、`ctranslate2`、`opencc` | `pip install -r requirements-stt.txt` | Reels 改用雲端轉錄（主要 LLM 端點的 `whisper-1`，其次是 Gemini）；沒有字幕的 YouTube 影片標成擷取失敗；沒有字幕的 Bilibili 影片不會有逐字稿 |
 | 長影片的畫面文字（OCR） | `scenedetect`、`opencv-python-headless`、`imagehash`、`rapidocr`、`onnxruntime` | `pip install -r requirements-ocr.txt` | 跳過畫面層，log 記一行；逐字稿與分析照常 |
 
@@ -72,7 +72,7 @@ docker compose up -d --build
 
 模型快取放在 `/data/huggingface`（`omnikeep_data` volume），重建容器後不必重新下載。快取不會被納入備份。
 
-Docker 映像沒有 playwright 和 Chrome，要使用平台登入狀態請改用 cookies.txt 匯入（見 [帳號會話](account_sessions.md)）。
+Docker 映像沒有 playwright 和 Chrome，要使用社群平台的登入狀態請改用 cookies.txt 匯入（見 [社群平台登入](account_sessions.md)）。
 
 ## 防止漏列套件
 

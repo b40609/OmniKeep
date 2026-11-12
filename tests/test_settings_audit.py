@@ -30,7 +30,7 @@ def test_audit_lists_changes_newest_first_with_labels_and_no_values():
         ("PRIMARY_MODEL", "reset"), ("OPENAI_API_KEY", "clear"),
         ("PRIMARY_MODEL", "set"), ("OPENAI_API_KEY", "set")]
     first = body["entries"][0]
-    assert (first["label"], first["group"]) == ("分析模型", "AI 服務商")
+    assert (first["label"], first["group"]) == ("分析模型", "AI")
     assert first["created_at"].endswith("+00:00")
     assert set(first) == {"id", "key", "label", "group", "action", "created_at"}
     assert body["has_more"] is False
