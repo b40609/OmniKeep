@@ -77,7 +77,8 @@ GROUPS: Tuple[Tuple[str, str], ...] = (
     ("github", "GitHub"),
     ("backup", "備份"),
     ("push", "推播"),
-    ("system", "系統"),
+    ("labs", "實驗功能"),
+    ("system", "系統"),  # stays the last group
 )
 
 SPECS: Tuple[Spec, ...] = (
@@ -155,6 +156,15 @@ SPECS: Tuple[Spec, ...] = (
     Spec("LOCAL_AUTO_LOGIN", "system", "這台電腦免登入", "bool",
          help="開啟時，在執行 OmniKeep 的這台電腦上用瀏覽器打開，不必輸入存取金鑰就能進主畫面。"
               "手機、其他電腦，以及經由 Tailscale 或反向代理連進來的裝置，一律要輸入存取金鑰或配對碼。"),
+
+    # Whether a feature that is still being worked on shows in the app, on every device.
+    # Display only: nothing in the background reads these (the radar has its own toggle).
+    Spec("EXPERIMENT_RADAR", "labs", "探索", "bool",
+         help="在側欄顯示探索。只決定介面上看不看得到；背景檢查由探索自己的啟用開關決定。"),
+    Spec("EXPERIMENT_WATCH", "labs", "專案監看", "bool",
+         help="在側欄顯示專案監看。只決定介面上看不看得到；已加入的專案仍會和探索找到的內容比對。"),
+    Spec("EXPERIMENT_DAILY_REVIEW", "labs", "每日回顧", "bool",
+         help="在側欄顯示每日回顧。它沒有背景工作。"),
 )
 
 SPEC_BY_KEY: Dict[str, Spec] = {spec.key: spec for spec in SPECS}

@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     # A browser on this same machine signs in without typing the key; every other device
     # still needs it (app/routers/session.py). Switched off in the app's settings, or here.
     LOCAL_AUTO_LOGIN: bool = True
+    # Experimental features (設定 › 實驗功能): whether each one is shown in the app. They hide
+    # the feature only; the radar's background scans have their own switch (radar_settings).
+    EXPERIMENT_RADAR: bool = False
+    EXPERIMENT_WATCH: bool = False
+    EXPERIMENT_DAILY_REVIEW: bool = False
     # Extra host names MCP over HTTP accepts besides loopback and the Tailscale names found at
     # startup, comma-separated (app/mcp_http.py).
     MCP_ALLOWED_HOSTS: str = ""
