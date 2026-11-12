@@ -108,3 +108,14 @@ def test_an_item_seen_from_its_title_only_keeps_saying_so(setup):
     assert item["deep_analysis"].startswith("> 只根據標題與說明分析\n\n## 新的深度分析")
     tags = item["tech_tags"]
     assert (json.loads(tags) if isinstance(tags, str) else tags) == ["RRF"]
+
+
+def test_only_the_listed_items_are_analysed(setup):
+    conn, fake, out = setup
+    _item("e1")
+    _item("e2")
+    tool.write_backup(out, tool.candidates(min_chars=0))
+    stats = asyncio.run(tool.run(conn.id, out, None, 1, 3, only={"e2"}))
+    assert stats["done"] == 1
+    assert db.get_item_by_id("e1")["summary_l1"] == "舊摘要"
+    assert db.get_item_by_id("e2")["summary_l1"] == "新摘要"

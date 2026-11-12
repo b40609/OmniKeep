@@ -6,6 +6,7 @@ without it), and each finished item is appended to <out>/done.jsonl, so a run ca
 
   python scripts/reanalyze_items.py --connection 15 --out backups/reanalysis-1 --backup-only
   python scripts/reanalyze_items.py --connection 15 --out backups/reanalysis-1 --limit 20
+  python scripts/reanalyze_items.py --connection 15 --out backups/reanalysis-1 --ids ids.jsonl  # only these
   python scripts/reanalyze_items.py --connection 15 --out backups/reanalysis-1          # the rest
   python scripts/reanalyze_items.py --out backups/reanalysis-1 --restore                # undo
 
@@ -33,7 +34,7 @@ from app import ai_connections  # noqa: E402
 from app.database import get_all_categories, get_db_connection, optimize_fts, update_item_field  # noqa: E402
 from app.pipeline import METADATA_ONLY_TAG, analysis_system_prompt, saved_item_prompt  # noqa: E402
 from app.providers import build_provider  # noqa: E402
-from app.schemas.intelligence import sanitize_and_validate_analysis  # noqa: E402
+from app.schemas.intelligence import generate_structured_intelligence  # noqa: E402
 
 SKIP_SOURCES = ("proposal", "watch", "insight")  # made by OmniKeep itself, not collected content
 FIELDS = ("id", "url", "source_type", "category_name", "title_l1", "summary_l1", "tech_tags",
@@ -79,7 +80,8 @@ async def analyse(provider, prompt: str, system_prompt: str, retries: int = 1) -
     last: Optional[BaseException] = None
     for _ in range(retries + 1):
         try:
-            result = sanitize_and_validate_analysis(await provider.generate_json(prompt, system_prompt)).model_dump()
+            # The app's own path: validation, punctuation and the rewrite of a summary that repeats its title.
+            result = await generate_structured_intelligence(provider, prompt, system_prompt, max_retries=0)
         except Exception as exc:  # provider errors and invalid JSON alike
             last = exc
             continue
@@ -108,7 +110,8 @@ def updates_for(item: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-async def run(connection_id: int, out: Path, limit: Optional[int], concurrency: int, stop_after: int) -> Dict[str, int]:
+async def run(connection_id: int, out: Path, limit: Optional[int], concurrency: int, stop_after: int,
+              only: Optional[set] = None) -> Dict[str, int]:
     conn = ai_connections.get_connection(connection_id)
     if conn is None:
         raise SystemExit(f"找不到連線 {connection_id}")
@@ -120,7 +123,8 @@ async def run(connection_id: int, out: Path, limit: Optional[int], concurrency: 
     done_ids = {row["id"] for row in read_jsonl(out / "done.jsonl")}
     # Only items in the backup: anything collected after it has no copy to restore.
     backed_up = {row["id"] for row in read_jsonl(out / "before.jsonl")}
-    todo = [i for i in candidates() if i["id"] in backed_up and i["id"] not in done_ids]
+    todo = [i for i in candidates() if i["id"] in backed_up and i["id"] not in done_ids
+            and (only is None or i["id"] in only)]
     if limit is not None:
         todo = todo[:limit]
     stats = {"todo": len(todo), "done": 0, "failed": 0}
@@ -189,6 +193,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--backup-only", action="store_true")
     ap.add_argument("--restore", action="store_true")
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--ids", type=Path, help="JSONL of {\"id\": ...}: analyse only these items")
     ap.add_argument("--concurrency", type=int, default=2)
     ap.add_argument("--stop-after", type=int, default=5, help="stop after this many failures in a row")
     args = ap.parse_args(argv)
@@ -203,7 +208,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     if args.connection is None:
         ap.error("--connection is required")
-    stats = asyncio.run(run(args.connection, args.out, args.limit, args.concurrency, args.stop_after))
+    only = {row["id"] for row in read_jsonl(args.ids)} if args.ids else None
+    stats = asyncio.run(run(args.connection, args.out, args.limit, args.concurrency, args.stop_after, only))
     tidy_index()
     print(f"結束：要處理 {stats['todo']} 筆，完成 {stats['done']}，失敗 {stats['failed']}"
           + ("；連續失敗太多次，已停止" if stats["stopped"] else ""))

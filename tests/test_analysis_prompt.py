@@ -25,7 +25,7 @@ def test_profile_saved_in_the_app_reaches_the_next_prompt(monkeypatch):
         assert groups["profile"] == ["USER_BACKGROUND", "LOCAL_HARDWARE", "ANALYSIS_DEPTH"]
 
         prompt = pipeline.analysis_system_prompt()
-        assert "使用者背景錨點：嵌入式工程師。" in prompt
+        assert "使用者背景：嵌入式工程師。" in prompt
         assert "（Jetson Orin 8GB）" in prompt
 
         status = client.get("/api/brain/status", headers=HEADERS).json()
@@ -39,10 +39,10 @@ def test_prompt_is_neutral_without_profile_settings(monkeypatch):
     prompt = pipeline.analysis_system_prompt()
 
     assert "<<" not in prompt
-    assert "使用者背景錨點" not in prompt
-    assert "### 🖥️ 硬體需求與快速上手評估" in prompt
+    assert "使用者背景：" not in prompt
+    assert "## 硬體需求" in prompt
     assert "8 GB、16 GB、24 GB" in prompt
-    assert "若附有使用者興趣設定檔" in prompt
+    assert "有附使用者興趣設定檔時" in prompt
 
 
 def test_prompt_uses_background_and_hardware_from_settings(monkeypatch):
@@ -51,11 +51,11 @@ def test_prompt_uses_background_and_hardware_from_settings(monkeypatch):
 
     prompt = pipeline.analysis_system_prompt()
 
-    assert "使用者背景錨點：資料工程師，在做記帳 App。\n" in prompt
-    assert "結合上述使用者背景" in prompt
-    assert "### 🖥️ 本機硬體適配與快速上手評估（RTX 4070 12GB）" in prompt
-    assert "在本機（RTX 4070 12GB）上的運行結論" in prompt
-    assert pipeline.hardware_heading() == "### 🖥️ 本機硬體適配與快速上手評估（RTX 4070 12GB）"
+    assert "使用者背景：資料工程師，在做記帳 App。\n" in prompt
+    assert "建議要貼合使用者背景" in prompt
+    assert "## 在你的電腦上跑（RTX 4070 12GB）" in prompt
+    assert "在 RTX 4070 12GB 上能不能跑" in prompt
+    assert pipeline.hardware_heading() == "## 在你的電腦上跑（RTX 4070 12GB）"
 
 
 def test_owner_text_is_not_expanded_as_placeholder(monkeypatch):
@@ -64,7 +64,7 @@ def test_owner_text_is_not_expanded_as_placeholder(monkeypatch):
 
     prompt = pipeline.analysis_system_prompt()
 
-    assert "使用者背景錨點：寫了 <<HARDWARE_HEADING>> 的人。" in prompt
+    assert "使用者背景：寫了 <<HARDWARE_HEADING>> 的人。" in prompt
 
 
 # ── Analysis depth (設定 › 個人化 › 分析深度) ──────────────────

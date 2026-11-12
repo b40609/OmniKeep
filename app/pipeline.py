@@ -33,67 +33,92 @@ from app.schemas.intelligence import AnalysisFailedError, generate_structured_in
 
 logger = logging.getLogger("omnikeep.pipeline")
 
-_ANALYSIS_PROMPT_TEMPLATE = """你是一位客觀、專業的技術情報與全領域知識提煉官，兼具使用者的專屬 AI 參謀角色。
-<<BACKGROUND_ANCHOR>>你的任務是將輸入內容以「事實優先（Fact-first）」原則消化，輸出冷靜、高密度、直擊本質的結構化摘要（L1 核心提要 + L2 深度剖析）。
+# Prompt v2.3 (2026-11-11). Chosen in three rounds of blind review by the owner against the earlier
+# prompt: dense written Chinese, a title that says why the reader should care, a summary that
+# never restates the title, and a deep analysis of one-sentence bullets. Raw string: the line breaks in the
+# example must reach the model as the escape it would write in JSON.
+_ANALYSIS_PROMPT_TEMPLATE = r"""你幫使用者整理他自己收藏的內容。他看標題和摘要的 10 秒內要能決定值不值得細看；點開分析後，要拿到完整的重點，並知道這東西能怎麼用在自己身上。
+<<BACKGROUND_ANCHOR>>
+## 寫法
+- 精煉的書面中文，資訊密度高：每個詞都要帶資訊，能用名詞片語講完的就不寫成整句。不要口語、不要鋪陳情境，也不要用「往往」「其實」「多數人」這類泛泛的開場。
+- 產品、套件、模型、指令保留原文名稱，其餘一律寫中文。一個詞只用一種寫法，不中英並列。
+- 補充說明直接寫進句子，不放在括號裡。
+- 只根據上面提供的內容寫：事實、數字、名稱都要來自原文，原文沒有的就不寫。
+- 數學符號和單位用純文字，例如「約 6 GB」「>= 85%」「0 到 100 A」。數字一律用阿拉伯數字，例如「3.5 倍」「12 小時」。
+- 標點用全形中文標點：，。：「」。
 
-嚴格規範：
-1. 一律使用繁體中文（台灣習慣用語）。絕對嚴禁使用任何 LaTeX 數學語法（嚴禁 $ 或 KaTeX 符號，數學與關係符號一律採純文字，如「!=」、「約」、「>=」）。
-2. 絕對禁止廢話、客套話、自言自語與說教元敘事：
-   - 嚴禁「作者介紹了/分享了/指出」、「本篇主要在於」、「推廣某工具」等旁白廢話。
-   - 絕對禁止出現「此內容為純娛樂」、「缺乏實質工程細節」、「無技術負載」、「無法進行技術深析」等自言自語的說教與價值批判。使用者非常清楚內容性質，無需 AI 評判。
-3. 雙軌自適應提煉（依內容本體動態適配）：
-   A. 專業工程與架構內容（AI、代碼、開源工具、硬體、量化金融、技術架構）：
-      - L1 summary_l1：首句直陳該專案/系統是什麼、解決何種工程痛點；次句陳述核心機制、量化規格或適用情境（80-120字）。
-      - L2 deep_analysis：Markdown 格式，結構化條列：
-        * ## 系統架構與關鍵技術規格（核心機制、架構參數、數據規模與技術邊界）。
-        * 若涉及 AI 模型（LLM / VLM / 視覺模型 / 擴散模型 / 語音模型）：
-          強制增設「<<HARDWARE_HEADING>>」：
-          - **顯存需求試算**：精確標註參數量級、FP16 顯存佔用（純文字如「約 6.0 GB」）、INT4/8-bit 量化佔用；<<HARDWARE_VERDICT>>
-          - **最小可執行驗證代碼（30秒上手）**：提供包含 pip 依賴與 3-5 行開箱即用的 Python / Transformers / Ollama 最小推理代碼段（指定 device_map="cuda"），複製即可跑通。
-   B. 生活文化、迷因語錄與娛樂內容（幹話短劇、脫口秀、金句名言、美食旅遊、泛生活）：
-      - L1 summary_l1：直陳其段子核心包袱、諷刺邏輯或生活精要，並串聯最具代表性的金句（80-120字）。
-      - L2 deep_analysis：Markdown 格式，結構化整理「## 經典金句與台詞原話節錄」（務必完整收錄口播轉錄中的精彩原話）與「## 荒謬/反諷邏輯拆解」。
-   C. 個人化與在地決策延伸（在 deep_analysis 末尾增設專屬視角）：
-      - 若內容涉及特定地域生態（如中國特有生態/政策/潤學/牆內套利、歐美特有 H-1B/401K/GDPR）：
-        強制在 deep_analysis 增設「### 🇹🇼 台灣在地視角與延伸對照」：
-        * 分析客觀條件與痛點差異（如免簽優勢、資訊斷層落差、外匯法規）。
-        * 提供台灣工程師出海、遠距或套利的務實替代路徑。
-      - 若內容為工程架構、技術工具或量化商業策略：
-        增設「### 💡 專屬決策評估與落地啟發」：
-        * <<BACKGROUND_ADVICE>>
-4. 針對純宣傳或低資訊量貼文（既無技術規格亦無實質台詞）：若文字極度殘缺，如實記錄發布者之主要主張，嚴禁無中生有捏造數據。
-5. 嚴格輸出合法 JSON 物件，格式如下：
+## 各欄位
+title_l1：20 字以內，一般讀者一看就懂的白話，不要堆疊術語。
+- 專案、工具、模型：「名稱：最吸引人的具體事實或用途」，例如「sparqlite：AI 代理自主 12 小時生出 SQLite 擴充」「web-edit：用手機安全修改伺服器設定檔」。
+- 文章、貼文、影片：寫它最核心的主張或發現，例如「Gemini 3 的限制條件要放在提示詞最後」。
+- 標題寫讀者為什麼要在意，不寫章節數、條數這類目錄資訊；「怎麼學」「教你」這類口語開頭也不要。
+
+summary_l1：2 到 3 句，合計 70 到 120 字，放在標題正下方。
+- 第 1 句：它交付什麼、和一般做法差在哪。直接用名詞片語開頭，不寫「某某是一個」，也不再寫一次標題裡的名稱；標題已經講過的事，例如「正式發布」，摘要不再講。
+- 第 2 句：最關鍵的具體事實，優先寫數字、規模、授權、部署方式、能不能在本機跑。
+- 第 3 句，有必要才寫：適用對象或適用情境。
+- 範例：「X 客戶交付開源變現手冊，跳過門檻高、回報低的官方流量分潤。歸納求職輔導、會員等 7 條變現路徑與 26 章教程，附平台規則與報價模板，適合獨立開發者與顧問驗證商業閉環。」
+
+deep_analysis：Markdown。依內容類型選用下面的段落；每段只用條列，每條一句話，60 字以內。條數跟著原文的資訊量走：原文資訊多就寫多，不要為了精簡把原文的清單、步驟、規格砍掉。
+技術類（AI、程式、開源工具、硬體、量化交易、系統架構）：
+## 重點
+3 到 8 條：怎麼運作、關鍵規格與數字、授權與部署方式、跟同類工具差在哪。原文是清單、框架或步驟時，每一項都列出來。
+## 我可以怎麼用
+1 到 3 條，每條寫「什麼情境下用＋第一步做什麼」。<<BACKGROUND_ADVICE>>跟使用者的工作或興趣真的接得上才寫；接不上就只寫 1 條一般用法，不要硬套。
+## 限制
+0 到 3 條：只寫原文明確提到的門檻、缺點、還沒做好的地方；原文沒提就省略這一段。
+如果內容是可以在本機跑的 AI 模型，再加一段：
+<<HARDWARE_HEADING>>
+- 顯存需求一行：參數量、FP16 與 4-bit 大約佔多少 GB。
+- <<HARDWARE_VERDICT>>
+- 一行可以直接複製執行的安裝或啟動指令。
+
+生活、娛樂、觀點類：
+## 原話
+最多 5 句，逐字引用原文最精彩的句子。
+## 重點
+2 到 6 條：它的主張、論據，以及好笑、有道理或值得記住的地方。
+
+內容很短、資訊很少時：只寫「## 重點」1 到 3 條，照原文寫。
+內容講的是中國或歐美特有的制度、政策、環境時，最後加「## 台灣的情況」1 到 2 條。
+
+## 範例（只示範語氣、密度和長度，內容與本次無關）
+{"title_l1": "web-edit：用手機安全修改伺服器設定檔",
+ "summary_l1": "手機瀏覽器即可編輯遠端檔案的輕量服務，讓 AI 代理遠端工作時，API key 等敏感設定不經過模型。只開在 Tailscale 內網，不對外開 port，以 Python 單檔啟動，編輯器採 CodeMirror 6。",
+ "deep_analysis": "## 重點\n- AI 代理只負責在背景啟動服務，敏感檔案由人透過手機自行修改，內容不進入模型上下文。\n- 只綁 Tailscale 內網，靠節點間的端對端加密存取，不需 Nginx 反向代理或額外憑證。\n- 編輯器選 CodeMirror 6 而非 Monaco，因為後者在手機上的虛擬鍵盤與手勢支援不佳。\n- 提供目錄瀏覽與就地編輯，以 Python 單檔執行。\n## 我可以怎麼用\n- 外出時要改伺服器的 .env：先在伺服器啟動 web-edit，再用已登入 Tailscale 的手機開啟。\n## 限制\n- 原文只描述單人使用情境，沒有帳號與權限管理。"}
+
+## 輸出格式
+只輸出一個合法的 JSON 物件：
 {
-  "category": "從候選清單精選1個最適分類（若無合適填 Inbox）",
-  "title_l1": "直擊本質或名言主題的專業中文標題（25字以內，嚴禁使用「無法解析/無效內容/未公開」等敷衍命名）",
-  "summary_l1": "L1 核心提要（80-120字，依上述雙軌規範直陳本體，嚴禁說教）",
-  "tech_tags": ["核心標籤1", "核心標籤2", "核心標籤3"],
-  "deep_analysis": "L2 深度剖析（Markdown 格式，工程內容列架構規格，生活內容列金句原話與邏輯拆解）",
+  "category": "從候選分類清單選 1 個最適合的；都不適合就填 Inbox",
+  "title_l1": "見上方規定",
+  "summary_l1": "見上方規定",
+  "tech_tags": ["3 個標籤"],
+  "deep_analysis": "見上方規定",
   "is_composite": false,
-  "sub_entities": [
-    {
-      "name": "開源專案、AI 模型、工具、GitHub 倉庫或知識庫名稱（若無提及填空陣列 []）",
-      "canonical_url": "標準 GitHub 倉庫、Hugging Face 模型頁或官方網站網址（若未知填空字串）",
-      "reason": "文中對此專案/模型的核心評價或關鍵亮點（1句話）"
-    }
-  ]
+  "sub_entities": [{"name": "提到的開源專案、模型或工具名稱", "canonical_url": "GitHub、Hugging Face 或官網網址，不知道就填空字串", "reason": "原文對它的評價或亮點，一句話"}]
 }
+- 內容是多個專案或工具的推薦、盤點時，is_composite 設為 true，sub_entities 列出全部項目。
+- 只講單一主題時，is_composite 設為 false；有提到開源專案或工具就記在 sub_entities，完全沒提到就給空陣列 []。
 
-注意事項：
-- 若為多專案/多工具推薦或盤點彙總，is_composite 必須設為 true，並於 sub_entities 完整抽離所有項目與標準網址。
-- 若內容為單一主題或貼文提及特定開源專案/GitHub 倉庫，is_composite 設為 false，並於 sub_entities 記錄該專案名稱（若完全未提及任何開源專案或軟體工具，sub_entities 設為空陣列 []）。"""
+## 送出前逐項檢查
+1. 標題 20 字以內，是一般人看得懂的白話；超過就刪修飾語。
+2. 摘要第一句沒有重寫標題裡的名稱，也沒有「某某是一個」的句型。
+3. 沒有「旨在」「致力於」「本文」「該專案」「是一款」「聚焦於」「作者分享」「往往」這類空話，也沒有鋪陳情境的開場句。
+4. 沒有括號補充、沒有中英並列。
+5. 原文裡的清單、步驟、規格、數字、授權與部署方式，重要的都有寫進摘要或重點。"""
 
 
 # Extra rule appended to the analysis prompt per the ANALYSIS_DEPTH setting; "standard" leaves it unchanged.
 ANALYSIS_DEPTH_RULES = {
     "standard": "",
-    "concise": ("- 分析深度（使用者設定：重點摘要）：deep_analysis 只保留 3 到 5 個最重要的條列，每條一到兩句；"
-                "不附最小可執行驗證代碼，硬體需求只寫一行結論；落地啟發最多 1 點。"
-                "這一條優先於上面對 deep_analysis 長度與段落的要求。"),
-    "technical": ("- 分析深度（使用者設定：技術細節）：deep_analysis 盡量完整列出架構、關鍵參數與數據規模、"
-                  "限制與已知問題、與同類方案的差異；原文有的規格不要為了精簡而省略。"),
-    "actionable": ("- 分析深度（使用者設定：含落地建議）：工程架構、技術工具或策略類內容，"
-                   "「### 💡 專屬決策評估與落地啟發」擴充為 3 點，每點寫明要做什麼、怎麼驗證是否有效。"),
+    "concise": ("- 分析深度（使用者設定：重點摘要）：deep_analysis 只寫「## 重點」3 到 5 條，"
+                "「## 我可以怎麼用」最多 1 條，省略「## 限制」；硬體段只留一行結論，不附指令。"
+                "這一條優先於上面對 deep_analysis 段落與條數的要求。"),
+    "technical": ("- 分析深度（使用者設定：技術細節）：「## 重點」不設條數上限，"
+                  "原文有的架構、關鍵參數、數據規模、限制與已知問題、與同類方案的差異都要列出，不要為了精簡省略。"),
+    "actionable": ("- 分析深度（使用者設定：含落地建議）：工程、工具或策略類內容，"
+                   "「## 我可以怎麼用」寫 3 條，每條寫要做什麼、怎麼確認有沒有效。"),
 }
 
 
@@ -198,8 +223,8 @@ def hardware_heading() -> str:
     """Heading of the AI-model hardware section; names the machine only if the owner entered it."""
     hardware = (settings.LOCAL_HARDWARE or "").strip()
     if hardware:
-        return f"### 🖥️ 本機硬體適配與快速上手評估（{hardware}）"
-    return "### 🖥️ 硬體需求與快速上手評估"
+        return f"## 在你的電腦上跑（{hardware}）"
+    return "## 硬體需求"
 
 
 def analysis_system_prompt() -> str:
@@ -212,16 +237,15 @@ def analysis_system_prompt() -> str:
     background = (settings.USER_BACKGROUND or "").strip().rstrip("。.")
     hardware = (settings.LOCAL_HARDWARE or "").strip()
     if background:
-        anchor = f"使用者背景錨點：{background}。\n"
-        advice = "結合上述使用者背景，給出 1-2 點具體技術借鏡或落地改進建議。"
+        anchor = f"使用者背景：{background}。\n"
+        advice = "建議要貼合使用者背景和他的電腦配置。"
     else:
         anchor = ""
-        advice = "給出 1-2 點具體技術借鏡或落地改進建議；若附有使用者興趣設定檔，優先貼合其關注領域。"
+        advice = "有附使用者興趣設定檔時，優先貼合他關注的領域。"
     if hardware:
-        verdict = f"明確標註在本機（{hardware}）上的運行結論（例如「✅ 可全精度運行」或「⚠️ 建議採 4-bit 量化」）。"
+        verdict = f"在 {hardware} 上能不能跑、建議用什麼精度，一行結論。"
     else:
-        verdict = ("分別標註 8 GB、16 GB、24 GB 顯存的運行結論"
-                   "（例如「✅ 16 GB 可全精度運行」或「⚠️ 8 GB 建議採 4-bit 量化」）。")
+        verdict = "8 GB、16 GB、24 GB 顯存各能不能跑、建議用什麼精度，一行結論。"
     parts = {
         "BACKGROUND_ANCHOR": anchor,
         "BACKGROUND_ADVICE": advice,
@@ -532,7 +556,7 @@ URL：{url}
 
 請依據規範輸出結構化 JSON：
 - 若影片畫面（如 Hugging Face Model Card 截圖、開源卡片、論文）或說明中有提及具體開源專案/AI 模型/工具/GitHub 倉庫（如萬物定位大模型 LocateAnything 等），請務必將 is_composite 設為對應值，並於 sub_entities 完整抽離所有專案/模型（支援 Hugging Face 或 GitHub 標準網址）！
-- 務必在 deep_analysis 中完整收錄其系統架構、規格參數、核心機制（如 Parallel Box Decoding 等），若涉及 AI 模型，強制附上「{hardware_heading()}」包含顯存試算與 3 行最小可執行驗證代碼！
+- deep_analysis 的「## 重點」要收錄它的架構、規格參數與核心機制；若是 AI 模型，加上「{hardware_heading()}」一段。
 - 嚴禁批判內容缺乏技術價值，請專注於內容本體的精華提煉。"""
             prompt += interest_profile_block()
             ai_result = await _analyze_with_guardrails(primary, prompt)

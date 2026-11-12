@@ -12,6 +12,53 @@ from pydantic import BaseModel, Field, field_validator, model_validator, Validat
 
 logger = logging.getLogger("omnikeep.guardrails")
 
+_CJK = r"[㐀-鿿＀-￯「」]"
+_CODE = re.compile(r"(```.*?```|`[^`\n]*`)", re.S)
+
+
+def _full_width(text: str) -> str:
+    for half, full in ((",", "，"), (":", "："), (";", "；"), ("?", "？"), ("!", "！")):
+        text = re.sub(rf"(?<={_CJK}){re.escape(half)}[ \t]*|(?<=[A-Za-z0-9）)]){re.escape(half)}[ \t]*(?={_CJK})", full, text)
+    return text
+
+
+def full_width_punctuation(text: str) -> str:
+    """Half-width , : ; ? ! next to Chinese become full-width (the prompt asks for it; free
+    models often ignore it). URLs, numbers and anything inside `code` or ``` fences stay."""
+    parts = _CODE.split(text or "")
+    return "".join(p if i % 2 else _full_width(p) for i, p in enumerate(parts))
+
+
+def _bigrams(text: str) -> set:
+    text = re.sub(r"[\s，。：:,、「」（）()！!？?.\-/]", "", text.lower())
+    out = set(re.findall(r"[a-z0-9.+#_]{2,}", text))
+    cjk = re.sub(r"[a-z0-9.+#_]", "", text)
+    return out | {cjk[i:i + 2] for i in range(len(cjk) - 1)}
+
+
+def title_overlap(title: str, summary: str) -> float:
+    """Share of the title's bigrams that come back in the summary's first sentence."""
+    first = re.split(r"[。！？]", summary or "")[0]
+    grams = _bigrams(title or "")
+    return len(grams & _bigrams(first)) / max(len(grams), 1)
+
+
+def summary_repeats_title(title: str, summary: str) -> bool:
+    """The summary's first sentence says again what the title said: the title's name, an
+    「X 是一個…」 sentence, or most of the title's words. The owner's blind reviews marked
+    this the worst fault of a summary, and the prompt alone did not stop it."""
+    name = re.split(r"[：:]", title or "")[0].strip().lower()
+    first = re.split(r"[。！？]", summary or "")[0].lower()
+    if len(name) >= 2 and (name in first or re.search(r"是(一[個款套種份]|開源)", first)):
+        return True
+    return title_overlap(title, summary) >= 0.4
+
+
+def repeat_feedback(title: str, summary: str) -> str:
+    return (f"\n\n=== 上一版的問題 ===\n摘要第一句重複了標題。標題：「{title}」；摘要：「{summary}」。\n"
+            "請重寫整個 JSON：摘要直接講它交付什麼、關鍵數字與適用對象，不要再出現標題裡的名稱，"
+            "也不要用「某某是一個」的句型。")
+
 
 class SubEntitySchema(BaseModel):
     name: str = Field(default="", description="專案、模型或工具名稱")
@@ -57,10 +104,10 @@ class AnalysisOutputSchema(BaseModel):
     category: str = Field(default="Inbox", description="所屬分類名稱")
     # Empty when the model gave none: app.pipeline then falls back to the page/video
     # title, the bookmarklet's hints or its own placeholder.
-    title_l1: str = Field(default="", description="直擊本質的繁中標題（25字內）")
-    summary_l1: str = Field(default="", description="L1 核心提要（80-120字）")
+    title_l1: str = Field(default="", description="白話標題：名稱：最吸引人的具體事實或用途（20字內）")
+    summary_l1: str = Field(default="", description="2 到 3 句、70 到 120 字，不重複標題")
     tech_tags: List[str] = Field(default_factory=list, description="技術標籤清單")
-    deep_analysis: str = Field(default="", description="L2 深度剖析（Markdown 規格或金句拆解）")
+    deep_analysis: str = Field(default="", description="Markdown：## 重點、## 我可以怎麼用、## 限制，或 ## 原話、## 重點")
     is_composite: bool = Field(default=False, description="是否為多專案/多工具集合盤點")
     sub_entities: List[SubEntitySchema] = Field(default_factory=list, description="提及的子實體或開源工具清單")
 
@@ -71,15 +118,17 @@ class AnalysisOutputSchema(BaseModel):
         if not clean or clean.lower() in ("null", "none", "undefined", "untitled"):
             return ""
         # Truncate if model exceeds limit
-        return clean[:100]
+        return full_width_punctuation(clean[:100])
 
     @field_validator("summary_l1", mode="before")
     @classmethod
     def clean_summary(cls, v: Any) -> str:
-        clean = str(v or "").strip()
-        if not clean:
-            return ""
-        return clean
+        return full_width_punctuation(str(v or "").strip())
+
+    @field_validator("deep_analysis", mode="before")
+    @classmethod
+    def clean_deep_analysis(cls, v: Any) -> str:
+        return full_width_punctuation(str(v or ""))
 
     @field_validator("category", mode="before")
     @classmethod
@@ -266,6 +315,26 @@ def usable_analysis(raw_data: Any) -> Dict[str, Any]:
     return validated.model_dump()
 
 
+async def rewrite_if_summary_repeats_title(provider, prompt: str, system_prompt: str,
+                                           result: Dict[str, Any]) -> Dict[str, Any]:
+    """Asks once more, with the fault named, when the summary restates the title.
+
+    The first answer is a usable analysis already, so the second call can only improve on it:
+    if it fails, does not validate or still repeats more, the first answer is kept.
+    """
+    title, summary = result.get("title_l1") or "", result.get("summary_l1") or ""
+    if not summary_repeats_title(title, summary):
+        return result
+    try:
+        second = usable_analysis(await provider.generate_json(prompt + repeat_feedback(title, summary), system_prompt))
+    except Exception as exc:
+        logger.info("[Guardrails] Rewrite of a summary that repeats its title failed (%s); keeping the first.", exc)
+        return result
+    if title_overlap(second["title_l1"] or title, second["summary_l1"]) <= title_overlap(title, summary):
+        return second
+    return result
+
+
 async def generate_structured_intelligence(
     provider,
     prompt: str,
@@ -293,7 +362,7 @@ async def generate_structured_intelligence(
     for attempt in range(attempts):
         try:
             raw_json = await provider.generate_json(current_prompt, system_prompt)
-            return usable_analysis(raw_json)
+            return await rewrite_if_summary_repeats_title(provider, prompt, system_prompt, usable_analysis(raw_json))
         except json.JSONDecodeError as e:  # the model answered with text that is not JSON
             problem = f"輸出不是合法的 JSON（{e.msg}）"
         except UnusableAnalysis as e:
