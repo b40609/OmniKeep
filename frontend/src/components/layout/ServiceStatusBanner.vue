@@ -27,11 +27,11 @@ const problem = computed(() => {
   const unreadable = s.undecryptable.filter((k) => !k.startsWith('VAPID_'))
   if (unreadable.length) {
     const connections = unreadable.filter((k) => k.startsWith('ai_connection:')).length
-    const where = connections === unreadable.length ? '請到「設定 › AI 服務商」重新輸入那幾條連線的金鑰。' : '目前改用 .env 的值，請到設定重新輸入。'
+    const where = connections === unreadable.length ? '請到「設定 › AI」重新輸入那幾條連線的金鑰。' : '目前改用 .env 的值，請到設定重新輸入。'
     return { text: `有 ${unreadable.length} 個金鑰無法解密（主金鑰和當初加密時不同），${where}`, action: '重新輸入', tab: 'ai' }
   }
   if (s.undecryptable.length) {
-    return { text: '推播金鑰無法解密（主金鑰和當初加密時不同），推播暫停。請還原主金鑰檔，或到設定重新產生。', action: '查看', tab: 'push' }
+    return { text: '推播金鑰無法解密（主金鑰和當初加密時不同），推播暫停。請還原主金鑰檔，或到設定重新產生。', action: '查看', tab: 'push-keys' }
   }
   // One entry per connection ("c<id>", labelled), plus the older service names.
   const failing = Object.entries(s.services).filter(([, o]) => o && !o.ok)
@@ -50,7 +50,7 @@ const problem = computed(() => {
       tab: 'ai',
     }
   }
-  if (s.needs_setup) return { text: '還沒設定 AI 服務商，新收藏不會經過 AI 分析。', action: '開始設定', tab: 'wizard' }
+  if (s.needs_setup) return { text: '還沒有 AI 連線，新收藏不會經過 AI 分析。', action: '開始設定', tab: 'wizard' }
   return null
 })
 
@@ -67,6 +67,7 @@ async function refresh() {
 function act() {
   const tab = problem.value?.tab ?? 'ai'
   if (tab === 'wizard') ui.showSetupWizard = true
+  else if (tab === 'push-keys') ui.openSettings('advanced', '', 'push-keys')
   else ui.openSettings(tab)
 }
 

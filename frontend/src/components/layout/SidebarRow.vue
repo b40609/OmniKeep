@@ -15,8 +15,10 @@ withDefaults(
     active?: boolean
     rail?: boolean
     minor?: boolean
+    /** A short mark after the name, e.g. 實驗 on a feature that is still being worked on. */
+    tag?: string
   }>(),
-  { count: null, active: undefined, rail: false, minor: false },
+  { count: null, active: undefined, rail: false, minor: false, tag: '' },
 )
 </script>
 
@@ -33,7 +35,7 @@ withDefaults(
       >
         <slot />
         <template v-if="!rail">
-          <span class="nav-row__label">{{ label }}</span>
+          <span class="nav-row__label">{{ label }}<span v-if="tag" class="nav-tag">{{ tag }}</span></span>
           <span v-if="count != null" class="nav-row__count">{{ count }}</span>
         </template>
       </button>
@@ -41,7 +43,7 @@ withDefaults(
     <!-- Only exists in the rail, so a tooltip cannot outlive the switch back to full rows -->
     <TooltipPortal v-if="rail">
       <TooltipContent side="right" :side-offset="12" class="nav-tip">
-        {{ label }}<template v-if="count != null">　{{ count }}</template>
+        {{ label }}<template v-if="tag">（{{ tag }}）</template><template v-if="count != null">　{{ count }}</template>
       </TooltipContent>
     </TooltipPortal>
   </TooltipRoot>

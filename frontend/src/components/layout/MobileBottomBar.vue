@@ -31,7 +31,7 @@ function setView(view: TriageView) {
     </button>
     <button class="bottom-tab" @click="ui.showBrainModal = true">
       <MessageCircleQuestion aria-hidden="true" />
-      <span>問答</span>
+      <span>提問</span>
     </button>
     <button class="bottom-tab" @click="ui.showNoteModal = true">
       <Plus aria-hidden="true" />

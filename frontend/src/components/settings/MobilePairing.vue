@@ -2,8 +2,9 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import QRCode from 'qrcode'
 import { toast } from 'vue-sonner'
-import { Loader2, Smartphone } from 'lucide-vue-next'
-import Button from '@/components/ui/button/Button.vue'
+import { Loader2 } from 'lucide-vue-next'
+import SettingBlock from './SettingBlock.vue'
+import SettingRow from './SettingRow.vue'
 import { cancelPhonePairing, createPhonePairing, getPhonePairing, type PhonePairing } from '@/lib/api'
 import { formatPairingCode, pairingLink, phoneAddresses } from '@/lib/pairing'
 
@@ -74,7 +75,7 @@ async function cancel() {
   await cancelPhonePairing().catch(() => undefined)
 }
 
-// Closing settings (or leaving this tab) drops the code rather than leaving it valid unseen.
+// Closing settings (or leaving this section) drops the code rather than leaving it valid unseen.
 onBeforeUnmount(() => {
   if (pairing.value) cancelPhonePairing().catch(() => undefined)
   stop()
@@ -85,55 +86,47 @@ const signedInTime = computed(() =>
 </script>
 
 <template>
-  <section class="space-y-2">
-    <h3 class="flex items-center gap-1.5 text-xs font-semibold"><Smartphone class="size-3.5" /> 手機登入</h3>
-    <p class="text-2xs text-muted-foreground">
-      在手機上登入 OmniKeep，不必輸入 API 金鑰。配對碼 5 分鐘內有效、只能用一次，裡面不含金鑰。
-    </p>
+  <SettingBlock id="phone" title="手機登入">
+    <SettingRow name="用配對碼登入手機" help="不用在手機上輸入存取金鑰。配對碼 5 分鐘內有效、只能用一次，裡面不含金鑰。">
+      <template v-if="signedInTime" #below>
+        <p class="set-note set-note--ok mt-1" role="status">{{ signedInTime }} 有一支手機用配對碼登入了。</p>
+      </template>
+      <button v-if="!pairing" type="button" class="set-button" :disabled="busy" @click="start">
+        <Loader2 v-if="busy" class="animate-spin" aria-hidden="true" />
+        {{ signedInTime ? '再產生一組' : '產生配對碼' }}
+      </button>
+    </SettingRow>
 
-    <div v-if="pairing" class="space-y-3 rounded-lg border border-border p-3">
-      <div class="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
+    <div v-if="pairing" class="set-row set-row--stacked">
+      <div class="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
         <!-- QR codes need a light background to scan, in dark mode too. -->
-        <div v-if="svg" class="size-44 shrink-0 rounded-md bg-white p-1.5 [&>svg]:size-full" role="img" aria-label="手機登入 QR code" v-html="svg" />
-        <div v-else class="flex size-44 shrink-0 items-center justify-center rounded-md border border-dashed border-border p-3 text-center text-2xs text-muted-foreground">
+        <div v-if="svg" class="size-44 shrink-0 rounded-lg bg-white p-2 [&>svg]:size-full" role="img" aria-label="手機登入 QR code" v-html="svg" />
+        <div v-else class="set-panel flex size-44 shrink-0 items-center justify-center text-center text-sm text-muted-foreground">
           填入手機開啟 OmniKeep 的網址後顯示 QR code
         </div>
-        <div class="min-w-0 flex-1 space-y-2 text-xs">
-          <p class="text-2xs text-muted-foreground">配對碼（{{ countdown }} 後失效）</p>
+        <div class="min-w-0 flex-1 space-y-2">
+          <p class="text-xs text-muted-foreground">配對碼，{{ countdown }} 後失效</p>
           <p class="font-mono text-2xl font-semibold tracking-widest">{{ formatPairingCode(pairing.code) }}</p>
-          <ol class="list-decimal space-y-1 pl-4 text-2xs text-muted-foreground">
+          <ol class="set-text list-decimal space-y-1 pl-5">
             <li>用 iPhone 相機掃 QR code，會在 Safari 開啟並直接登入。</li>
-            <li>加到主畫面的 OmniKeep App 和 Safari 不共用登入：在 App 的登入頁輸入上面的配對碼。兩邊都要的話，用完再產生一組。</li>
+            <li>加到主畫面的 OmniKeep 和 Safari 不共用登入：在它的登入頁輸入上面的配對碼。兩邊都要的話，用完再產生一組。</li>
           </ol>
         </div>
       </div>
-      <label class="block space-y-1">
-        <span class="text-2xs text-muted-foreground">手機開啟 OmniKeep 的網址</span>
-        <input
-          v-model="address"
-          list="phone-addresses"
-          placeholder="https://你的電腦.你的-tailnet.ts.net"
-          class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-2xs focus:outline-none focus:ring-2 focus:ring-primary/40"
-        />
+      <div class="max-w-[560px]">
+        <label for="phone-address" class="set-label">手機開啟 OmniKeep 的網址</label>
+        <input id="phone-address" v-model="address" list="phone-addresses" placeholder="https://你的電腦.你的-tailnet.ts.net" class="set-input set-mono">
         <datalist id="phone-addresses">
           <option v-for="a in addresses" :key="a" :value="a" />
         </datalist>
-      </label>
-      <p v-if="!addresses.length" class="text-2xs text-muted-foreground">
-        找不到這台電腦的 Tailscale 網址。手機要和電腦在同一個 Tailscale 網路，電腦上啟用 <code>tailscale serve</code> 後再填入網址。
-      </p>
+        <p v-if="!addresses.length" class="set-text mt-2">
+          找不到這台電腦的 Tailscale 網址。手機要和電腦在同一個 Tailscale 網路，電腦上啟用 <code>tailscale serve</code> 後再填入網址。
+        </p>
+      </div>
       <div class="flex flex-wrap gap-2">
-        <Button variant="secondary" size="sm" :disabled="busy" @click="start">重新產生</Button>
-        <Button variant="ghost" size="sm" @click="cancel">取消</Button>
+        <button type="button" class="set-button" :disabled="busy" @click="start">重新產生</button>
+        <button type="button" class="set-button set-button--text" @click="cancel">取消</button>
       </div>
     </div>
-
-    <template v-else>
-      <p v-if="signedInTime" class="text-2xs text-success">{{ signedInTime }} 有一支手機用配對碼登入了。</p>
-      <Button variant="secondary" size="sm" :disabled="busy" @click="start">
-        <Loader2 v-if="busy" class="size-3 animate-spin" />
-        {{ signedInTime ? '再產生一組配對碼' : '產生手機登入 QR code' }}
-      </Button>
-    </template>
-  </section>
+  </SettingBlock>
 </template>

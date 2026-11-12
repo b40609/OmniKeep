@@ -38,13 +38,17 @@ test('going back to .env asks only when .env says off', () => {
 })
 
 test('the settings page confirms with a way to copy the key before saving', async () => {
-  const dialog = await read('components/modals/SettingsDialog.vue')
-  assert.match(dialog, /turnsLocalLoginOff\(byKey\.value\.get\(LOCAL_LOGIN_KEY\), pending\.value\.values, pending\.value\.reset\)/)
-  assert.match(dialog, /複製存取金鑰/)
-  assert.match(dialog, /配對碼/)
-  assert.match(dialog, /@click="save\(true\)"/)
-  // The 系統 tab is listed once even though the server now describes a group with that id.
-  assert.match(dialog, /groups\.filter\(\(g\) => g\.id !== 'system'\)/)
+  // Every way of saving (a block's button, a switch, 重設) goes through one guard.
+  const form = await read('composables/useSettingsForm.ts')
+  assert.match(form, /turnsLocalLoginOff\(byKey\.value\.get\(LOCAL_LOGIN_KEY\), values, reset\)/)
+  assert.match(form, /localLoginPending\.value = \{ values, reset \}\s+return false/)
+  const page = await read('components/settings/SettingsPage.vue')
+  assert.match(page, /複製存取金鑰/)
+  assert.match(page, /配對碼/)
+  assert.match(page, /:open="!!form\.localLoginPending\.value"/)
+  assert.match(page, /@confirm="confirmLocalLogin"/)
+  // Closing the question without confirming saves nothing.
+  assert.match(page, /if \(!open\) cancelLocalLogin\(\)/)
 })
 
 test('the key is handed out for copying only, and App.vue alone stores it', async () => {
@@ -63,5 +67,5 @@ test('the key is handed out for copying only, and App.vue alone stores it', asyn
     }
   }
   await walk(new URL('../src/', import.meta.url))
-  assert.deepEqual(users, ['SettingsDialog.vue'])
+  assert.deepEqual(users, ['SettingsPage.vue'])
 })

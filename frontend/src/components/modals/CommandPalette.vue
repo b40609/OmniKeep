@@ -1,32 +1,20 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import {
-  Search,
-  Sparkles,
-  Inbox,
-  Star,
-  Archive,
-  Radio,
-  FilePlus,
-  Layers,
-  Upload,
-  Eye,
-  Settings,
-  SunMoon,
-  ExternalLink,
-  Tag,
-  CornerDownLeft,
-  GalleryHorizontalEnd,
-  Bell,
+  Search, MessageCircleQuestion, Inbox, Star, Archive, Compass, FilePlus, Layers, Upload, Eye, Settings,
+  SlidersHorizontal, SunMoon, ExternalLink, Tag, CornerDownLeft, GalleryHorizontalEnd, Bell,
 } from 'lucide-vue-next'
 import { useUiStore } from '@/stores/ui'
-import { useItemsStore } from '@/stores/items'
+import { useItemsStore, type TriageView } from '@/stores/items'
+import { useExperimentsStore } from '@/stores/experiments'
+import { WATCH_CATEGORIES } from '@/lib/experiments'
 import { useTheme } from '@/composables/useTheme'
 import { cleanHost, sourceMeta } from '@/lib/format'
 
 const ui = useUiStore()
 const itemsStore = useItemsStore()
-const { mode, toggle: toggleTheme } = useTheme()
+const experiments = useExperimentsStore()
+const { mode, labels, toggle: toggleTheme } = useTheme()
 
 const searchQuery = ref('')
 const selectedIndex = ref(0)
@@ -39,205 +27,63 @@ interface PaletteAction {
   subtitle?: string
   category: 'actions' | 'views' | 'items'
   icon: any
-  iconColor?: string
   badge?: string
   run: () => void
 }
 
-const staticActions = computed<PaletteAction[]>(() => [
-  {
-    id: 'action-brain',
-    title: '跨篇 AI 架構綜述 (Brain Synthesis)',
-    subtitle: '彙總近期高價值技術情報生成宏觀分析',
-    category: 'actions',
-    icon: Sparkles,
-    iconColor: 'text-violet-400',
-    run: () => {
-      ui.showCommandPalette = false
-      ui.showBrainModal = true
-    },
-  },
-  {
-    id: 'action-daily-deck',
-    title: '今日推薦卡片 (Daily Deck)',
-    subtitle: '滑卡回顧待讀與值得重溫的舊收藏',
-    category: 'actions',
-    icon: Layers,
-    iconColor: 'text-amber-400',
-    run: () => {
-      ui.showCommandPalette = false
-      ui.showDailyDeckModal = true
-    },
-  },
-  {
-    id: 'action-radar-deck',
-    title: '雷達滑卡 (Radar Deck)',
-    subtitle: '逐張判定雷達候選情報：想看、略過、收藏、稍後',
-    category: 'actions',
-    icon: GalleryHorizontalEnd,
-    iconColor: 'text-amber-400',
-    run: () => {
-      ui.showCommandPalette = false
-      ui.showDeckModal = true
-    },
-  },
-  {
-    id: 'action-settings',
-    title: '設定 (Settings)',
-    subtitle: 'AI 服務商金鑰、Ask Brain、Telegram／LINE、備份',
-    category: 'actions',
-    icon: Settings,
-    iconColor: 'text-slate-400',
-    run: () => {
-      ui.showCommandPalette = false
-      ui.openSettings()
-    },
-  },
-  {
-    id: 'action-push',
-    title: '推播通知設定 (Web Push)',
-    subtitle: '這台裝置的通知與 Telegram 配對',
-    category: 'actions',
-    icon: Bell,
-    iconColor: 'text-sky-400',
-    run: () => {
-      ui.showCommandPalette = false
-      ui.showPushModal = true
-    },
-  },
-  {
-    id: 'action-new-note',
-    title: '新增文字速記 (Quick Note)',
-    subtitle: '建立快速手寫卡片',
-    category: 'actions',
-    icon: FilePlus,
-    iconColor: 'text-emerald-400',
-    run: () => {
-      ui.showCommandPalette = false
-      ui.showNoteModal = true
-    },
-  },
-  {
-    id: 'action-import',
-    title: '匯入瀏覽器書籤 (Import HTML)',
-    subtitle: '批量匯入 Chrome / Safari / Edge 書籤',
-    category: 'actions',
-    icon: Upload,
-    iconColor: 'text-sky-400',
-    run: () => {
-      ui.showCommandPalette = false
-      ui.showImportModal = true
-    },
-  },
-  {
-    id: 'action-watch',
-    title: '檔案與目錄監看中心 (Watch Center)',
-    subtitle: '檢視本機專案與提案卡片',
-    category: 'actions',
-    icon: Eye,
-    iconColor: 'text-indigo-400',
-    run: () => {
-      ui.showCommandPalette = false
-      ui.showWatchModal = true
-    },
-  },
-  {
-    id: 'action-radar',
-    title: '雷達訂閱與巡檢設定 (Radar Settings)',
-    subtitle: '管理 GitHub Trending、RSS 與 YouTube 訂閱源',
-    category: 'actions',
-    icon: Settings,
-    iconColor: 'text-zinc-400',
-    run: () => {
-      ui.showCommandPalette = false
-      ui.showRadarModal = true
-    },
-  },
-  {
-    id: 'action-theme',
-    title: `切換外觀主題（目前：${mode.value}）`,
-    subtitle: '在 Dark、OLED 與 Light 之間循環切換',
-    category: 'actions',
-    icon: SunMoon,
-    iconColor: 'text-pink-400',
-    run: () => {
-      toggleTheme()
-    },
-  },
-  // Quick Views
-  {
-    id: 'view-inbox',
-    title: '收件匣 (Inbox)',
-    subtitle: `${itemsStore.stats.inbox} 則待消化`,
-    category: 'views',
-    icon: Inbox,
-    iconColor: 'text-blue-400',
-    run: () => {
-      itemsStore.triageView = 'inbox'
-      itemsStore.currentCategory = '全部'
-      void itemsStore.loadItems()
-      ui.showCommandPalette = false
-    },
-  },
-  {
-    id: 'view-starred',
-    title: '精選星標 (Starred)',
-    subtitle: `${itemsStore.stats.starred} 則收藏`,
-    category: 'views',
-    icon: Star,
-    iconColor: 'text-amber-400',
-    run: () => {
-      itemsStore.triageView = 'starred'
-      itemsStore.currentCategory = '全部'
-      void itemsStore.loadItems()
-      ui.showCommandPalette = false
-    },
-  },
-  {
-    id: 'view-radar',
-    title: '雷達自動捕獲 (Radar Items)',
-    subtitle: `${itemsStore.stats.radar || 0} 則雷達捕獲`,
-    category: 'views',
-    icon: Radio,
-    iconColor: 'text-emerald-400',
-    run: () => {
-      itemsStore.triageView = 'radar'
-      itemsStore.currentCategory = '全部'
-      void itemsStore.loadItems()
-      ui.showCommandPalette = false
-    },
-  },
-  {
-    id: 'view-archived',
-    title: '已讀封存庫 (Archived)',
-    subtitle: `${itemsStore.stats.archived} 則已封存紀錄`,
-    category: 'views',
-    icon: Archive,
-    iconColor: 'text-zinc-400',
-    run: () => {
-      itemsStore.triageView = 'archived'
-      itemsStore.currentCategory = '全部'
-      void itemsStore.loadItems()
-      ui.showCommandPalette = false
-    },
-  },
-])
+const closeThen = (run: () => void) => () => {
+  ui.showCommandPalette = false
+  run()
+}
+const showView = (view: TriageView) => closeThen(() => {
+  itemsStore.triageView = view
+  itemsStore.currentCategory = '全部'
+  void itemsStore.loadItems()
+})
+
+const staticActions = computed<PaletteAction[]>(() => {
+  const actions: PaletteAction[] = [
+    { id: 'action-brain', title: '提問', subtitle: '用收藏的內容回答問題', category: 'actions', icon: MessageCircleQuestion, run: closeThen(() => (ui.showBrainModal = true)) },
+    { id: 'action-new-note', title: '新增筆記', subtitle: '寫一則文字筆記', category: 'actions', icon: FilePlus, run: closeThen(() => (ui.showNoteModal = true)) },
+    { id: 'action-import', title: '匯入書籤', subtitle: '從瀏覽器的書籤檔或一批連結匯入', category: 'actions', icon: Upload, run: closeThen(() => ui.openImport('file')) },
+    { id: 'action-settings', title: '設定', subtitle: '外觀、收錄管道、AI 連線、通知、備份', category: 'actions', icon: Settings, run: closeThen(() => ui.openSettings()) },
+    { id: 'action-push', title: '通知設定', subtitle: '這台裝置要不要收通知', category: 'actions', icon: Bell, run: closeThen(() => ui.openSettings('notifications')) },
+    { id: 'action-theme', title: '切換主題', subtitle: `目前：${labels[mode.value]}`, category: 'actions', icon: SunMoon, run: () => toggleTheme() },
+    // Views
+    { id: 'view-inbox', title: '收件匣', subtitle: `${itemsStore.stats.inbox} 則還沒看`, category: 'views', icon: Inbox, run: showView('inbox') },
+    { id: 'view-starred', title: '加星', subtitle: `${itemsStore.stats.starred} 則`, category: 'views', icon: Star, run: showView('starred') },
+    { id: 'view-archived', title: '封存', subtitle: `${itemsStore.stats.archived} 則`, category: 'views', icon: Archive, run: showView('archived') },
+  ]
+  // Experimental features are listed only while they are switched on (設定 › 實驗功能).
+  if (experiments.flags.radar) {
+    actions.push(
+      { id: 'view-radar', title: '探索', subtitle: `${itemsStore.stats.radar || 0} 則還沒處理`, category: 'views', icon: Compass, badge: '實驗', run: showView('radar') },
+      { id: 'action-radar-deck', title: '逐則篩選', subtitle: '一則一則決定探索找到的內容要不要留', category: 'actions', icon: GalleryHorizontalEnd, badge: '實驗', run: closeThen(() => (ui.showDeckModal = true)) },
+      { id: 'action-radar', title: '探索設定', subtitle: '探索來源、排程與通知', category: 'actions', icon: SlidersHorizontal, badge: '實驗', run: closeThen(() => (ui.showRadarModal = true)) },
+    )
+  }
+  if (experiments.flags.watch) {
+    actions.push({ id: 'action-watch', title: '專案監看', subtitle: '本機專案與給它們的建議', category: 'actions', icon: Eye, badge: '實驗', run: closeThen(() => (ui.showWatchModal = true)) })
+  }
+  if (experiments.flags.daily) {
+    actions.push({ id: 'action-daily-deck', title: '每日回顧', subtitle: '看過今天挑出來的未讀和舊收藏', category: 'actions', icon: Layers, badge: '實驗', run: closeThen(() => (ui.showDailyDeckModal = true)) })
+  }
+  return actions
+})
 
 const categoryActions = computed<PaletteAction[]>(() => {
   return itemsStore.categories
-    .filter((c) => c.name !== 'Inbox')
+    .filter((c) => c.name !== 'Inbox' && (experiments.flags.watch || !WATCH_CATEGORIES.includes(c.name)))
     .map((c) => ({
       id: `cat-${c.id}`,
       title: `分類：${c.name}`,
-      subtitle: `篩選 ${c.name} 分類下的所有技術情報`,
+      subtitle: `${c.item_count ?? 0} 則`,
       category: 'views' as const,
       icon: Tag,
-      iconColor: 'text-indigo-400',
-      run: () => {
+      run: closeThen(() => {
         itemsStore.currentCategory = c.name
         void itemsStore.loadItems()
-        ui.showCommandPalette = false
-      },
+      }),
     }))
 })
 
@@ -256,10 +102,9 @@ const itemActions = computed<PaletteAction[]>(() => {
     .map((item) => ({
       id: `item-${item.id}`,
       title: item.title_l1,
-      subtitle: `${cleanHost(item.url)} · ${item.summary_l1?.slice(0, 50) || ''}...`,
+      subtitle: [cleanHost(item.url), item.summary_l1?.slice(0, 50)].filter(Boolean).join('・'),
       category: 'items' as const,
       icon: ExternalLink,
-      iconColor: 'text-muted-foreground',
       badge: sourceMeta(item.source_type).label,
       run: () => {
         ui.activeItem = item
@@ -339,7 +184,7 @@ function close() {
       class="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[12vh] backdrop-blur-md transition-opacity"
       role="dialog"
       aria-modal="true"
-      aria-label="全域命令列"
+      aria-label="命令列"
       @click.self="close"
     >
       <div
@@ -353,14 +198,14 @@ function close() {
             ref="inputRef"
             v-model="searchQuery"
             type="text"
-            placeholder="搜尋情報、標籤、過濾或執行指令 (Cmd+K)..."
+            placeholder="搜尋收藏，或輸入要做的事"
             class="min-w-0 flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
             autocomplete="off"
             spellcheck="false"
           />
           <kbd
             class="rounded border border-border bg-muted/60 px-1.5 py-0.5 text-2xs font-mono text-muted-foreground cursor-pointer hover:bg-muted"
-            title="關閉面板"
+            title="關閉"
             @click="close"
           >
             ESC
@@ -374,9 +219,9 @@ function close() {
         >
           <div
             v-if="filteredEntries.length === 0"
-            class="flex flex-col items-center justify-center py-10 text-center text-xs text-muted-foreground"
+            class="flex flex-col items-center justify-center py-10 text-center text-sm text-muted-foreground"
           >
-            <p>找不到符合「{{ searchQuery }}」的動作或情報</p>
+            <p>找不到符合「{{ searchQuery }}」的收藏或動作。</p>
           </div>
 
           <button
@@ -395,12 +240,11 @@ function close() {
           >
             <component
               :is="item.icon"
-              class="size-4 shrink-0 transition-transform group-hover:scale-110"
-              :class="item.iconColor || 'text-muted-foreground'"
+              class="size-5 shrink-0 text-muted-foreground"
             />
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
-                <span class="truncate font-medium text-xs sm:text-sm">{{ item.title }}</span>
+                <span class="truncate text-sm font-medium">{{ item.title }}</span>
                 <span
                   v-if="item.badge"
                   class="rounded bg-muted px-1.5 py-0.5 text-2xs font-mono text-muted-foreground"
@@ -410,8 +254,7 @@ function close() {
               </div>
               <p
                 v-if="item.subtitle"
-                class="truncate text-2xs text-muted-foreground"
-                :class="idx === selectedIndex ? 'text-primary/70' : ''"
+                class="truncate text-sm text-muted-foreground"
               >
                 {{ item.subtitle }}
               </p>
@@ -431,14 +274,13 @@ function close() {
             <span class="flex items-center gap-1">
               <kbd class="rounded border border-border bg-card px-1 py-0.2 font-mono">↑</kbd>
               <kbd class="rounded border border-border bg-card px-1 py-0.2 font-mono">↓</kbd>
-              導航
+              移動
             </span>
             <span class="flex items-center gap-1">
               <kbd class="rounded border border-border bg-card px-1.5 py-0.2 font-mono">↵</kbd>
               執行
             </span>
           </div>
-          <span class="text-subtle-foreground">OmniKeep Command Palette</span>
         </div>
       </div>
     </div>

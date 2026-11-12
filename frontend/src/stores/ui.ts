@@ -2,9 +2,11 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import type { Item } from '@/lib/api'
+import { DEFAULT_SECTION, resolveSettingsTarget, type SettingsSectionId } from '@/lib/settingsSections'
 
 export type ReaderTab = 'analysis' | 'reader'
 export type WatchTab = 'targets' | 'proposals' | 'backup'
+export type ImportTab = 'file' | 'text' | 'bookmarklet' | 'export'
 
 export const useUiStore = defineStore('ui', () => {
   // Navigation & Layout
@@ -29,17 +31,25 @@ export const useUiStore = defineStore('ui', () => {
   const showCategoryModal = ref(false)
   const showShortcutsModal = ref(false)
   const showRadarModal = ref(false)
-  const showSessionModal = ref(false)
   const showWatchModal = ref(false)
   const watchTab = ref<WatchTab>('targets')
   const showImportModal = ref(false)
+  /** Tab the import dialog opens on. */
+  const importTab = ref<ImportTab>('file')
   const showDeckModal = ref(false)
-  const showPushModal = ref(false)
   const showDailyDeckModal = ref(false)
   const showBrainModal = ref(false)
   const showCommandPalette = ref(false)
+
+  // Settings: a full page over the workspace (components/settings/SettingsPage.vue).
   const showSettingsModal = ref(false)
-  const settingsTab = ref('ai')
+  const settingsTab = ref<SettingsSectionId>(DEFAULT_SECTION)
+  /** Block inside the section to bring into view once it is drawn; cleared by the page. */
+  const settingsBlock = ref('')
+  /** On a phone: the list of groups, or one group's settings. */
+  const settingsLevel = ref<'list' | 'detail'>('detail')
+  /** Bumped to ask the settings page to close (Esc); it may ask about unsaved changes first. */
+  const settingsCloseRequests = ref(0)
   /** Bumped after settings are saved, so the service-status banner re-checks. */
   const settingsVersion = ref(0)
   /** First-run guide shown while no AI provider is usable. */
@@ -48,11 +58,24 @@ export const useUiStore = defineStore('ui', () => {
   /** AI service card an agent's settings link asked to focus (`#settings=ai&card=agnes`). */
   const settingsCard = ref('')
 
-  function openSettings(tab = 'ai', card = '') {
-    settingsTab.value = tab
+  /**
+   * `tab` is a section of the settings page, or one of the older tab ids that
+   * settings links still carry (`telegram`, `push`, `system`…).
+   */
+  function openSettings(tab?: string, card = '', block = '') {
+    const target = resolveSettingsTarget(tab ?? DEFAULT_SECTION, block)
+    // Asked for nothing in particular: a phone starts at the list of groups.
+    settingsLevel.value = tab === undefined ? 'list' : 'detail'
+    settingsTab.value = target.section
+    settingsBlock.value = target.block
     settingsCard.value = card
     showSettingsModal.value = true
     sidebarMobileOpen.value = false
+  }
+
+  function openImport(tab: ImportTab = 'file') {
+    importTab.value = tab
+    showImportModal.value = true
   }
 
   /** Saved page shown in SnapshotDialog; null while closed. */
@@ -64,9 +87,9 @@ export const useUiStore = defineStore('ui', () => {
   return {
     sidebarOpen, sidebarMobileOpen, searchFocusRequests,
     activeItem, cursorId, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
-    showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showSessionModal, showWatchModal, showImportModal, showDeckModal, showPushModal,
+    showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showWatchModal, showImportModal, importTab, openImport, showDeckModal,
     showDailyDeckModal, showBrainModal, showCommandPalette,
-    showSettingsModal, settingsTab, settingsCard, settingsVersion, openSettings, showSetupWizard,
+    showSettingsModal, settingsTab, settingsBlock, settingsLevel, settingsCloseRequests, settingsCard, settingsVersion, openSettings, showSetupWizard,
     watchTab, snapshotView,
     isIngesting,
   }

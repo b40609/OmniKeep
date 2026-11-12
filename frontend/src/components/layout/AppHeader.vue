@@ -88,7 +88,7 @@ async function installPWA() {
 const viewTitle = computed(() => {
   switch (items.triageView) {
     case 'inbox': return '收件匣'
-    case 'radar': return '雷達收件匣'
+    case 'radar': return '探索'
     case 'starred': return '加星'
     case 'archived': return '封存'
     default: return '全部'
@@ -160,8 +160,8 @@ function goInbox() {
       <div class="flex items-center justify-end gap-1 max-lg:col-start-3 md:gap-2">
         <button class="icon-button lg:hidden" aria-label="搜尋收藏" title="搜尋　/" :aria-expanded="showMobileSearch" aria-controls="collection-search" @click="showMobileSearch ? (showMobileSearch = false) : focusSearchInput()"><Search /></button>
 
-        <button type="button" class="top-button max-md:hidden max-xl:px-2.5" title="用收藏的內容回答問題　B" aria-label="問答" @click="ui.showBrainModal = true">
-          <MessageCircleQuestion /><strong class="max-xl:hidden">問答</strong>
+        <button type="button" class="top-button max-md:hidden max-xl:px-2.5" title="用收藏的內容回答問題　B" aria-label="提問" @click="ui.showBrainModal = true">
+          <MessageCircleQuestion /><strong class="max-xl:hidden">提問</strong>
         </button>
 
         <!-- 新增: the one place to add things. 貼上連結 opens the panel below this button. -->
@@ -176,7 +176,7 @@ function goInbox() {
               <DropdownMenuContent class="app-menu" align="end" :side-offset="8" :collision-padding="12" @close-auto-focus="addMenu.flush">
                 <DropdownMenuItem class="app-menu__item" title="貼上連結　N" @select="addMenu.defer(() => void focusQuickInput())"><Link2 aria-hidden="true" />貼上連結</DropdownMenuItem>
                 <DropdownMenuItem class="app-menu__item" title="新增筆記　Shift+N" @select="addMenu.defer(() => (ui.showNoteModal = true))"><FileText aria-hidden="true" />新增筆記</DropdownMenuItem>
-                <DropdownMenuItem class="app-menu__item" title="匯入書籤　I" @select="addMenu.defer(() => (ui.showImportModal = true))"><FolderInput aria-hidden="true" />匯入書籤</DropdownMenuItem>
+                <DropdownMenuItem class="app-menu__item" title="匯入書籤　I" @select="addMenu.defer(() => ui.openImport('file'))"><FolderInput aria-hidden="true" />匯入書籤</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenuPortal>
           </DropdownMenuRoot>
@@ -212,8 +212,8 @@ function goInbox() {
 
         <button v-if="deferredPrompt" type="button" class="icon-button max-md:hidden" aria-label="安裝 OmniKeep" title="安裝成應用程式" @click="installPWA"><Download /></button>
 
-        <!-- The existing dialog behind the bell is the push settings, not a list of notifications: say so, and show no badge -->
-        <button type="button" class="icon-button max-md:hidden" aria-label="通知設定" title="通知設定" @click="ui.showPushModal = true"><Bell /></button>
+        <!-- There is no list of notifications yet: the bell opens their settings, and shows no badge -->
+        <button type="button" class="icon-button max-md:hidden" aria-label="通知設定" title="通知設定" @click="ui.openSettings('notifications')"><Bell /></button>
 
         <AccountMenu @logout="emit('logout')" />
       </div>

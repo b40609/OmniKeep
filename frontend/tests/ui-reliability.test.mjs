@@ -40,6 +40,8 @@ async function loadSource(path) {
         else if (name === 'useUiStore') value = '() => globalThis.__uiTest.ui'
         else if (name === 'useItemsStore') value = '() => globalThis.__uiTest.items'
         else if (name === 'useRadarStore') value = '() => ({ ensureLoaded() {} })'
+        else if (name === 'useExperimentsStore') value = '() => globalThis.__uiTest.experiments'
+        else if (name === 'blockedShortcut') value = '(...args) => globalThis.__uiTest.blockedShortcut(...args)'
         else if (name === 'useMutations') value = '() => globalThis.__uiTest.mutations'
         else if (name === 'useSignal') value = '() => ({ tuneItem() {} })'
         else if (name === 'useTheme') value = '() => ({ mode: "light", accent: "blue", accents: [], set() {}, setAccent() {} })'
@@ -64,6 +66,12 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
+// The real rule for which shortcuts an experimental feature owns (it has no imports to mock).
+const { blockedShortcut } = await import(moduleUrl(ts.transpileModule(
+  await readFile(new URL('../src/lib/experiments.ts', import.meta.url), 'utf8'),
+  { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } },
+).outputText))
+
 function reset() {
   globalThis.window = new EventTarget()
   globalThis.HTMLElement = class {}
@@ -73,6 +81,9 @@ function reset() {
     items: reactive({ items: [], get visibleItems() { return this.items }, triageView: 'inbox', categories: [], stats: {}, loadItems() {} }),
     mutations: { quickIngest: async () => true, toggleStar() {}, toggleRead() {}, updateCategory() {} },
     api: {},
+    // Every experimental feature on, unless a test switches one off.
+    experiments: reactive({ flags: { radar: true, watch: true, daily: true } }),
+    blockedShortcut,
   }
   return globalThis.__uiTest
 }
@@ -281,6 +292,70 @@ test('keyboard shortcuts preserve browser actions and native button activation',
     document.activeElement = null
     key('N')
     assert.equal(ctx.ui.showNoteModal, true)
+  } finally { view.unmount() }
+})
+
+test('shortcuts of an experimental feature work only while it is switched on', async () => {
+  const ctx = reset()
+  const { useKeyboard } = await loadSource('composables/useKeyboard.ts')
+  const view = mount({ setup() { useKeyboard(() => null); return {} } })
+  const key = value => {
+    const event = new Event('keydown', { cancelable: true })
+    Object.assign(event, { key: value, ctrlKey: false, metaKey: false, altKey: false })
+    window.dispatchEvent(event)
+    return event
+  }
+  try {
+    ctx.experiments.flags = { radar: false, watch: false, daily: false }
+    for (const k of ['r', 'R', 'd', 'D']) assert.equal(key(k).defaultPrevented, false, k)
+    assert.equal(ctx.ui.showRadarModal, undefined)
+    assert.equal(ctx.ui.showDeckModal, undefined)
+    assert.equal(ctx.ui.showDailyDeckModal, undefined)
+    // Everything else still works.
+    key('N')
+    assert.equal(ctx.ui.showNoteModal, true)
+    ctx.ui.showNoteModal = false
+
+    ctx.experiments.flags = { radar: false, watch: false, daily: true }
+    key('D')
+    assert.equal(ctx.ui.showDailyDeckModal, true)
+    ctx.ui.showDailyDeckModal = false
+    key('d')
+    assert.equal(ctx.ui.showDeckModal, undefined)
+
+    ctx.experiments.flags = { radar: true, watch: false, daily: false }
+    key('d')
+    assert.equal(ctx.ui.showDeckModal, true)
+    ctx.ui.showDeckModal = false
+    key('r')
+    assert.equal(ctx.ui.showRadarModal, true)
+  } finally { view.unmount() }
+})
+
+test('while the settings page is open only Esc does anything, and it asks the page to close', async () => {
+  const ctx = reset()
+  const { useKeyboard } = await loadSource('composables/useKeyboard.ts')
+  const view = mount({ setup() { useKeyboard(() => null); return {} } })
+  const key = value => {
+    const event = new Event('keydown', { cancelable: true })
+    Object.assign(event, { key: value, ctrlKey: false, metaKey: false, altKey: false })
+    window.dispatchEvent(event)
+  }
+  try {
+    ctx.ui.showSettingsModal = true
+    ctx.ui.settingsCloseRequests = 0
+    ctx.items.items = [{ id: 1 }]
+    document.querySelector = () => null
+    key('N'); key('j'); key('b')
+    assert.equal(ctx.ui.showNoteModal, undefined)
+    assert.equal(ctx.ui.activeItem, null)
+    assert.equal(ctx.ui.showBrainModal, undefined)
+    key('Escape')
+    assert.equal(ctx.ui.settingsCloseRequests, 1)
+    // A confirmation or a menu open on top of the page gets the Esc instead.
+    document.querySelector = () => ({})
+    key('Escape')
+    assert.equal(ctx.ui.settingsCloseRequests, 1)
   } finally { view.unmount() }
 })
 

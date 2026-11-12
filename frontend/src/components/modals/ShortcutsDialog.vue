@@ -1,70 +1,72 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import Button from '@/components/ui/button/Button.vue'
 import { useUiStore } from '@/stores/ui'
+import { useExperimentsStore } from '@/stores/experiments'
+import type { ExperimentId } from '@/lib/experiments'
 
 const ui = useUiStore()
+const experiments = useExperimentsStore()
 
-const groups: { title: string; items: [string, string][] }[] = [
+/** [keys, what it does, the experimental feature it belongs to]. */
+type Shortcut = [string, string, ExperimentId?]
+const GROUPS: { title: string; items: Shortcut[] }[] = [
   {
     title: '瀏覽',
     items: [
-      ['J / ↓', '下一個項目'],
-      ['K / ↑', '上一個項目'],
-      ['Enter', '開啟選取的項目'],
-      ['Esc', '關閉面板 / 對話框'],
+      ['J / ↓', '下一則'],
+      ['K / ↑', '上一則'],
+      ['Enter', '開啟選取的收藏'],
+      ['Esc', '關閉面板或對話框'],
+      ['/', '搜尋'],
+      ['Ctrl/Cmd+K', '命令列'],
+      ['Ctrl/Cmd+B', '展開或收合側邊欄'],
     ],
   },
   {
     title: '整理',
     items: [
-      ['E', '封存 / 取消封存'],
-      ['S', '加星 / 取消加星'],
-      ['+ / -', '多推薦 / 少推薦這類內容'],
+      ['E', '封存／取消封存'],
+      ['S', '加星／取消加星'],
+      ['+ / -', '多推薦／少推薦這類內容'],
     ],
   },
   {
-    title: '輸入',
+    title: '新增與開啟',
     items: [
       ['N', '貼上連結'],
       ['Shift+N', '新增筆記'],
-      ['Ctrl/Cmd+B', '展開 / 收合側邊欄'],
-      ['/', '搜尋'],
-      ['B', '問答'],
-      ['R', '雷達設定'],
-      ['D', '雷達快速篩選'],
-      ['Shift+D', '每日回顧'],
-      ['I', '書籤與外部匯入'],
-      ['?', '本快捷鍵指南'],
+      ['I', '匯入書籤'],
+      ['B', '提問'],
+      ['R', '探索設定', 'radar'],
+      ['D', '逐則篩選', 'radar'],
+      ['Shift+D', '每日回顧', 'daily'],
+      ['?', '鍵盤快捷鍵'],
     ],
   },
 ]
-
+// A feature that is switched off has no shortcut, so it is not listed either.
+const groups = computed(() =>
+  GROUPS.map((g) => ({ ...g, items: g.items.filter(([, , experiment]) => !experiment || experiments.flags[experiment]) })))
 </script>
 
 <template>
   <Dialog :open="ui.showShortcutsModal" @update:open="(v) => (ui.showShortcutsModal = v)">
-    <DialogContent class="max-w-md">
+    <DialogContent class="max-w-xl">
       <DialogHeader>
-        <DialogTitle class="flex items-center gap-2">
-          鍵盤快捷鍵
-        </DialogTitle>
+        <DialogTitle>鍵盤快捷鍵</DialogTitle>
       </DialogHeader>
 
-      <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2">
         <div v-for="g in groups" :key="g.title">
-          <p class="mb-2 font-mono text-2xs font-bold tracking-wider text-subtle-foreground uppercase">{{ g.title }}</p>
-          <div class="space-y-1">
-            <div v-for="[key, label] in g.items" :key="key" class="flex items-center justify-between gap-3 py-0.5 text-xs">
-              <span class="text-muted-foreground">{{ label }}</span>
-              <kbd class="rounded-md border border-border bg-muted px-2 py-1 font-mono text-2xs text-foreground shadow-sm">{{ key }}</kbd>
+          <h3 class="mb-2 text-sm font-semibold">{{ g.title }}</h3>
+          <dl>
+            <div v-for="[key, label] in g.items" :key="key" class="flex min-h-9 items-center justify-between gap-3 text-sm">
+              <dt class="text-muted-foreground">{{ label }}</dt>
+              <dd><kbd class="rounded-md bg-surface-2 px-2 py-1 font-mono text-xs text-foreground">{{ key }}</kbd></dd>
             </div>
-          </div>
+          </dl>
         </div>
-      </div>
-
-      <div class="flex justify-end border-t border-border pt-3">
-        <Button variant="secondary" @click="ui.showShortcutsModal = false">我知道了</Button>
       </div>
     </DialogContent>
   </Dialog>

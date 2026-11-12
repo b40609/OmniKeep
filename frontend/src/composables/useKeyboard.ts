@@ -2,6 +2,8 @@ import { onMounted, onUnmounted } from 'vue'
 import { useItemsStore } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
 import { useRadarStore } from '@/stores/radar'
+import { useExperimentsStore } from '@/stores/experiments'
+import { blockedShortcut } from '@/lib/experiments'
 import { useMutations } from './useMutations'
 import { useSignal } from './useSignal'
 
@@ -12,6 +14,7 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
   const items = useItemsStore()
   const ui = useUiStore()
   const radar = useRadarStore()
+  const experiments = useExperimentsStore()
   const { toggleStar, toggleRead } = useMutations()
 
   function isAnyModalOpen() {
@@ -20,11 +23,9 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
       ui.showCategoryModal ||
       ui.showShortcutsModal ||
       ui.showRadarModal ||
-      ui.showSessionModal ||
       ui.showWatchModal ||
       ui.showImportModal ||
       ui.showDeckModal ||
-      ui.showPushModal ||
       ui.showDailyDeckModal ||
       ui.showBrainModal ||
       ui.showCommandPalette ||
@@ -60,15 +61,22 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         ui.showCategoryModal = false
         ui.showShortcutsModal = false
         ui.showRadarModal = false
-        ui.showSessionModal = false
         ui.showWatchModal = false
         ui.showImportModal = false
         ui.showDeckModal = false
-        ui.showPushModal = false
         ui.showDailyDeckModal = false
         ui.showBrainModal = false
         ui.showCommandPalette = false
         ui.snapshotView = null
+      }
+      return
+    }
+
+    // The settings page covers the workspace: only Esc means anything there, and it
+    // belongs to whatever is open on top of the page (a menu, a confirmation) first.
+    if (ui.showSettingsModal) {
+      if (e.key === 'Escape' && !document.querySelector('[data-state="open"]:is([role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"])')) {
+        ui.settingsCloseRequests++
       }
       return
     }
@@ -84,6 +92,9 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
     if ((e.key === 'Enter' || e.key === ' ') && el?.closest('button, a')) return
     if (el?.closest('[role="tab"], [role="menuitem"]')) return
 
+    // Shortcuts of an experimental feature that is switched off do nothing.
+    if (blockedShortcut(e.key, experiments.flags)) return
+
     switch (e.key) {
       case '?':
         e.preventDefault()
@@ -95,7 +106,7 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         ui.showBrainModal = !ui.showBrainModal
         return
       case 'D':
-        // Shift+D: daily review deck (curated unread + resurfaced); plain d is the radar deck
+        // Shift+D: daily review (curated unread + resurfaced); plain d reviews the radar's finds one by one
         e.preventDefault()
         ui.showDailyDeckModal = !ui.showDailyDeckModal
         return

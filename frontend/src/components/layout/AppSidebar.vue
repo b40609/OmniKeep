@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useLocalStorage, useMediaQuery } from '@vueuse/core'
 import {
   Inbox, Star, Archive, Layers, Folder, Plus, X, ChevronDown, ChevronUp,
-  FlaskConical, Radar, ScanEye, Sparkles,
+  Compass, ScanEye, History,
 } from 'lucide-vue-next'
 import {
   DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuItem,
@@ -12,14 +12,18 @@ import {
 import SidebarRow from './SidebarRow.vue'
 import { useItemsStore, type TriageView } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
+import { useExperimentsStore } from '@/stores/experiments'
+import { WATCH_CATEGORIES } from '@/lib/experiments'
 import { useMenuAction } from '@/composables/useMenuAction'
 
 /**
- * The sidebar is navigation only: views, categories, experimental features.
- * Adding things, notifications and settings live at the end of the top bar.
+ * The sidebar is navigation only: views, categories, and the experimental features
+ * that are switched on in settings (each marked 實驗). Adding things, notifications
+ * and settings live at the end of the top bar.
  */
 const items = useItemsStore()
 const ui = useUiStore()
+const experiments = useExperimentsStore()
 const desktop = useMediaQuery('(min-width: 768px)')
 /** Collapsed on a wide screen is an icon-only rail; the phone drawer is always the full list. */
 const rail = computed(() => desktop.value && !ui.sidebarOpen)
@@ -39,12 +43,12 @@ function setView(v: TriageView) {
 
 /* Categories: the fullest first, six showing until asked for more. */
 const CATEGORY_LIMIT = 6
-/** Categories the project watcher files its own records under (app/watch), not ones the owner made. */
-const WATCH_CATEGORIES = ['監看', '提案']
 const showAllCategories = useLocalStorage('omnikeep-nav-all-categories', false)
 const byCount = computed(() => [...items.categories].sort((a, b) => (b.item_count ?? 0) - (a.item_count ?? 0)))
 const categories = computed(() => byCount.value.filter((c) => !WATCH_CATEGORIES.includes(c.name)))
-const watchCategories = computed(() => byCount.value.filter((c) => WATCH_CATEGORIES.includes(c.name)))
+// The project watcher's own categories show only while that feature is on, next to it.
+const watchCategories = computed(() => (experiments.flags.watch ? byCount.value.filter((c) => WATCH_CATEGORIES.includes(c.name)) : []))
+const anyExperiment = computed(() => experiments.flags.radar || experiments.flags.watch || experiments.flags.daily)
 const shownCategories = computed(() => {
   const all = categories.value
   if (showAllCategories.value || all.length <= CATEGORY_LIMIT) return all
@@ -61,9 +65,6 @@ function selectCategory(catName: string) {
   items.loadItems()
   ui.sidebarMobileOpen = false
 }
-
-/* Experimental features stay reachable but start folded away. */
-const experimentalOpen = useLocalStorage('omnikeep-nav-experimental', false)
 
 /** Open a dialog from the drawer and get the drawer out of its way. */
 function openPanel(show: () => void) {
@@ -159,59 +160,33 @@ const menu = useMenuAction()
           </DropdownMenuPortal>
         </DropdownMenuRoot>
 
-        <div class="nav-divider" />
-
-        <!-- 3. Experimental: folded away until asked for. The watcher's own categories sit with it. -->
-        <template v-if="!rail">
-          <h2>
-            <button type="button" class="nav-heading" :aria-expanded="experimentalOpen" aria-controls="nav-experimental" @click="experimentalOpen = !experimentalOpen">
-              實驗功能
-              <ChevronUp v-if="experimentalOpen" aria-hidden="true" />
-              <ChevronDown v-else aria-hidden="true" />
-            </button>
-          </h2>
-          <div v-if="experimentalOpen" id="nav-experimental">
-            <SidebarRow label="雷達" :count="items.stats.radar || null" :active="items.triageView === 'radar'" title="雷達自動找到的內容" @click="setView('radar')">
-              <Radar aria-hidden="true" />
-            </SidebarRow>
-            <SidebarRow label="專案監看" @click="openPanel(() => (ui.showWatchModal = true))">
+        <!-- 3. Experimental features that are switched on: ordinary rows, each marked 實驗 -->
+        <template v-if="anyExperiment">
+          <div class="nav-divider" />
+          <SidebarRow v-if="experiments.flags.radar" label="探索" tag="實驗" :rail="rail" :count="items.stats.radar || null" :active="items.triageView === 'radar'" :title="rail ? undefined : '探索找到、還沒處理的內容'" @click="setView('radar')">
+            <Compass aria-hidden="true" />
+          </SidebarRow>
+          <template v-if="experiments.flags.watch">
+            <SidebarRow label="專案監看" tag="實驗" :rail="rail" @click="openPanel(() => (ui.showWatchModal = true))">
               <ScanEye aria-hidden="true" />
             </SidebarRow>
-            <SidebarRow
-              v-for="cat in watchCategories"
-              :key="cat.id"
-              :label="`專案監看：${cat.name}`"
-              :count="cat.item_count ?? 0"
-              :active="items.currentCategory === cat.name"
-              @click="selectCategory(cat.name)"
-            >
-              <Folder aria-hidden="true" />
-            </SidebarRow>
-            <SidebarRow label="每日回顧" title="每日回顧　Shift+D" @click="openPanel(() => (ui.showDailyDeckModal = true))">
-              <Sparkles aria-hidden="true" />
-            </SidebarRow>
-          </div>
+            <template v-if="!rail">
+              <SidebarRow
+                v-for="cat in watchCategories"
+                :key="cat.id"
+                :label="`專案監看：${cat.name === '提案' ? '建議' : cat.name}`"
+                :count="cat.item_count ?? 0"
+                :active="items.currentCategory === cat.name"
+                @click="selectCategory(cat.name)"
+              >
+                <Folder aria-hidden="true" />
+              </SidebarRow>
+            </template>
+          </template>
+          <SidebarRow v-if="experiments.flags.daily" label="每日回顧" tag="實驗" :rail="rail" :title="rail ? undefined : '每日回顧　Shift+D'" @click="openPanel(() => (ui.showDailyDeckModal = true))">
+            <History aria-hidden="true" />
+          </SidebarRow>
         </template>
-        <DropdownMenuRoot v-else>
-          <DropdownMenuTrigger as-child>
-            <SidebarRow label="實驗功能" rail :count="items.stats.radar || null" :active="items.triageView === 'radar' ? true : undefined">
-              <FlaskConical aria-hidden="true" />
-            </SidebarRow>
-          </DropdownMenuTrigger>
-          <DropdownMenuPortal>
-            <DropdownMenuContent class="app-menu" side="right" align="start" :side-offset="12" :collision-padding="12" @close-auto-focus="menu.flush">
-              <DropdownMenuLabel class="app-menu__label">實驗功能</DropdownMenuLabel>
-              <DropdownMenuItem class="app-menu__item" @select="setView('radar')">
-                <Radar aria-hidden="true" />雷達<span v-if="items.stats.radar" class="app-menu__end">{{ items.stats.radar }}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => (ui.showWatchModal = true))"><ScanEye aria-hidden="true" />專案監看</DropdownMenuItem>
-              <DropdownMenuItem v-for="cat in watchCategories" :key="cat.id" class="app-menu__item" @select="selectCategory(cat.name)">
-                <Folder aria-hidden="true" />專案監看：{{ cat.name }}<span class="app-menu__end">{{ cat.item_count ?? 0 }}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => (ui.showDailyDeckModal = true))"><Sparkles aria-hidden="true" />每日回顧</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenuPortal>
-        </DropdownMenuRoot>
       </nav>
     </TooltipProvider>
   </aside>

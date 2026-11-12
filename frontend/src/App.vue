@@ -5,11 +5,13 @@ import { initTheme } from '@/composables/useTheme'
 import { useKeyboard } from '@/composables/useKeyboard'
 import { useItemsStore } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
+import { useExperimentsStore } from '@/stores/experiments'
 import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, checkLocalAuth, redeemPairingCode, type SessionBridgeSnapshot } from '@/lib/api'
 import { asPairingCode } from '@/lib/pairing'
 import { linkedPanel, OPEN_LINK_MESSAGE } from '@/lib/push'
 import { readClipRequest } from '@/lib/bookmarklet'
 import { readSettingsLink } from '@/lib/settingsLink'
+import { WATCH_CATEGORIES } from '@/lib/experiments'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import MobileBottomBar from '@/components/layout/MobileBottomBar.vue'
@@ -19,12 +21,10 @@ import NoteDialog from '@/components/modals/NoteDialog.vue'
 import CategoryDialog from '@/components/modals/CategoryDialog.vue'
 import ShortcutsDialog from '@/components/modals/ShortcutsDialog.vue'
 import RadarDialog from '@/components/modals/RadarDialog.vue'
-import SessionDialog from '@/components/modals/SessionDialog.vue'
 import WatchDialog from '@/components/modals/WatchDialog.vue'
 import ImportDialog from '@/components/modals/ImportDialog.vue'
 import DeckDialog from '@/components/modals/DeckDialog.vue'
-import PushDialog from '@/components/modals/PushDialog.vue'
-import SettingsDialog from '@/components/modals/SettingsDialog.vue'
+import SettingsPage from '@/components/settings/SettingsPage.vue'
 import SetupWizard from '@/components/modals/SetupWizard.vue'
 import ServiceStatusBanner from '@/components/layout/ServiceStatusBanner.vue'
 import DailyDeckDialog from '@/components/modals/DailyDeckDialog.vue'
@@ -39,6 +39,7 @@ initTheme()
 
 const items = useItemsStore()
 const ui = useUiStore()
+const experiments = useExperimentsStore()
 const signedIn = ref(false)
 const isCheckingAuth = ref(true)
 const credential = ref('')
@@ -85,6 +86,7 @@ async function login(explicitKey?: string, isAuto = false): Promise<boolean> {
     }
     credential.value = ''
     signedIn.value = true
+    void experiments.load()
     await items.refreshAll()
     await maybeShowSessionHint()
     await checkUrlParamIngest()
@@ -141,18 +143,18 @@ async function checkUrlParamIngest() {
     const ok = await quickIngest(clip.url, { pageTitle: clip.title, pageDescription: clip.description })
     if (clip.autoClose) {
       if (ok) {
-        toast.success('收錄完成！視窗即將自動關閉…', { duration: 1200 })
+        toast.success('收錄完成，視窗即將關閉', { duration: 1200 })
         setTimeout(() => {
           window.close()
         }, 1200)
       } else {
-        toast.error('收錄未完成，保留視窗以供檢視')
+        toast.error('沒有收錄成功，視窗先留著')
       }
     }
   }
 }
 
-/** 新提案 notifications link to `/?open=proposals`: show 監看中心 on its 提案 tab. */
+/** Notifications about a new suggestion link to `/?open=proposals`: show 專案監看 on its 建議 tab. */
 function openLinkedPanel(href: string): boolean {
   if (linkedPanel(href, window.location.origin) !== 'proposals') return false
   ui.watchTab = 'proposals'
@@ -226,6 +228,28 @@ watch(
   },
 )
 
+// An experimental view that has been switched off is not somewhere to be left in.
+watch(
+  () => experiments.flags.radar,
+  (on) => {
+    if (!on && items.triageView === 'radar') {
+      items.triageView = 'inbox'
+      if (signedIn.value) void items.loadItems()
+    }
+  },
+  { immediate: true },
+)
+watch(
+  () => experiments.flags.watch,
+  (on) => {
+    if (!on && WATCH_CATEGORIES.includes(items.currentCategory)) {
+      items.currentCategory = '全部'
+      if (signedIn.value) void items.loadItems()
+    }
+  },
+  { immediate: true },
+)
+
 // P1 behavior fuel: opening an item counts as a view event (fire-and-forget).
 watch(
   () => ui.activeItem?.id,
@@ -245,14 +269,12 @@ async function maybeShowSessionHint() {
     )
     const connected = bridge.platforms.some((p) => p.connected)
     if (connected || !socialItems) return
-    toast.info('提升 Reel / 社群內容解析成功率', {
-      description: '偵測到尚未連結任何平台會話。登入一次 Instagram 或 Facebook，解析即可帶入會員狀態。',
+    toast.info('社群平台還沒登入', {
+      description: '登入一次 Instagram 或 Facebook，Reels 和社群貼文比較讀得到內容。',
       duration: 10000,
       action: {
         label: '前往設定',
-        onClick: () => {
-          ui.showSessionModal = true
-        },
+        onClick: () => ui.openSettings('channels', '', 'sessions'),
       },
       onDismiss: () => localStorage.setItem(DISMISS_KEY, '1'),
       onAutoClose: () => localStorage.setItem(DISMISS_KEY, '1'),
@@ -326,11 +348,11 @@ onUnmounted(() => {
       autocapitalize="off"
       autocorrect="off"
       spellcheck="false"
-      placeholder="貼上 API 金鑰，或輸入 8 碼配對碼"
+      placeholder="貼上存取金鑰，或輸入 8 碼配對碼"
       required
       class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
     />
-    <p class="-mt-2 text-2xs text-muted-foreground">配對碼在電腦上的「設定 → 系統 → 手機登入」產生，5 分鐘內有效。</p>
+    <p class="-mt-2 text-2xs text-muted-foreground">配對碼在電腦上的「設定 › 收錄管道 › 手機登入」產生，5 分鐘內有效。</p>
 
     <div class="flex items-center gap-2">
       <input
@@ -354,10 +376,10 @@ onUnmounted(() => {
   </form>
   <div v-else class="relative z-10 flex h-[100dvh] w-screen flex-col overflow-hidden bg-shell text-foreground">
     <!-- Top bar spans the full width; the sidebar and the workspace sit under it -->
-    <AppHeader ref="headerRef" @logout="handleLogout" />
+    <AppHeader ref="headerRef" :inert="ui.showSettingsModal" @logout="handleLogout" />
     <ServiceStatusBanner />
 
-    <div class="flex min-h-0 flex-1">
+    <div class="flex min-h-0 flex-1" :inert="ui.showSettingsModal">
       <!-- Collapsible sidebar (a drawer on phones) -->
       <AppSidebar />
 
@@ -381,12 +403,11 @@ onUnmounted(() => {
     <CategoryDialog />
     <ShortcutsDialog />
     <RadarDialog />
-    <SessionDialog />
     <WatchDialog />
     <ImportDialog />
     <DeckDialog />
-    <PushDialog />
-    <SettingsDialog />
+    <!-- Settings are a page over the workspace, not a dialog; dialogs opened from it sit above -->
+    <SettingsPage v-if="ui.showSettingsModal" />
     <SetupWizard />
     <DailyDeckDialog />
     <BrainDialog />
@@ -394,7 +415,7 @@ onUnmounted(() => {
     <SnapshotDialog />
 
     <!-- iOS Single-Handed Bottom Bar (Mobile only) -->
-    <MobileBottomBar v-if="!ui.activeItem" />
+    <MobileBottomBar v-if="!ui.activeItem && !ui.showSettingsModal" />
 
   </div>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UserRound, Settings, Palette, Bell, KeyRound, FolderInput, Keyboard, LogOut, ChevronRight, Check } from 'lucide-vue-next'
+import { UserRound, Settings, Palette, Bell, Keyboard, LogOut, ChevronRight, Check } from 'lucide-vue-next'
 import {
   DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
@@ -11,8 +11,8 @@ import { useMenuAction } from '@/composables/useMenuAction'
 import { THEME_MODES, type ThemeMode } from '@/lib/themeMode'
 
 /**
- * The avatar at the end of the top bar and the menu behind it: settings, theme,
- * sign-in to other platforms, import, shortcuts, sign-out. There is one user and
+ * The avatar at the end of the top bar and the menu behind it: settings, a quick
+ * theme switch, shortcuts, sign-out. Everything else is in settings. There is one user and
  * no account name, so the avatar is a neutral disc with a person in it.
  */
 const emit = defineEmits<{ (e: 'logout'): void }>()
@@ -59,9 +59,7 @@ const menu = useMenuAction()
           </DropdownMenuPortal>
         </DropdownMenuSub>
         <!-- From tablets up the bell in the top bar opens this; a phone has no room for the bell -->
-        <DropdownMenuItem class="app-menu__item md:hidden" @select="menu.defer(() => (ui.showPushModal = true))"><Bell aria-hidden="true" />通知設定</DropdownMenuItem>
-        <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => (ui.showSessionModal = true))"><KeyRound aria-hidden="true" />社群平台登入</DropdownMenuItem>
-        <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => (ui.showImportModal = true))"><FolderInput aria-hidden="true" />匯入書籤</DropdownMenuItem>
+        <DropdownMenuItem class="app-menu__item md:hidden" @select="menu.defer(() => ui.openSettings('notifications'))"><Bell aria-hidden="true" />通知設定</DropdownMenuItem>
         <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => (ui.showShortcutsModal = true))"><Keyboard aria-hidden="true" />鍵盤快捷鍵</DropdownMenuItem>
         <DropdownMenuSeparator class="app-menu__rule" />
         <DropdownMenuItem class="app-menu__item" @select="emit('logout')"><LogOut aria-hidden="true" />登出</DropdownMenuItem>
