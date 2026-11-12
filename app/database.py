@@ -719,6 +719,86 @@ def search_words(query: str) -> List[str]:
     return words[:SEARCH_MAX_WORDS]
 
 
+# Chinese, Japanese and Korean are written without spaces, so a whole question arrives as one
+# "word" that no item contains. With no dictionary at hand, such a run is cut the way search
+# engines index it (overlapping two-character pieces, like the CJK bigram analyzer of Lucene)
+# after the words that only shape the question are taken out.
+_CJK_CHARS = "\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af"
+_SEARCH_RUNS = re.compile(f"[{_CJK_CHARS}]+|[0-9A-Za-z\u00c0-\u024f][0-9A-Za-z\u00c0-\u024f_.+#-]*")
+_CJK_RUN = re.compile(f"[{_CJK_CHARS}]+")
+# Question and filler words, longest first so 有哪些 goes before 哪些. Single characters are
+# limited to particles and pronouns: 有, 對, 用, 要 and the like begin too many real words.
+_CJK_STOP_WORDS = sorted((
+    "我收藏過", "我收藏的", "收藏過", "收藏的", "收藏了", "收藏", "有沒有", "是不是", "能不能", "可不可以",
+    "有哪些", "哪一些", "哪些", "哪個", "哪裡", "哪邊", "什麼", "甚麼", "怎麼", "怎樣", "如何", "為什麼", "為何",
+    "多少", "有關", "相關", "關於", "內容", "東西", "文章", "幫我", "請問", "請幫", "告訴我", "找出", "找到",
+    "列出", "一下", "可以", "以及", "還有", "或是", "或者", "之前", "以前", "那些", "這些", "那個", "這個",
+    "一些", "所有", "全部", "之類", "等等", "方面", "的話", "是否", "曾經", "看過", "存過", "提到", "介紹",
+    "有关", "相关", "关于", "内容", "东西", "什么", "怎么", "哪里", "这些",
+    "的", "了", "嗎", "呢", "吧", "啊", "呀", "我", "你", "您", "吗",
+), key=len, reverse=True)
+_CJK_STOP = re.compile("|".join(re.escape(word) for word in _CJK_STOP_WORDS))
+# Between two terms these join them (語音辨識和語音合成); they are not taken out of a run,
+# because each also begins ordinary words (和弦、與會、及時).
+_CJK_CONNECTIVES = re.compile("[跟和與及或]")
+# A longer piece than this is a clause, not a term: only its two-character pieces are searched.
+_CJK_TERM_MAX = 8
+
+
+def expand_search_words(words: List[str], loose: bool = False) -> List[str]:
+    """Search terms for a query typed as a sentence, or [] when there is nothing to add.
+
+    Each run of CJK characters loses its question words; what is left is searched as the
+    terms it holds plus their overlapping two-character pieces, so 「我收藏過哪些跟語音轉錄
+    有關的內容？」 becomes 語音轉錄, 語音, 音轉, 轉錄. Letters and digits next to them
+    (Whisper語音轉錄) become words of their own. Any term is enough to find an item
+    (see _terms_statement for the order).
+
+    A run is only cut into pieces when it reads as a sentence: it holds a question word
+    or is longer than a term. A term typed on its own (舊標題) that finds nothing should
+    find nothing, not everything holding 標題. `loose` cuts every run: a question wants
+    related items to choose from (search_candidates)."""
+    terms: List[str] = []
+    pieces: List[str] = []
+    for word in words:
+        for run in _SEARCH_RUNS.findall(word):
+            if not _CJK_RUN.fullmatch(run):
+                terms.append(run.rstrip(".+#-_") or run)
+                continue
+            fragments = _CJK_STOP.sub(" ", run).split()
+            sentence = loose or fragments != [run] or len(run) > _CJK_TERM_MAX
+            for fragment in fragments:
+                for term in _CJK_CONNECTIVES.split(fragment) if sentence else [fragment]:
+                    if 2 <= len(term) <= _CJK_TERM_MAX:
+                        terms.append(term)
+                if sentence and len(fragment) >= 3:
+                    pieces.extend(fragment[n:n + 2] for n in range(len(fragment) - 1))
+    expanded, seen = [], set()
+    for term in terms + pieces:
+        if term.lower() not in seen:
+            seen.add(term.lower())
+            expanded.append(term)
+    expanded = expanded[:SEARCH_MAX_WORDS]
+    if [t.lower() for t in expanded] == [w.lower() for w in words]:
+        return []
+    return expanded
+
+
+_ALL_WORDS, _ANY_WORD, _SENTENCE_TERMS = "all", "any", "terms"
+
+
+def _search_stages(words: List[str], loose: bool = False) -> List[tuple]:
+    """(words, mode) of each attempt a search makes, in order: every word, then any word,
+    then any term of the query read as a sentence. The first to find something wins."""
+    stages = [(words, _ALL_WORDS)]
+    if len(words) >= 2:
+        stages.append((words, _ANY_WORD))
+    expanded = expand_search_words(words, loose)
+    if expanded:
+        stages.append((expanded, _SENTENCE_TERMS))
+    return stages
+
+
 def _like_pattern(word: str) -> str:
     """LIKE pattern (with ESCAPE '~') that finds `word` as literal text."""
     return "%" + word.replace("~", "~~").replace("%", "~%").replace("_", "~_") + "%"
@@ -860,25 +940,63 @@ def _search_statement(words: List[str], require_all: bool, filters, use_fts: boo
     return sql, params
 
 
+def _terms_statement(terms: List[str], filters):
+    """SQL and named parameters for the terms of a query read as a sentence.
+
+    Any term finds an item. Each term counts for the best column it is found in, with the
+    weights bm25 uses (FTS_BM25_WEIGHTS), and the items with the highest total come first:
+    a two-character piece turns up by chance in long raw content, so one term in a title
+    outweighs several in the raw content only. Terms are found with LIKE whatever their
+    length, since the pieces are mostly too short for the trigram index."""
+    filter_conditions, params = filters
+    params = dict(params)
+    weights = []
+    for n, term in enumerate(terms):
+        params[f"w{n}"] = _like_pattern(term)
+        cases = " ".join(f"WHEN i.{column} LIKE :w{n} ESCAPE '~' THEN {weight}"
+                         for column, weight in zip(FTS_COLUMNS, FTS_BM25_WEIGHTS[1:]))
+        weights.append(f"(CASE {cases} ELSE 0 END)")
+    total = " + ".join(weights)
+    sql = f"""
+        SELECT i.*,
+               (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
+               (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
+        FROM items i
+        WHERE {" AND ".join([f"(({total}) > 0)"] + filter_conditions)}
+        ORDER BY ({total}) DESC, i.created_at DESC
+        LIMIT :limit OFFSET :offset
+    """
+    return sql, params
+
+
+def _stage_statement(stage, filters, use_fts: bool):
+    stage_words, mode = stage
+    if mode == _SENTENCE_TERMS:
+        return _terms_statement(stage_words, filters)
+    return _search_statement(stage_words, mode == _ALL_WORDS, filters, use_fts)
+
+
 def _search_items(cursor, words: List[str], filters, limit: int, offset: int) -> list:
     """Rows for a search, best match first. Every word has to be found; only when no item
-    (within the filters) holds them all does the search widen to items holding any of them."""
-    def run(require_all, use_fts, page_limit=limit, page_offset=offset):
-        sql, params = _search_statement(words, require_all, filters, use_fts)
+    (within the filters) holds them all does the search widen to items holding any of them,
+    and after that to the terms of a query typed as a sentence (_search_stages)."""
+    stages = _search_stages(words)
+
+    def run(stage, use_fts, page_limit=limit, page_offset=offset):
+        sql, params = _stage_statement(stage, filters, use_fts)
         return cursor.execute(sql, {**params, "limit": page_limit, "offset": page_offset}).fetchall()
 
     def search(use_fts):
-        rows = run(True, use_fts)
-        if rows or len(words) < 2:
-            return rows
-        if offset and run(True, use_fts, 1, 0):
-            return rows  # a page past the end of the all-words results
-        return run(False, use_fts)
+        for stage in stages:
+            rows = run(stage, use_fts)
+            if rows or (offset and run(stage, use_fts, 1, 0)):
+                return rows  # an empty page past the end of this stage's results stays empty
+        return []
 
     try:
         return search(use_fts=True)
     except sqlite3.Error as exc:
-        if not any(len(w) >= FTS_MIN_WORD_LENGTH for w in words):
+        if not _has_indexed_word(stages):
             raise
         # A missing or damaged index must not empty the search box: scan with LIKE instead.
         logging.getLogger("omnikeep.database").warning(
@@ -886,22 +1004,78 @@ def _search_items(cursor, words: List[str], filters, limit: int, offset: int) ->
         return search(use_fts=False)
 
 
+def _has_indexed_word(stages) -> bool:
+    """Whether any stage asks the full-text index at all (the sentence stage never does)."""
+    return any(len(w) >= FTS_MIN_WORD_LENGTH
+               for stage_words, mode in stages if mode != _SENTENCE_TERMS for w in stage_words)
+
+
 def _count_search(cursor, words: List[str], filters) -> int:
     """How many items _search_items would return in all, following the same widening rule."""
-    def run(require_all, use_fts):
-        sql, params = _search_statement(words, require_all, filters, use_fts)
+    stages = _search_stages(words)
+
+    def run(stage, use_fts):
+        sql, params = _stage_statement(stage, filters, use_fts)
         return cursor.execute(f"SELECT COUNT(*) FROM ({sql})", {**params, "limit": -1, "offset": 0}).fetchone()[0]
 
     def count(use_fts):
-        found = run(True, use_fts)
-        return found if found or len(words) < 2 else run(False, use_fts)
+        for stage in stages:
+            found = run(stage, use_fts)
+            if found:
+                return found
+        return 0
 
     try:
         return count(use_fts=True)
     except sqlite3.Error:
-        if not any(len(w) >= FTS_MIN_WORD_LENGTH for w in words):
+        if not _has_indexed_word(stages):
             raise
         return count(use_fts=False)
+
+
+def search_candidates(query: Optional[str], limit: int = 20) -> List[Dict[str, Any]]:
+    """Items for the lexical side of hybrid search and of a question, best first.
+
+    The search box stops at the first stage that finds anything. A question needs more
+    to choose from: the items holding every word come first, then the ones found by
+    reading the query as a sentence (ranked by the column a term is in, which keeps a
+    chance hit in long raw content low), then the ones holding any word, until `limit`."""
+    words = search_words(query)
+    if not words:
+        return []
+    filters = _item_filters(None, None, None, None)
+    stages = sorted(_search_stages(words, loose=True),
+                    key=lambda stage: (_ALL_WORDS, _SENTENCE_TERMS, _ANY_WORD).index(stage[1]))
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+
+        def collect(use_fts):
+            found: Dict[str, Any] = {}
+            for stage in stages:
+                sql, params = _stage_statement(stage, filters, use_fts)
+                for row in cursor.execute(sql, {**params, "limit": limit, "offset": 0}).fetchall():
+                    found.setdefault(row["id"], row)
+                if len(found) >= limit:
+                    break
+            return list(found.values())[:limit]
+
+        try:
+            db_rows = collect(use_fts=True)
+        except sqlite3.Error as exc:
+            if not _has_indexed_word(stages):
+                raise
+            logging.getLogger("omnikeep.database").warning(
+                "Full-text query failed (%s); searching with LIKE instead", exc)
+            db_rows = collect(use_fts=False)
+    rows = []
+    for r in db_rows:
+        d = dict(r)
+        try:
+            d["tech_tags"] = json.loads(d["tech_tags"])
+        except Exception:
+            d["tech_tags"] = []
+        rows.append(d)
+    return rows
 
 
 def count_items(
