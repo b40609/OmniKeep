@@ -162,10 +162,13 @@ async def ask_brain(
             model_used = getattr(settings, "PRIMARY_MODEL", "cloud-llm")
         except Exception as e:
             logger.error(f"[AskBrain] Cloud fallback also failed: {e}")
-            answer = (
-                "大腦模型目前暫時無法連線。以下是為您檢索到的相關文獻：\n\n"
-                + "\n".join([f"- [{c['citation_index']}] 《{c['title']}》: {c['summary']}" for c in citations])
-            )
+            if citations:
+                answer = (
+                    "AI 目前連不上，沒有產生回答。以下是找到的相關收藏：\n\n"
+                    + "\n".join([f"- [{c['citation_index']}] 《{c['title']}》: {c['summary']}" for c in citations])
+                )
+            else:
+                answer = "AI 目前連不上，沒有產生回答，也沒有找到相關的收藏。請到「設定 › AI」確認連線後再試一次。"
             provider_used = "retrieval_only"
 
     return {

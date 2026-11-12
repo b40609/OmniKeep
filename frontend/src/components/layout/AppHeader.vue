@@ -1,74 +1,38 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onUnmounted, watch } from 'vue'
-import { useDebounceFn, onClickOutside } from '@vueuse/core'
-import { Search, Download, Loader2, Menu, Plus, MessageCircleQuestion, Bell, Link2, FileText, FolderInput } from 'lucide-vue-next'
-import { DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuItem } from 'reka-ui'
+import { Search, Download, Loader2, Menu, Plus, Bell } from 'lucide-vue-next'
 import AccountMenu from './AccountMenu.vue'
+import SearchBox from './SearchBox.vue'
 import { useUiStore } from '@/stores/ui'
 import { useItemsStore } from '@/stores/items'
-import { useMutations } from '@/composables/useMutations'
-import { useMenuAction } from '@/composables/useMenuAction'
 
 const emit = defineEmits<{ (e: 'logout'): void }>()
 
 const ui = useUiStore()
 const items = useItemsStore()
 
-const { quickIngest } = useMutations()
-
-const quickInput = ref<HTMLInputElement | null>(null)
-const searchInput = ref<HTMLInputElement | null>(null)
-const quickPanel = ref<HTMLElement | null>(null)
-const quickUrl = ref('')
-const quickError = ref('')
-const showQuick = ref(false)
+const searchBox = ref<InstanceType<typeof SearchBox> | null>(null)
+/** Below the wide layout the box is a row of its own that opens on demand. */
 const showMobileSearch = ref(false)
-const submitting = ref(false)
-onClickOutside(quickPanel, () => {
-  showQuick.value = false
-})
 
-defineExpose({ focusQuickInput, focusSearchInput })
+defineExpose({ focusSearchInput, focusAsk })
 
-/** Open the paste-a-link panel under 新增 and put the caret in it (also the N shortcut). */
-async function focusQuickInput() {
-  showQuick.value = true
-  await nextTick()
-  quickInput.value?.focus()
-}
+/** `/`, Ctrl/Cmd+K and the search buttons: the box, ready to search. */
 async function focusSearchInput() {
   showMobileSearch.value = true
   await nextTick()
-  searchInput.value?.focus()
+  await searchBox.value?.focus('search')
+}
+/** B: the same box, switched to asking a question. */
+async function focusAsk() {
+  showMobileSearch.value = true
+  await nextTick()
+  await searchBox.value?.focus('ask')
 }
 // The mobile bottom bar has no handle on this component; it asks through the store.
 watch(() => ui.searchFocusRequests, (count) => {
   if (count) void focusSearchInput()
 })
-
-// 新增 menu: each item opens its panel or dialog once the menu has closed (see useMenuAction).
-const addMenu = useMenuAction()
-
-async function submitQuick() {
-  const content = quickUrl.value.trim()
-  if (!content || ui.isIngesting || submitting.value) return
-  submitting.value = true
-  quickError.value = ''
-  try {
-    if (await quickIngest(content)) {
-      quickUrl.value = ''
-      showQuick.value = false
-    } else {
-      quickError.value = '收錄失敗，內容已保留。請確認連線後重試。'
-    }
-  } catch {
-    quickError.value = '收錄失敗，內容已保留。請稍後重試。'
-  } finally {
-    submitting.value = false
-  }
-}
-
-const debouncedSearch = useDebounceFn(() => items.loadItems(), 250)
 
 /* PWA install prompt */
 const deferredPrompt = ref<unknown>(null)
@@ -130,85 +94,25 @@ function goInbox() {
         </button>
       </div>
 
-      <!-- Search: centred on wide screens, a row of its own on narrower ones once opened -->
-      <div
+      <!-- One box for search, questions, filters and actions: centred on wide screens, a row of its own on narrower ones once opened -->
+      <SearchBox
         id="collection-search"
-        class="search-box max-lg:order-last max-lg:col-span-3 max-lg:mx-2 max-lg:mb-2"
-        :class="showMobileSearch ? 'flex' : 'hidden lg:flex'"
-      >
-        <Search aria-hidden="true" />
-        <input
-          ref="searchInput"
-          v-model="items.searchQuery"
-          type="search"
-          aria-label="搜尋收藏"
-          :placeholder="items.searchMode === 'semantic' ? '用一句話描述想找的內容' : '搜尋標題、標籤或內容'"
-          @input="debouncedSearch"
-        />
-        <button
-          type="button"
-          class="shrink-0 rounded px-1.5 text-xs leading-5 transition-colors hover:text-foreground"
-          :class="items.searchMode === 'semantic' ? 'bg-surface-2 text-foreground' : ''"
-          title="切換關鍵字搜尋與語意搜尋"
-          :aria-pressed="items.searchMode === 'semantic'"
-          @click="items.toggleSearchMode()"
-        >{{ items.searchMode === 'semantic' ? '語意' : '關鍵字' }}</button>
-        <kbd class="key-hint max-lg:hidden" title="按 / 開始搜尋">/</kbd>
-      </div>
+        ref="searchBox"
+        class="max-lg:order-last max-lg:col-span-3 max-lg:mx-2 max-lg:mb-2"
+        :class="showMobileSearch ? 'block' : 'hidden lg:block'"
+        @dismiss="showMobileSearch = false"
+      />
 
-      <!-- Ask, add, notifications, settings -->
+      <!-- Add, notifications, settings -->
       <div class="flex items-center justify-end gap-1 max-lg:col-start-3 md:gap-2">
-        <button class="icon-button lg:hidden" aria-label="搜尋收藏" title="搜尋　/" :aria-expanded="showMobileSearch" aria-controls="collection-search" @click="showMobileSearch ? (showMobileSearch = false) : focusSearchInput()"><Search /></button>
+        <button class="icon-button lg:hidden" aria-label="搜尋或提問" title="搜尋　/" :aria-expanded="showMobileSearch" aria-controls="collection-search" @click="focusSearchInput()"><Search /></button>
 
-        <button type="button" class="top-button max-md:hidden max-xl:px-2.5" title="用收藏的內容回答問題　B" aria-label="提問" @click="ui.showBrainModal = true">
-          <MessageCircleQuestion /><strong class="max-xl:hidden">提問</strong>
+        <!-- 新增: the one place to add things, whether a link, a note or a bookmark file -->
+        <button type="button" class="top-button top-button--primary max-sm:px-2.5" title="新增　N" aria-label="新增" @click="ui.openAdd()">
+          <Loader2 v-if="ui.isIngesting" class="animate-spin" />
+          <Plus v-else />
+          <strong class="max-sm:hidden">新增</strong>
         </button>
-
-        <!-- 新增: the one place to add things. 貼上連結 opens the panel below this button. -->
-        <div ref="quickPanel" class="sm:relative">
-          <DropdownMenuRoot>
-            <DropdownMenuTrigger class="top-button top-button--primary max-sm:px-2.5" title="新增" aria-label="新增">
-              <Loader2 v-if="ui.isIngesting || submitting" class="animate-spin" />
-              <Plus v-else />
-              <strong class="max-sm:hidden">新增</strong>
-            </DropdownMenuTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuContent class="app-menu" align="end" :side-offset="8" :collision-padding="12" @close-auto-focus="addMenu.flush">
-                <DropdownMenuItem class="app-menu__item" title="貼上連結　N" @select="addMenu.defer(() => void focusQuickInput())"><Link2 aria-hidden="true" />貼上連結</DropdownMenuItem>
-                <DropdownMenuItem class="app-menu__item" title="新增筆記　Shift+N" @select="addMenu.defer(() => (ui.showNoteModal = true))"><FileText aria-hidden="true" />新增筆記</DropdownMenuItem>
-                <DropdownMenuItem class="app-menu__item" title="匯入書籤　I" @select="addMenu.defer(() => ui.openImport('file'))"><FolderInput aria-hidden="true" />匯入書籤</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenuPortal>
-          </DropdownMenuRoot>
-          <form
-            v-if="showQuick"
-            id="quick-ingest"
-            class="absolute top-full z-50 rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-float max-sm:inset-x-3 max-sm:mt-1 sm:right-0 sm:mt-2 sm:w-[28rem]"
-            :aria-busy="ui.isIngesting || submitting"
-            @submit.prevent="submitQuick"
-            @keydown.esc.stop="showQuick = false"
-          >
-            <label for="quick-url" class="text-sm text-muted-foreground">貼上網址或一段文字，讀完會寫成摘要。</label>
-            <div class="mt-3 flex items-center gap-2">
-              <input
-                id="quick-url"
-                ref="quickInput"
-                v-model="quickUrl"
-                type="text"
-                :aria-invalid="!!quickError"
-                :aria-describedby="quickError ? 'quick-ingest-error' : undefined"
-                :disabled="ui.isIngesting || submitting"
-                placeholder="https://"
-                class="h-10 min-w-0 flex-1 rounded-lg border border-border bg-input px-3 text-base text-foreground transition-colors placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-                @input="quickError = ''"
-              />
-              <button type="submit" class="h-10 shrink-0 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50" :disabled="!quickUrl.trim() || ui.isIngesting || submitting">
-                {{ ui.isIngesting || submitting ? '收錄中' : '收錄' }}
-              </button>
-            </div>
-            <p v-if="quickError" id="quick-ingest-error" class="pt-2 text-sm text-danger" role="alert">{{ quickError }}</p>
-          </form>
-        </div>
 
         <button v-if="deferredPrompt" type="button" class="icon-button max-md:hidden" aria-label="安裝 OmniKeep" title="安裝成應用程式" @click="installPWA"><Download /></button>
 

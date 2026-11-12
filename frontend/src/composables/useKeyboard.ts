@@ -7,9 +7,9 @@ import { blockedShortcut } from '@/lib/experiments'
 import { useMutations } from './useMutations'
 import { useSignal } from './useSignal'
 
-type AppHeaderExposed = { focusQuickInput: () => void; focusSearchInput: () => void }
+type AppHeaderExposed = { focusSearchInput: () => void; focusAsk: () => void }
 
-/** Global keyboard shortcuts — parity with the legacy single-file UI and enhanced with Cmd+K. */
+/** Global keyboard shortcuts. The list people see is in ShortcutsDialog.vue. */
 export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () => boolean = () => true) {
   const items = useItemsStore()
   const ui = useUiStore()
@@ -19,7 +19,7 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
 
   function isAnyModalOpen() {
     return (
-      ui.showNoteModal ||
+      ui.showAddModal ||
       ui.showCategoryModal ||
       ui.showShortcutsModal ||
       ui.showRadarModal ||
@@ -28,7 +28,6 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
       ui.showDeckModal ||
       ui.showDailyDeckModal ||
       ui.showBrainModal ||
-      ui.showCommandPalette ||
       !!ui.snapshotView
     )
   }
@@ -36,10 +35,11 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
   function handleKeyDown(e: KeyboardEvent) {
     if (!enabled() || e.defaultPrevented || e.isComposing) return
 
-    // Global Command Palette shortcut (Cmd+K / Ctrl+K) works anywhere
+    // Ctrl/Cmd+K goes to the search box, also from another field; not from under a dialog or the settings page.
     if (!e.altKey && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if (isAnyModalOpen() || ui.showSettingsModal) return
       e.preventDefault()
-      ui.showCommandPalette = !ui.showCommandPalette
+      header()?.focusSearchInput()
       return
     }
 
@@ -57,7 +57,7 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
     // Modal-level Esc handling; close active modal when open
     if (isAnyModalOpen()) {
       if (e.key === 'Escape') {
-        ui.showNoteModal = false
+        ui.showAddModal = false
         ui.showCategoryModal = false
         ui.showShortcutsModal = false
         ui.showRadarModal = false
@@ -66,7 +66,6 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         ui.showDeckModal = false
         ui.showDailyDeckModal = false
         ui.showBrainModal = false
-        ui.showCommandPalette = false
         ui.snapshotView = null
       }
       return
@@ -102,8 +101,9 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         return
       case 'b':
       case 'B':
+        // Asking is the search box in ask mode, not a place of its own.
         e.preventDefault()
-        ui.showBrainModal = !ui.showBrainModal
+        header()?.focusAsk()
         return
       case 'D':
         // Shift+D: daily review (curated unread + resurfaced); plain d reviews the radar's finds one by one
@@ -115,11 +115,6 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         e.preventDefault()
         ui.showRadarModal = !ui.showRadarModal
         if (ui.showRadarModal) radar.ensureLoaded()
-        return
-      case 'i':
-      case 'I':
-        e.preventDefault()
-        ui.showImportModal = !ui.showImportModal
         return
       case 'd':
         e.preventDefault()
@@ -154,12 +149,10 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         header()?.focusSearchInput()
         return
       case 'n':
-        e.preventDefault()
-        header()?.focusQuickInput()
-        return
       case 'N':
+        // One panel for a link, a note or a bookmark file.
         e.preventDefault()
-        ui.showNoteModal = true
+        ui.openAdd()
         return
     }
 

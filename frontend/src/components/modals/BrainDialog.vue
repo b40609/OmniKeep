@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import {
-  BrainCircuit, Send, BookOpen, ExternalLink,
-  Bot, User, Loader2, Cpu,
+  Send, BookOpen, ExternalLink,
+  Bot, User, Loader2,
   RotateCcw
 } from 'lucide-vue-next'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
@@ -25,14 +25,15 @@ const inputQuery = ref('')
 const loading = ref(false)
 const chatHistory = ref<ChatEntry[]>([])
 const scrollContainer = ref<HTMLDivElement | null>(null)
+const followUp = ref<HTMLInputElement | null>(null)
 const brainStatus = ref<BrainStatusResponse | null>(null)
 const forceCloud = ref(false)
 
-const sampleQuestions = [
-  '我的收藏裡有哪些和 AI Agent、架構設計有關？',
-  '最近收藏的內容有哪些重點？',
-  '整理收藏裡討論前後端架構的內容',
-]
+/** Goes up when a new conversation starts, so an answer to the old one is dropped. */
+let conversation = 0
+
+/** The dialog is named after the question it is answering, not after a feature. */
+const title = computed(() => chatHistory.value.find((entry) => entry.role === 'user')?.content ?? '')
 
 async function loadStatus() {
   try {
@@ -42,22 +43,27 @@ async function loadStatus() {
   }
 }
 
+// A question picked in the search box arrives through the store: it starts a new
+// conversation and is sent at once. Follow-up questions are typed in the dialog.
 watch(
-  () => ui.showBrainModal,
-  (open) => {
-    if (open) {
-      void loadStatus()
-      if (!chatHistory.value.length) {
-        // Initial welcome message
-        chatHistory.value.push({
-          role: 'assistant',
-          content: '這裡用你收藏的內容回答問題，並附上引用的收藏。\n優先用本機模型回答，連不上時改用雲端的 AI 連線。',
-        })
-      }
-      void scrollToBottom()
+  () => [ui.showBrainModal, ui.pendingQuestion] as const,
+  ([open, question]) => {
+    if (!open) return
+    void loadStatus()
+    if (question) {
+      ui.pendingQuestion = ''
+      startOver()
+      void sendQuery(question)
     }
-  }
+    void scrollToBottom()
+  },
 )
+
+function startOver() {
+  conversation++
+  chatHistory.value = []
+  loading.value = false
+}
 
 async function scrollToBottom() {
   await nextTick()
@@ -78,6 +84,7 @@ async function sendQuery(text?: string) {
   })
   loading.value = true
   void scrollToBottom()
+  const asked = conversation
 
   try {
     const historyPayload = chatHistory.value
@@ -85,6 +92,7 @@ async function sendQuery(text?: string) {
       .map((c) => ({ role: c.role, content: c.content }))
 
     const res = await askBrain(q, historyPayload, forceCloud.value)
+    if (asked !== conversation) return
 
     chatHistory.value.push({
       role: 'assistant',
@@ -95,23 +103,20 @@ async function sendQuery(text?: string) {
     })
   } catch (err) {
     console.error('Ask brain failed', err)
+    if (asked !== conversation) return
     chatHistory.value.push({
       role: 'assistant',
       content: '這次沒有回答成功。請確認 AI 連線正常後再試一次。',
       provider: 'error',
     })
   } finally {
-    loading.value = false
-    void scrollToBottom()
+    if (asked === conversation) {
+      loading.value = false
+      void scrollToBottom()
+      // The field is disabled while waiting, so it could not take the focus when the dialog opened.
+      void nextTick(() => ui.showBrainModal && followUp.value?.focus())
+    }
   }
-}
-
-function clearChat() {
-  chatHistory.value = []
-  chatHistory.value.push({
-    role: 'assistant',
-    content: '對話已清空。',
-  })
 }
 
 function openItemInReader(itemId: string | number) {
@@ -140,42 +145,21 @@ function handleKeydown(e: KeyboardEvent) {
 
 <template>
   <Dialog :open="ui.showBrainModal" @update:open="(v) => (ui.showBrainModal = v)">
-    <DialogContent class="flex h-[88vh] max-w-4xl flex-col overflow-hidden p-0 sm:rounded-2xl">
-      <!-- Header -->
-      <div class="flex items-center justify-between border-b border-border bg-card/80 px-5 py-3.5 backdrop-blur-md">
-        <div class="flex items-center gap-2.5">
-          <div class="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-            <BrainCircuit class="size-4.5" />
-          </div>
-          <div>
-            <DialogTitle class="text-lg font-semibold text-foreground">提問</DialogTitle>
-            <DialogDescription class="text-sm text-muted-foreground flex items-center gap-2 mt-0.5">
-              <span>用你收藏的內容回答，並附上引用的收藏。</span>
-            </DialogDescription>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <!-- Acceleration badge -->
-          <div
-            v-if="brainStatus"
-            class="hidden sm:flex items-center gap-1.5 rounded-lg border border-border bg-muted/60 px-2.5 py-1 text-2xs font-medium text-foreground"
-            :title="brainStatus.ollama_ready ? '本機推論已就緒' : '本機 Ollama 未連線，會改用雲端的 AI 連線'"
-          >
-            <Cpu class="size-3" :class="brainStatus.ollama_ready ? 'text-green-500' : 'text-muted-foreground'" />
-            <span class="font-mono">{{ brainStatus.device_acceleration || brainStatus.configured_model }}</span>
-          </div>
-
-          <!-- Clear history -->
-          <button
-            class="item-action"
-            title="清空對話"
-            aria-label="清空對話"
-            @click="clearChat"
-          >
-            <RotateCcw class="size-3.5" />
-          </button>
-        </div>
+    <DialogContent
+      class="flex h-[88vh] max-w-4xl flex-col overflow-hidden p-0 sm:rounded-2xl"
+      show-close
+      @open-auto-focus="(e: Event) => { e.preventDefault(); followUp?.focus() }"
+    >
+      <!-- Header: the question being answered -->
+      <div class="flex min-h-14 items-center gap-2 border-b border-hairline py-2 pl-5 pr-14">
+        <DialogTitle :class="title ? 'min-w-0 flex-1 truncate text-lg font-semibold leading-[26px] tracking-normal' : 'sr-only'">{{ title || '回答' }}</DialogTitle>
+        <DialogDescription class="sr-only">用你收藏的內容回答，並附上引用的收藏。</DialogDescription>
+        <button
+          v-if="chatHistory.length"
+          type="button"
+          class="set-button set-button--text ml-auto"
+          @click="startOver"
+        ><RotateCcw aria-hidden="true" />清空對話</button>
       </div>
 
       <!-- Messages Stream -->
@@ -183,6 +167,10 @@ function handleKeydown(e: KeyboardEvent) {
         ref="scrollContainer"
         class="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6 text-sm leading-relaxed"
       >
+        <!-- Nothing asked yet (the conversation was cleared) -->
+        <p v-if="!chatHistory.length && !loading" class="px-1 py-8 text-center text-sm text-muted-foreground">
+          在下面輸入問題，會用你收藏的內容回答，並附上引用的收藏。
+        </p>
         <div
           v-for="(msg, idx) in chatHistory"
           :key="idx"
@@ -280,7 +268,7 @@ function handleKeydown(e: KeyboardEvent) {
               </div>
 
               <!-- Meta Footer -->
-              <div v-if="msg.provider" class="flex items-center gap-2 text-3xs text-muted-foreground pt-1 border-t border-border/40">
+              <div v-if="msg.provider && msg.provider !== 'retrieval_only' && msg.provider !== 'error'" class="flex items-center gap-2 text-3xs text-muted-foreground pt-1 border-t border-border/40">
                 <span>模型：{{ msg.model || '未知' }}</span>
                 <span>·</span>
                 <span>來源：{{ msg.provider === 'local_ollama_gpu' ? (brainStatus?.device_acceleration ? `本機（${brainStatus.device_acceleration}）` : '本機 Ollama') : '雲端 AI 連線' }}</span>
@@ -311,28 +299,15 @@ function handleKeydown(e: KeyboardEvent) {
         </div>
       </div>
 
-      <!-- Sample Prompt Chips (when conversation is fresh) -->
-      <div v-if="chatHistory.length <= 1 && !loading" class="px-5 pb-2">
-        <p class="text-sm text-muted-foreground font-semibold mb-1.5">可以這樣問</p>
-        <div class="flex flex-wrap gap-1.5">
-          <button
-            v-for="q in sampleQuestions"
-            :key="q"
-            class="rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-sm text-foreground transition hover:border-primary/40 hover:bg-card cursor-pointer"
-            @click="sendQuery(q)"
-          >
-            {{ q }}
-          </button>
-        </div>
-      </div>
-
       <!-- Input Area -->
       <div class="border-t border-border bg-card p-3 sm:p-4">
         <div class="relative flex items-center rounded-xl border border-border bg-input shadow-sm focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
           <input
+            ref="followUp"
             v-model="inputQuery"
             type="text"
-            placeholder="問一個和收藏有關的問題"
+            :placeholder="chatHistory.length ? '接著問' : '問一個和收藏有關的問題'"
+            aria-label="問題"
             class="h-11 w-full bg-transparent px-4 pr-12 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
             :disabled="loading"
             @keydown="handleKeydown"

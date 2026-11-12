@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { VList } from 'virtua/vue'
-import { Inbox, Sparkles, FolderInput, Bookmark, Copy, Check, ChevronDown, ArrowUpDown, LayoutGrid, List, Loader2, ListChecks, SlidersHorizontal } from 'lucide-vue-next'
+import { Inbox, Sparkles, Bookmark, Copy, Check, ChevronDown, ArrowUpDown, LayoutGrid, List, Loader2, ListChecks, SlidersHorizontal } from 'lucide-vue-next'
 import {
   DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent,
   DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuItemIndicator,
@@ -44,16 +44,16 @@ const emptyState = computed(() => {
   if (items.error) return { title: '無法載入收藏', body: items.error, action: '重新載入' }
   if (items.searchQuery.trim()) return { title: '找不到符合的收藏', body: '換個關鍵字，或清除搜尋條件。', action: '清除搜尋條件' }
   if (items.currentCategory !== '全部') return { title: '這個分類沒有項目', body: '可以改看所有分類的收藏。', action: '顯示所有分類' }
-  if (firstUse.value) return { title: '還沒有任何收藏', body: '按上方的「新增」貼上連結，或寫一則筆記。', action: '新增筆記' }
+  if (firstUse.value) return { title: '還沒有任何收藏', body: '按「新增」貼上連結、寫筆記，或把書籤檔拖進來。', action: '新增' }
   if (items.triageView === 'inbox') return { title: '收件匣已清空', body: '封存的項目可以在「封存」或「全部」找到。', action: '查看全部' }
   if (items.triageView === 'starred') return { title: '還沒有加星的項目', body: '在項目上按星號，就會出現在這裡。', action: '查看全部' }
   if (items.triageView === 'archived') return { title: '還沒有封存的項目', body: '在項目上按封存，就會收到這裡。', action: '查看全部' }
-  return { title: '目前沒有收藏', body: '貼上連結或新增筆記，開始收錄。', action: '新增筆記' }
+  return { title: '目前沒有收藏', body: '按「新增」貼上連結、寫筆記，或把書籤檔拖進來。', action: '新增' }
 })
 function recoverEmpty() {
   if (items.error) return void items.loadItems()
   if (firstUse.value || (!items.searchQuery.trim() && items.triageView === 'all' && items.currentCategory === '全部')) {
-    ui.showNoteModal = true
+    ui.openAdd()
     return
   }
   if (items.searchQuery.trim()) items.searchQuery = ''
@@ -322,13 +322,6 @@ defineExpose({ scrollToIndex, scrollToItem })
           >
             <Sparkles class="size-4" aria-hidden="true" />
             <span>{{ isSeeding ? '載入中…' : '載入範例資料' }}</span>
-          </button>
-          <button
-            class="flex min-h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-            @click="ui.showImportModal = true"
-          >
-            <FolderInput class="size-4 text-muted-foreground" aria-hidden="true" />
-            <span>匯入書籤</span>
           </button>
         </div>
       </details>

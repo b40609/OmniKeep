@@ -17,7 +17,7 @@ import AppSidebar from '@/components/layout/AppSidebar.vue'
 import MobileBottomBar from '@/components/layout/MobileBottomBar.vue'
 import ItemList from '@/components/items/ItemList.vue'
 import ReaderPane from '@/components/reader/ReaderPane.vue'
-import NoteDialog from '@/components/modals/NoteDialog.vue'
+import AddDialog from '@/components/modals/AddDialog.vue'
 import CategoryDialog from '@/components/modals/CategoryDialog.vue'
 import ShortcutsDialog from '@/components/modals/ShortcutsDialog.vue'
 import RadarDialog from '@/components/modals/RadarDialog.vue'
@@ -29,7 +29,6 @@ import SetupWizard from '@/components/modals/SetupWizard.vue'
 import ServiceStatusBanner from '@/components/layout/ServiceStatusBanner.vue'
 import DailyDeckDialog from '@/components/modals/DailyDeckDialog.vue'
 import BrainDialog from '@/components/modals/BrainDialog.vue'
-import CommandPalette from '@/components/modals/CommandPalette.vue'
 import SnapshotDialog from '@/components/modals/SnapshotDialog.vue'
 import * as api from '@/lib/api'
 import { Toaster } from '@/components/ui/sonner'
@@ -399,7 +398,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Modals -->
-    <NoteDialog />
+    <AddDialog />
     <CategoryDialog />
     <ShortcutsDialog />
     <RadarDialog />
@@ -411,7 +410,6 @@ onUnmounted(() => {
     <SetupWizard />
     <DailyDeckDialog />
     <BrainDialog />
-    <CommandPalette />
     <SnapshotDialog />
 
     <!-- iOS Single-Handed Bottom Bar (Mobile only) -->
