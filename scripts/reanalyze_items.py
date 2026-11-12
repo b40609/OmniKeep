@@ -31,16 +31,13 @@ sys.path.insert(0, str(ROOT))
 
 from app import ai_connections  # noqa: E402
 from app.database import get_all_categories, get_db_connection, optimize_fts, update_item_field  # noqa: E402
-from app.pipeline import METADATA_ONLY_TAG, analysis_system_prompt, interest_profile_block  # noqa: E402
+from app.pipeline import METADATA_ONLY_TAG, analysis_system_prompt, saved_item_prompt  # noqa: E402
 from app.providers import build_provider  # noqa: E402
 from app.schemas.intelligence import sanitize_and_validate_analysis  # noqa: E402
 
 SKIP_SOURCES = ("proposal", "watch", "insight")  # made by OmniKeep itself, not collected content
 FIELDS = ("id", "url", "source_type", "category_name", "title_l1", "summary_l1", "tech_tags",
           "deep_analysis", "author", "updated_at")
-KIND = {"reel": "短影音（含畫面文字辨識與語音轉錄）", "youtube": "YouTube 影片資訊", "bilibili": "Bilibili 影片",
-        "threads": "Threads 貼文與討論串", "github": "GitHub 專案", "rss": "文章", "web": "網頁／文章",
-        "snippet": "使用者的筆記片段"}
 
 
 def candidates(min_chars: int = 50) -> List[Dict[str, Any]]:
@@ -73,20 +70,8 @@ def read_jsonl(path: Path) -> List[Dict[str, Any]]:
 
 
 def build_prompt(item: Dict[str, Any], categories: str) -> str:
-    kind = KIND.get(item.get("source_type") or "", "內容")
-    prompt = f"""請深度分析以下{kind}：
-網址：{item.get('url') or ''}
-原始標題：{item.get('title_l1') or ''}
-作者／發布者：{item.get('author') or ''}
-
-候選分類清單：[{categories}]
-
-=== 內容節錄 ===
-{(item.get('content_raw') or '')[:15000]}
-=== 內容結束 ===
-
-請依據規範輸出結構化 JSON。若內容提及多個開源專案或工具，請將 is_composite 設為 true 並於 sub_entities 列出。"""
-    return prompt + interest_profile_block()
+    """The same prompt the app uses for an item's stored content (app/pipeline.py)."""
+    return saved_item_prompt(item, categories)
 
 
 async def analyse(provider, prompt: str, system_prompt: str, retries: int = 1) -> Dict[str, Any]:

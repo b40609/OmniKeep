@@ -332,6 +332,14 @@ async def save_to_brain(
     from app.pipeline import run_pipeline
     try:
         item = await run_pipeline(clean_input, manual_category=category, origin="agent")
+        if item.get("analysis_status") == "pending":
+            # No AI is connected: the content is stored, nothing was analysed.
+            return (
+                f"✅ 已存入 OmniKeep（尚未分析）。\n"
+                f"- **ID**: {item.get('id')}\n"
+                f"- **標題**: {item.get('title_l1')}\n"
+                f"- 還沒有接上 AI，所以只存了標題、網址與原文。到「設定 › AI」接上 AI 連線後會自動補分析。"
+            )
         tags = ", ".join(item.get("tech_tags", []))
         return (
             f"✅ 成功存入 OmniKeep 第二大腦！\n"

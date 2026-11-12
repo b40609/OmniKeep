@@ -74,6 +74,9 @@ function close() {
   ui.showAddModal = false
 }
 
+/** Shown when the server kept the item without analysis because no AI is connected. */
+const NOT_ANALYSED_HINT = '還沒有接上 AI，先存下原文。接上之後會自動補分析。'
+
 function reason(e: unknown): string {
   return explainFailure((e as Error)?.message)
 }
@@ -115,7 +118,8 @@ async function saveNote(content: string) {
   }
   text.value = ''
   close()
-  toast.success('筆記已儲存')
+  if (item?.analysis_status === 'pending') toast.success('筆記已儲存，尚未分析', { description: NOT_ANALYSED_HINT })
+  else toast.success('筆記已儲存')
   await itemsStore.refreshAll()
   if (item) ui.activeItem = item
 }
@@ -142,6 +146,7 @@ async function saveLinks(urls: string[]) {
     text.value = ''
     close()
     if (queued) toast.success(`已排入 ${saved} 個連結`, { description: '讀完後會出現在收件匣。' })
+    else if (item?.analysis_status === 'pending') toast.success('已收藏，尚未分析', { description: NOT_ANALYSED_HINT })
     else toast.success('已收藏', { description: item?.title_l1?.slice(0, 70) })
     if (item) ui.activeItem = item
     return

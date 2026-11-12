@@ -196,6 +196,27 @@ async def update_item(item_id: str, payload: ItemUpdate):
         raise HTTPException(status_code=404, detail="Item not found")
     return {"success": True, "item_id": item_id}
 
+@router.post("/{item_id}/analyze")
+async def analyze_item(item_id: str):
+    """Analyse an item that was kept while no AI was connected ("尚未分析")."""
+    from app.error_translate import failure_message
+    from app.pipeline import analyse_saved_item, is_not_analysed
+    from app.providers import ai_connected
+    from app.routers.ingest import _failure_status
+    item = get_item_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if not is_not_analysed(item):
+        raise HTTPException(status_code=409, detail="這則收藏已經分析過了。")
+    if not ai_connected():
+        raise HTTPException(status_code=409, detail="還沒有接上 AI：先到「設定 › AI」新增一條 AI 連線。")
+    try:
+        await analyse_saved_item(item)
+    except Exception as exc:
+        raise HTTPException(status_code=_failure_status(exc), detail=failure_message(exc)) from exc
+    return {"success": True, "item": get_item_by_id(item_id)}
+
+
 @router.delete("/{item_id}")
 async def remove_item(item_id: str):
     ok = delete_item(item_id)

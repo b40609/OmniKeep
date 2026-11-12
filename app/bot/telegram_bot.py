@@ -583,6 +583,11 @@ class TelegramBot:
             except Exception as e:
                 logger.debug(f"[Telegram Card] Error getting sub-entities: {e}")
 
+        # Kept while no AI was connected (app/pipeline.py NOT_ANALYSED): say what happens next.
+        pending_section = ""
+        if item.get("analysis_status") == "pending" and item.get("origin") != "radar":
+            pending_section = "\n\n已收藏，還沒有經過 AI 分析。在 OmniKeep 的「設定 › AI」接上 AI 之後會自動補上。"
+
         card = (
             f"<b>{title}</b>\n"
             f"{meta_line}\n\n"
@@ -590,6 +595,7 @@ class TelegramBot:
             f"{note_section}"
             f"{tools_section}"
             f"{tags_section}"
+            f"{pending_section}"
         )
         return card
 

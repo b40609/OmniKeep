@@ -78,6 +78,8 @@ export interface Item {
   citations_count?: number
   deep_analysis?: string | null
   content_raw?: string | null
+  /** 'pending' while the item has no analysis yet (kept while no AI was connected). */
+  analysis_status?: string | null
   citations?: Citation[]
   sub_entities?: SubEntity[]
   related_items?: RelatedItem[]
@@ -239,6 +241,11 @@ export function getItemsPage(filters: ItemFilters = {}): Promise<ItemsPage> {
     const count = Number.parseInt(res.headers.get('X-Total-Count') ?? '', 10)
     return { items: (await res.json()) as Item[], total: Number.isFinite(count) ? count : null }
   })
+}
+
+/** Analyse an item that was kept while no AI was connected; answers with the rewritten item. */
+export function analyzeItem(id: number | string): Promise<{ success: boolean; item: Item }> {
+  return request(`/api/items/${id}/analyze`, { method: 'POST' })
 }
 
 export function getItem(id: number | string): Promise<Item> {

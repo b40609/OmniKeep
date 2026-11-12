@@ -6,7 +6,7 @@ import ItemCover from './ItemCover.vue'
 import KindIcon from './KindIcon.vue'
 import type { Item } from '@/lib/api'
 import { cleanHost, formatRelativeTime } from '@/lib/format'
-import { itemKind, splitTitle } from '@/lib/wall'
+import { isNotAnalysed, itemKind, splitTitle } from '@/lib/wall'
 import { useUiStore } from '@/stores/ui'
 
 /** One cell of the cover wall: cover, name, what it is (when the title says), one line of meta. */
@@ -44,6 +44,10 @@ function open() {
       <span class="item-meta__clip" :title="cleanHost(item.url)">{{ cleanHost(item.url) }}</span>
       <span class="item-meta__sep" aria-hidden="true" />
       <time>{{ formatRelativeTime(item.created_at) }}</time>
+      <template v-if="isNotAnalysed(item)">
+        <span class="item-meta__sep" aria-hidden="true" />
+        <span class="item-meta__state">尚未分析</span>
+      </template>
       <!-- Starred shows at rest; the buttons take its place on hover, focus and touch screens -->
       <Star v-if="item.is_starred" class="cover-card__flag fill-current" role="img" aria-label="已加星" />
       <ItemActions :item="item" compact class="cover-card__acts" />

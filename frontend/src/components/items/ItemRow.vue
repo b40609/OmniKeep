@@ -5,7 +5,7 @@ import ItemCover from './ItemCover.vue'
 import KindIcon from './KindIcon.vue'
 import type { Item } from '@/lib/api'
 import { cleanHost, formatRelativeTime } from '@/lib/format'
-import { itemKind, splitTitle } from '@/lib/wall'
+import { isNotAnalysed, itemKind, plainSummary, splitTitle } from '@/lib/wall'
 import { useUiStore } from '@/stores/ui'
 
 /** One row of the list: a large thumbnail, then name, what it is, meta and a two-line summary. */
@@ -45,8 +45,12 @@ function select() {
           <span class="item-meta__sep" aria-hidden="true" />
           <span class="item-meta__clip">{{ item.category_name === 'Inbox' ? '收件匣' : item.category_name }}</span>
         </template>
+        <template v-if="isNotAnalysed(item)">
+          <span class="item-meta__sep" aria-hidden="true" />
+          <span class="item-meta__state">尚未分析</span>
+        </template>
       </div>
-      <p v-if="item.summary_l1" class="list-row__summary">{{ item.summary_l1 }}</p>
+      <p v-if="plainSummary(item.summary_l1)" class="list-row__summary">{{ plainSummary(item.summary_l1) }}</p>
     </div>
     <ItemActions :item="item" class="list-row__acts" />
   </article>

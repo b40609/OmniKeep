@@ -42,3 +42,25 @@ class BaseLLMProvider(ABC):
         json.JSONDecodeError for text that is not JSON); never returns None or a made-up {}.
         """
         pass
+
+
+class NoAIConnectionError(RuntimeError):
+    """Nothing is set up to answer: no AI connection, and none of the older settings.
+
+    Raised without sending anything. The older default (api.openai.com with no key) used to be
+    called anyway, which sent the page's text to a third party only to get a 401 back.
+    """
+
+    def __init__(self):
+        super().__init__("還沒有接上 AI：到「設定 › AI」新增一條 AI 連線。")
+
+
+class UnconfiguredProvider(BaseLLMProvider):
+    """Stands in for the analysis provider while no AI is set up; every call raises
+    NoAIConnectionError. The pipeline checks for it and keeps the item without an analysis."""
+
+    async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+        raise NoAIConnectionError()
+
+    async def generate_json(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+        raise NoAIConnectionError()

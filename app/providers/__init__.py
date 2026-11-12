@@ -4,7 +4,9 @@ get_provider(slot) builds a fallback chain (app/providers/chain.py) from the
 slot's connections (app/ai_connections.py). When a slot has no connection the
 older behaviour applies: the analysis slot uses the flat settings
 (PRIMARY_LLM_PROVIDER, OPENAI_*, GEMINI_*), brain and radar follow analysis,
-video uses GEMINI_* when keys are set.
+video uses GEMINI_* when keys are set. When those are not set up either
+(ai_connections.legacy_needs_setup), the analysis provider is an
+UnconfiguredProvider: it raises instead of calling anyone.
 
 get_primary_provider() is the analysis slot; existing call sites and the
 tests that monkeypatch it keep working.
@@ -12,7 +14,7 @@ tests that monkeypatch it keep working.
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from app.config import settings
-from app.providers.base import BaseLLMProvider
+from app.providers.base import BaseLLMProvider, NoAIConnectionError, UnconfiguredProvider
 from app.providers.chain import ChainProvider, Member
 from app.providers.gemini import GeminiProvider
 from app.providers.openai_compatible import OpenAICompatibleProvider
@@ -61,7 +63,12 @@ def _legacy(slot: str) -> Optional[BaseLLMProvider]:
     if slot == "video":
         return get_legacy_gemini_provider() if settings.gemini_keys else None
     if _primary_provider is None:
-        if settings.PRIMARY_LLM_PROVIDER == "gemini" and settings.gemini_keys:
+        from app.ai_connections import legacy_needs_setup
+        if legacy_needs_setup():
+            # A fresh install: the default OpenAI address with no key. Calling it would send
+            # the content to a third party and only get a 401 back.
+            _primary_provider = UnconfiguredProvider()
+        elif settings.PRIMARY_LLM_PROVIDER == "gemini" and settings.gemini_keys:
             _primary_provider = GeminiProvider()
         else:
             _primary_provider = OpenAICompatibleProvider()
@@ -96,6 +103,11 @@ def get_provider(slot: str = "analysis", skip_kinds: Iterable[str] = ()) -> Opti
 
 def get_primary_provider() -> BaseLLMProvider:
     return get_provider("analysis")
+
+
+def ai_connected() -> bool:
+    """Whether anything can analyse an item (the analysis slot, or the older settings)."""
+    return not isinstance(get_primary_provider(), UnconfiguredProvider)
 
 
 def get_legacy_gemini_provider() -> GeminiProvider:

@@ -207,6 +207,11 @@
   .item-meta time {
     flex: none;
   }
+  /* A state worth noticing in the meta line (an item kept without analysis). */
+  .item-meta__state {
+    flex: none;
+    color: var(--warning);
+  }
   /* Tall enough for the icon buttons, so they never push into the line above. */
   .cover-card__meta {
     position: relative;

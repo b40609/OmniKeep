@@ -26,6 +26,7 @@ from app.parsers.screen import screen_notes
 from app.parsers.transcript import TRANSCRIPT_MISSING, get_transcript
 from app.parsers.threads import is_threads_url, parse_threads_page
 from app.providers import get_primary_provider, get_gemini_provider, has_video_provider
+from app.providers.base import UnconfiguredProvider
 from app.config import settings
 from app.error_translate import mark_ai_failure
 from app.schemas.intelligence import AnalysisFailedError, generate_structured_intelligence, usable_analysis
@@ -150,6 +151,49 @@ def fetch_failed_fields(url: str, reason_line: str, title: str = "", video: bool
             "tech_tags": []}
 
 
+# Marks an item kept while no AI was connected: title, address, cover and the fetched text are
+# stored, nothing was analysed. The item also carries analysis_status = 'pending' (the state a
+# radar stub waiting for its analysis has); app/refetch.py analyses it once an AI is connected.
+NOT_ANALYSED_TAG = "（尚未分析）"
+NOT_ANALYSED = "pending"
+EXCERPT_CHARS = 160
+
+
+def not_analysed_summary(description: str, content: str) -> str:
+    """The summary of an item kept without analysis: the page's own description, else the
+    start of its text. Never written by an AI, and tagged so no one takes it for one."""
+    text = " ".join((description or "").split())
+    if not text:
+        lines = [line.strip() for line in (content or "").splitlines()]
+        text = " ".join(" ".join(line for line in lines if line and not line.startswith(("#", "URL:", "http"))).split())
+    if len(text) > EXCERPT_CHARS:
+        text = text[:EXCERPT_CHARS].rstrip() + "…"
+    return f"{NOT_ANALYSED_TAG}{text}" if text else f"{NOT_ANALYSED_TAG}還沒有接上 AI，先存下原文。"
+
+
+KIND_NAMES = {"reel": "短影音（含畫面文字辨識與語音轉錄）", "youtube": "YouTube 影片資訊", "bilibili": "Bilibili 影片",
+              "threads": "Threads 貼文與討論串", "github": "GitHub 專案", "rss": "文章", "web": "網頁／文章",
+              "snippet": "使用者的筆記片段"}
+
+
+def saved_item_prompt(item: Dict[str, Any], categories: str) -> str:
+    """The analysis prompt for an item's stored content (nothing is fetched again)."""
+    kind = KIND_NAMES.get(item.get("source_type") or "", "內容")
+    prompt = f"""請深度分析以下{kind}：
+網址：{item.get('url') or ''}
+原始標題：{item.get('title_l1') or ''}
+作者／發布者：{item.get('author') or ''}
+
+候選分類清單：[{categories}]
+
+=== 內容節錄 ===
+{(item.get('content_raw') or '')[:15000]}
+=== 內容結束 ===
+
+請依據規範輸出結構化 JSON。若內容提及多個開源專案或工具，請將 is_composite 設為 true 並於 sub_entities 列出。"""
+    return prompt + interest_profile_block()
+
+
 def hardware_heading() -> str:
     """Heading of the AI-model hardware section; names the machine only if the owner entered it."""
     hardware = (settings.LOCAL_HARDWARE or "").strip()
@@ -225,7 +269,12 @@ async def _analyze_with_guardrails(provider, prompt: str, system_prompt: Optiona
     One case still keeps the item: the bookmarklet sent the page's own description
     (`browser_summary`) and the model answered, but never with a usable analysis. Then the
     description stands in as the summary, as it did before, and a note says so.
+
+    With no AI connected at all (UnconfiguredProvider) nothing is sent and {} comes back:
+    run_pipeline() then keeps the item as "not analysed yet". That is not a failure.
     """
+    if isinstance(provider, UnconfiguredProvider):
+        return {}
     try:
         return await generate_structured_intelligence(provider, prompt, system_prompt or analysis_system_prompt())
     except Exception as exc:
@@ -363,7 +412,13 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
 async def run_pipeline(content_input: str, manual_category: Optional[str] = None,
                        is_sub_task: bool = False, origin: str = "manual",
                        page_title: str = "", page_description: str = "",
-                       as_note: bool = False) -> Dict[str, Any]:
+                       as_note: bool = False, saved: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Fetch, analyse and save one link or note.
+
+    With no AI connected (a fresh install) nothing is sent to any AI: the item is saved with
+    its title, address, cover and fetched text, tagged NOT_ANALYSED_TAG. `saved` is such an
+    item being analysed later: its stored content is analysed, nothing is fetched again.
+    """
     # 1. Fetch available categories
     cat_rows = get_all_categories()
     category_names = [c["name"] for c in cat_rows]
@@ -375,9 +430,12 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     blocked = None  # REASONS key when the fetch got the site's error / anti-bot page
     fetch_failed = False  # blocked and nothing else to analyse: no AI call at all
     reason_line = ""
+    description = ""  # the page's own description, for the summary of an item kept without analysis
+    # A fresh install has no AI: every analysis below comes back empty without a request.
+    no_ai = isinstance(get_primary_provider(), UnconfiguredProvider)
 
     user_note = ""
-    if not as_note and "#note=" in clean_input:
+    if saved is None and not as_note and "#note=" in clean_input:
         from urllib.parse import unquote
         parts = clean_input.split("#note=", 1)
         clean_input = parts[0]
@@ -385,8 +443,22 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
 
     # 2. Route by input type (Pure URL / Mobile Share Snippet vs Text Note)
     # as_note: the owner chose to keep the text itself, even if it is short and holds one address.
-    detected_url = None if as_note else extract_target_url(clean_input)
-    if detected_url:
+    detected_url = None if as_note or saved is not None else extract_target_url(clean_input)
+    if saved is not None:
+        # Kept earlier without analysis: analyse what is stored. Fetching again could come
+        # back with an error page and replace the text that is already here.
+        url = saved["url"]
+        source_type = saved.get("source_type") or "web"
+        content_raw = saved.get("content_raw") or ""
+        cover_image = saved.get("cover_image") or ""
+        author = saved.get("author") or ""
+        default_title = saved.get("title_l1") or _title_from_url(url)
+        origin = saved.get("origin") or origin
+        if manual_category is None and (saved.get("category_name") or "Inbox") != "Inbox":
+            manual_category = saved["category_name"]  # the owner filed it already
+        description = (saved.get("summary_l1") or "").removeprefix(NOT_ANALYSED_TAG)
+        ai_result = await _analyze_with_guardrails(get_primary_provider(), saved_item_prompt(saved, cat_list_str))
+    elif detected_url:
         parsed = await parse_url(detected_url, page_title=page_title, page_description=page_description)
         kind = parsed["kind"]
         url = parsed["url"]
@@ -397,6 +469,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
         default_title = parsed["title"]
         raw_html = parsed["raw_html"]
         fallback_summary = parsed["fallback_summary"] or fallback_summary
+        description = page_description or parsed["description"]
         if kind in BLOCK_CHECKED_KINDS:
             blocked = detect_blocked_page(content_raw, parsed.get("http_status"))
 
@@ -655,7 +728,15 @@ URL：{url}
         tech_tags = [t.strip() for t in tech_tags.split(",") if t.strip()]
 
     deep_analysis = ai_result.get("deep_analysis", "")
-    if fetch_failed:
+    # No AI connected and nothing analysed (a video slot of its own may still have answered).
+    not_analysed = no_ai and not fetch_failed and not (ai_result.get("summary_l1") or "").strip()
+    if not_analysed:
+        logger.info("[Pipeline] %s: no AI connected; kept without analysis", url)
+        title_l1 = default_title
+        summary_l1 = not_analysed_summary(description, "" if blocked else content_raw)
+        deep_analysis = ""
+        tech_tags = []
+    elif fetch_failed:
         video = parsed.get("transcript_status") == "failed"  # parsed: fetch_failed is only set for a URL
         failed = fetch_failed_fields(url, reason_line, title=default_title if video else "", video=video)
         title_l1, summary_l1, deep_analysis = failed["title_l1"], failed["summary_l1"], failed["deep_analysis"]
@@ -678,6 +759,7 @@ URL：{url}
         "author": author,
         "cover_image": cover_image,
         "origin": origin,
+        "analysis_status": NOT_ANALYSED if not_analysed else "done",
     }
 
     # 2. Hard Rules Engine (Deterministic automation: Karakeep pattern)
@@ -712,7 +794,8 @@ URL：{url}
     has_github_mention = "github" in (content_raw + " " + default_title).lower() or "開源" in (content_raw + " " + default_title)
     # An error page names no tools, and projects guessed from a title alone are how
     # made-up GitHub repos got collected: no tool resolution, fan-out or alternatives.
-    follow_up = not is_sub_task and not blocked
+    # Nor without an analysis: these steps ask the AI, and there is none.
+    follow_up = not is_sub_task and not blocked and not not_analysed
     if follow_up and "github.com" not in url and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
         try:
             from app.research.tool_resolver import resolve_mentioned_tools
@@ -783,3 +866,27 @@ URL：{url}
             logger.warning(f"[Pipeline] Competitor detection error: {e}")
 
     return item_record
+
+
+def is_not_analysed(item: Dict[str, Any]) -> bool:
+    """Kept while no AI was connected (radar stubs waiting their turn are not these)."""
+    return item.get("analysis_status") == NOT_ANALYSED and item.get("origin") != "radar"
+
+
+async def analyse_saved_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Analyse an item that was kept without analysis; the item is rewritten in place.
+
+    The stored text is analysed as it is. Only when there is none (the fetch got an error
+    page, and the title and description were all there was) is the link fetched again, the
+    same as collecting it again. Raises what run_pipeline() raises when the AI fails; the
+    item then stays as it was.
+    """
+    content = item.get("content_raw") or ""
+    refetch = not content.strip() or (item.get("source_type") in BLOCK_CHECKED_KINDS and bool(detect_blocked_page(content)))
+    if refetch and str(item.get("url") or "").startswith(("http://", "https://")):
+        category = item.get("category_name")
+        return await run_pipeline(
+            item["url"], manual_category=category if category and category != "Inbox" else None,
+            origin=item.get("origin") or "manual", page_title=item.get("title_l1") or "",
+            page_description=(item.get("summary_l1") or "").removeprefix(NOT_ANALYSED_TAG))
+    return await run_pipeline(item["url"], saved=item)

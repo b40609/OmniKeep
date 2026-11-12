@@ -1092,7 +1092,7 @@ async def ingest(url: str) -> Dict[str, Any]:
         raise SetupError(f"這個連結沒有分析成功，也沒有存檔。原因：{exc}") from exc
     item = result.get("item") or {}
     analysis = item.get("deep_analysis") or ""
-    return {
+    out = {
         "id": item.get("id"),
         "url": item.get("url"),
         "title": item.get("title_l1"),
@@ -1101,4 +1101,9 @@ async def ingest(url: str) -> Dict[str, Any]:
         "summary": item.get("summary_l1"),
         "deep_analysis": analysis[:6000],
         "deep_analysis_truncated": len(analysis) > 6000,
+        # False: no AI is connected, so the link was saved with its text and no analysis.
+        "analysed": item.get("analysis_status") != "pending",
     }
+    if not out["analysed"]:
+        out["note"] = "已收藏，但還沒有接上 AI，所以沒有分析。接上 AI 連線後會自動補分析。"
+    return out
