@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UserRound, Settings, Palette, Bell, Keyboard, LogOut, ChevronRight, Check } from 'lucide-vue-next'
+import { UserRound, Settings, Palette, Bell, Keyboard, LogOut, ChevronRight, Check, MessageSquareWarning } from 'lucide-vue-next'
 import {
   DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
@@ -9,6 +9,7 @@ import { useUiStore } from '@/stores/ui'
 import { useTheme, type AccentColor } from '@/composables/useTheme'
 import { useMenuAction } from '@/composables/useMenuAction'
 import { THEME_MODES, type ThemeMode } from '@/lib/themeMode'
+import { feedbackUrl } from '@/lib/feedback'
 
 /**
  * The avatar at the end of the top bar and the menu behind it: settings, a quick
@@ -22,6 +23,7 @@ const { mode, accent, accents, labels, set: setTheme, setAccent } = useTheme()
 const appVersion = __APP_VERSION__
 // Items open their dialog once the menu has closed (see useMenuAction).
 const menu = useMenuAction()
+const openFeedback = () => window.open(feedbackUrl(appVersion), '_blank', 'noopener')
 </script>
 
 <template>
@@ -61,6 +63,7 @@ const menu = useMenuAction()
         <!-- From tablets up the bell in the top bar opens this; a phone has no room for the bell -->
         <DropdownMenuItem class="app-menu__item md:hidden" @select="menu.defer(() => ui.openSettings('notifications'))"><Bell aria-hidden="true" />通知設定</DropdownMenuItem>
         <DropdownMenuItem class="app-menu__item" @select="menu.defer(() => (ui.showShortcutsModal = true))"><Keyboard aria-hidden="true" />鍵盤快捷鍵</DropdownMenuItem>
+        <DropdownMenuItem class="app-menu__item" @select="menu.defer(openFeedback)"><MessageSquareWarning aria-hidden="true" />回報問題</DropdownMenuItem>
         <DropdownMenuSeparator class="app-menu__rule" />
         <DropdownMenuItem class="app-menu__item" @select="emit('logout')"><LogOut aria-hidden="true" />登出</DropdownMenuItem>
         <DropdownMenuLabel class="app-menu__label">OmniKeep {{ appVersion }}</DropdownMenuLabel>
