@@ -69,8 +69,8 @@ class Spec:
 
 
 GROUPS: Tuple[Tuple[str, str], ...] = (
-    ("ai", "AI 服務商"),
-    ("brain", "Ask Brain"),
+    ("ai", "AI"),
+    ("brain", "提問"),
     ("profile", "個人化"),
     ("telegram", "Telegram"),
     ("line", "LINE"),
@@ -125,8 +125,8 @@ SPECS: Tuple[Spec, ...] = (
                   ("actionable", "含落地建議：落地建議擴充為 3 點，附做法與驗證方式")),
          help="只影響之後的新分析；已分析過的內容不會重跑。"),
 
-    Spec("TELEGRAM_BOT_TOKEN", "telegram", "Bot Token", "secret", hook="telegram",
-         help="向 @BotFather 建立 Bot 後取得。儲存後 Bot 立即重新連線。"),
+    Spec("TELEGRAM_BOT_TOKEN", "telegram", "機器人權杖", "secret", hook="telegram",
+         help="在 Telegram 向 @BotFather 建立機器人後取得。儲存後機器人立即重新連線。"),
     Spec("TELEGRAM_ALLOWED_USER_IDS", "telegram", "已綁定的帳號", "ids",
          attr="TELEGRAM_ALLOWED_USER_IDS_RAW", numeric_ids=True,
          help="用配對連結新增；移除後立即失去存取權。"),
@@ -137,7 +137,7 @@ SPECS: Tuple[Spec, ...] = (
          help="多個用逗號分隔。"),
 
     Spec("GITHUB_TOKEN", "github", "GitHub Token", "secret",
-         help="雷達抓 GitHub 來源時使用，可提高 API 額度。不需要任何寫入權限。"),
+         help="探索讀取 GitHub 來源時使用，可提高 API 額度。不需要任何寫入權限。"),
 
     Spec("BACKUP_SINK", "backup", "備份方式", "choice",
          choices=(("local", "只存本機"), ("rclone", "本機＋rclone 雲端"), ("git", "本機＋git repo"), ("off", "關閉"))),

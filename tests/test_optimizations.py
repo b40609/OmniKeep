@@ -109,7 +109,7 @@ async def test_line_bot_hoarder_queueing():
         assert mock_reply.called
         reply_call_args = mock_reply.call_args[0]
         assert reply_call_args[0] == "dummy_reply_token_123"
-        assert "已收件排隊中" in reply_call_args[1][0]["text"]
+        assert "已收到" in reply_call_args[1][0]["text"]
 
         # Enqueued to SQLite Hoarder Queue
         mock_create_task.assert_called_once_with(

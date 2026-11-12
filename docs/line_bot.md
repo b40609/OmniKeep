@@ -1,25 +1,26 @@
-# 🟢 OmniKeep LINE 私人隨手採集 Bot
+# 用 LINE 收藏：接上你的 LINE 官方帳號
 
-針對台灣用戶最熟悉的 **LINE** 生態，OmniKeep 原生支援 **LINE Messaging API**。
-在手機上瀏覽任何 App（Safari、X、YouTube、PTT、臉書、Thread、LINE 群組）時，直接「**分享傳給你的 LINE Bot**」，後端秒級完成 L1/L2 結構化提煉，並以高質感的 **LINE 暗黑 Flex 卡片** 即時回傳！
+OmniKeep 支援 **LINE Messaging API**。在手機上的任何 App（Safari、X、YouTube、PTT、Facebook、Threads、LINE 群組）看到想留的內容，按「分享」傳給你自己的 LINE 官方帳號，OmniKeep 就會收下來、讀完，用一張 Flex 卡片回你摘要。
+
+LINE 的設定比 Telegram 多一步：LINE 平台要能從網際網路呼叫你的 webhook。只想快速開始的話，先用 [Telegram](telegram_bot.md)。
 
 ---
 
-## 🚀 3 步極速配置指南
+## 三步設定
 
-### 第一步：在 LINE Developers 建立免費 Bot
+### 第一步：在 LINE Developers 建立 Messaging API 頻道
 1. 前往 **[LINE Developers Console](https://developers.line.biz/)** 並以你的 LINE 帳號登入。
 2. 建立或選擇一個 Provider（例如：`Example Provider`）。
 3. 點擊 **Create a new channel**，選擇 **Messaging API**：
    - Channel name：`OmniKeep`（或任意你喜歡的名稱）
-   - Channel description：`My AI Second Brain`
+   - Channel description：`My OmniKeep`
    - Category：`Other`
-4. 進入剛建好的 Channel 頁面，取得兩組關鍵憑證：
+4. 進入剛建好的 Channel 頁面，取得兩組憑證：
    - **Basic settings 頁籤**：複製 **`Channel secret`**。
    - **Messaging API 頁籤**：滑到最下方，點擊 Issue 取得 **`Channel access token (long-lived)`**。
-5. 把這兩組憑證填進 OmniKeep：打開側欄底部的「設定」，切到「LINE」分頁，貼上 **Channel Secret** 與 **Channel Access Token**，按儲存。
+5. 把這兩組憑證填進 OmniKeep：右上角頭像選單 ›「設定」› 收錄管道 › LINE，把 LINE 後台的 Channel secret 貼到「頻道密鑰」、Channel access token 貼到「頻道存取權杖」，按「儲存」。
    - 儲存後立即生效，不用重啟。憑證會加密後存進資料庫，之後只顯示末四碼。
-   - 同一頁的「測試 LINE Bot」可以確認 Token 有沒有效。
+   - 同一個區塊的「測試 LINE」可以確認頻道存取權杖有沒有效。
    - 寫在 `.env` 的 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN` 是舊做法，仍然有效；設定頁存的值優先。
 
 ---
@@ -99,30 +100,28 @@ ingress:
 
 ---
 
-### 第三步：掃碼加好友並綁定你的 LINE User ID
-1. 在 Messaging API 頁籤用手機 LINE 掃描 **QR code** 加入你的 Bot 好友。
-2. 對 Bot 發送任何訊息（例如：`Hello` 或 `/help`）。
-3. Bot 會自動回傳你的專屬 LINE User ID（以 `U` 開頭的字串，例如 `U1234567890abcdef...`）：
-   > ⚠️ **OmniKeep LINE Bot 尚未綁定擁有者**  
-   > 你的 LINE User ID 是：`U1234567890abcdef...`
-4. 打開「設定」的「LINE」分頁，把這串 ID 填進「允許的 LINE User ID」（多個用逗號分隔），按儲存。立即生效，不用重啟。
-   - Bot 回覆的訊息寫的是「填入 `.env` 的 `LINE_ALLOWED_USER_IDS`」，那是舊做法，仍然有效；設定頁存的值優先。
-5. 綁定完成。之後只有清單裡的帳號能用這個 Bot，其他人傳訊息會被拒絕，不會用到你的 AI 額度。
+### 第三步：加好友並綁定你的 LINE 帳號
+1. 在 Messaging API 頁籤用手機 LINE 掃描 **QR code**，把你的官方帳號加為好友。
+2. 傳任何訊息給它（例如 `Hello` 或 `/help`）。
+3. 還沒有綁定任何帳號時，它會回覆尚未綁定擁有者，並附上你的 LINE User ID（以 `U` 開頭的字串，例如 `U1234567890abcdef...`）。
+4. 回到「設定 › 收錄管道 › LINE」，把這串 ID 填進「允許的 LINE 帳號」，按「加入」，再按「儲存」。立即生效，不用重啟。
+   - 回覆的訊息可能還寫著填入 `.env` 的 `LINE_ALLOWED_USER_IDS`，那是舊做法，仍然有效；設定頁存的值優先。
+5. 綁定完成。之後只有清單裡的帳號能用，其他人傳訊息會被拒絕，不會用到你的 AI 額度。
 
 ---
 
-## 📱 LINE 專屬互動功能
+## 在 LINE 裡怎麼用
 
-1. **隨手傳送連結或長文**：
-   - 傳送 URL 或剪貼簿段落，LINE 頂端會出現載入動畫（跳動三圓點）。
-   - 解析完成後以 **LINE Dark Flex Message** 回傳結構化情報卡片。
-2. **卡片下方按鈕**：
-   - `[☆ 加星標 / ⭐ 已星標]`：即時更新 SQLite 標記。
-   - `[📦 封存 / ✅ 已封存]`：看完隨手按「封存」，保持待讀 Inbox 清空。
-   - `[🌐 原始頁]`：一鍵在 LINE 內建瀏覽器打開原始網頁。
-3. **指令支援**：
-   - 輸入「`庫存`」或 `/stats`：查看當前大腦未讀數與總計。
-   - 輸入「`待讀`」或 `/inbox`：調出最近未讀情報卡。
+1. **傳連結或一段文字**：
+   - 傳網址或貼上一段文字，LINE 頂端會出現載入動畫（跳動的三個圓點）。
+   - 處理完，回傳一張深色的 Flex Message 卡片：分類、標題、摘要與標籤。
+2. **卡片下方的按鈕**：
+   - 加星／取消加星：立即寫進資料庫。
+   - 封存／取消封存：看完就封存，未讀清單保持乾淨。
+   - 原始連結：在 LINE 內建瀏覽器打開原網頁。
+3. **指令**：
+   - 輸入「`庫存`」或 `/stats`：查看未讀數與收藏總數。
+   - 輸入「`待讀`」或 `/inbox`：列出最近未讀的收藏。
    - 輸入「`說明`」或 `/help`：查看使用說明。
 
 ---

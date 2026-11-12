@@ -61,10 +61,10 @@
 
 ### 7. 填進 OmniKeep
 
-1. OmniKeep「設定 › AI 服務商」 › 新增連線 › 選「Google Vertex AI（Agent Platform）」。
+1. OmniKeep 右上角頭像選單 ›「設定」› AI，在「AI 連線」按「新增連線」，選「Google Vertex AI（Agent Platform）」。
 2. 貼上第 5 步的金鑰，模型用 `gemini-3.5-flash`（約 3 秒一次）或 `gemini-3.5-flash-lite`（約 1 秒一次）。
 3. 按「測試」，看到「連線成功（Vertex AI）」再按「儲存」。
-4. 在下面的「用途」把它加到分析（或雷達、Ask Brain）的順序裡。
+4. 在下面的「用途與備援順序」把它加到「分析」（或「提問」、「探索」）的順序裡。
 5. YouTube 影片解析不能用這條連線（見下面的坑），影片用途請另外接 AI Studio 的 Gemini 免費金鑰。
 
 ## 踩過的坑

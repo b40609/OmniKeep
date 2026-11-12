@@ -1,6 +1,10 @@
-# 🔭 監看中心 — 本地提案引擎（Local Proposal Engine）
+# 專案監看（實驗功能）
 
-OmniKeep 不再只是被動收藏雷達：它會**監看你自己機器上的專案**，對你的裝置主動提出風險與優化提案。一切在本機運作，跨用戶共享不在設計內（也永遠不會有）。
+專案監看會**掃描你自己電腦上的專案資料夾**，提出風險與改善的建議。一切在本機運作，跨使用者共享不在設計內（也永遠不會有）。
+
+這是預設關閉的實驗功能，介面與行為還會改。在 設定 › 實驗功能 開啟「專案監看」後，側邊欄會出現「專案監看」。文件裡提到的探索（定時檢查探索來源）也是實驗功能，在同一頁開啟。
+
+用詞對照：介面上叫「建議」的東西，在程式、API 與 MCP 工具名稱裡是 proposal（例如 `list_proposals`、`提案` 分類）。下面講介面時用「建議」，講識別字時維持原文。
 
 ## 核心概念：兩條獨立的權限軸
 
@@ -19,21 +23,21 @@ OmniKeep 不再只是被動收藏雷達：它會**監看你自己機器上的專
 
 ## 運作流程
 
-1. **註冊監看目標**（Web UI 監看中心，或 API）— 本地資料夾或桌面根目錄（L0 純檔名風險掃描）
-2. **掃描**（手動或觸發 `POST /api/watch/targets/{id}/scan`）：
-   - **L0 風險檢查**：只看檔名，比對危險命名（password／api_key／交易所金鑰對／`.pem`／`.env`…），命中即產生「風險提案卡」。純本地，不開任何檔案內容。
-   - **專案指紋**：依讀取軸組裝素材（README／依賴／結構統計／git log），遮蔽後（若同意外送）交 Agnes 兩段式解構成「專案認知卡」，存入 `監看` 分類。素材未變（版本雜湊相同）就跳過，省 token。
-3. **提案卡**（`提案` 分類）：結論句開頭 + 三維分數（🎯影響／🔍信心／🏗️成本）。可在 UI **核准／忽略**，並可**逐維修正分數**——修正值與 AI 原始值一併保存，是未來本地評分模型的校準燃料。同目標同來源 30 天內自動去重。
+1. **加入要監看的專案**（在「專案監看」面板，或用 API）：本機資料夾，或桌面根目錄（只做檔名風險掃描，也就是下面的 L0）。
+2. **掃描**（手動，或呼叫 `POST /api/watch/targets/{id}/scan`）：
+   - **L0 風險檢查**：只看檔名，比對危險命名（password／api_key／交易所金鑰對／`.pem`／`.env`…），命中就產生一則「風險」建議。純本機，不打開任何檔案內容。
+   - **專案指紋**：依讀取軸組裝素材（README／依賴／結構統計／git log），遮蔽後（若同意外送）交 Agnes 分析成一張專案的摘要與重點分析，存入 `監看` 分類。素材沒變（版本雜湊相同）就跳過，省 token。
+3. **建議**（存在 `提案` 分類）：以結論句開頭，加上三個分數（影響／信心／成本）。可以在介面上**核准或忽略**，也可以**逐項修正分數**。修正值與 AI 原始值一併保存，之後用來校準本機評分。同一個專案、同一個來源 30 天內不會重複提出。
 
 ## MCP 工具（手機端可用）
 
-- `list_proposals(status)` — 列出提案（預設 pending）
-- `decide_proposal(proposal_id, approve, user_impact?, user_confidence?, user_effort?, reason?)` — 核可／忽略＋分數修正
-- `scan_watch_target(target_id?)` — 觸發掃描（空 = 全部）
+- `list_proposals(status)`：列出建議（預設 pending）
+- `decide_proposal(proposal_id, approve, user_impact?, user_confidence?, user_effort?, reason?)`：核准或忽略，可以修正分數
+- `scan_watch_target(target_id?)`：觸發掃描（留空是全部）
 
-## 備份（第二大腦保險）
+## 備份
 
-`app/backup.py` 每日於 `BACKUP_HOUR` 後自動備份 SQLite 與 HTML 快照（資料庫透過線上備份 API，服務不停機），sink 自選：`local`（輪替 zip，預設）／`rclone`（40+ 雲端）／`git`（版本歷史）／`off`。設定見 `.env.example`；還原用 `scripts/restore_backup.py`，步驟見 [backup_restore.md](backup_restore.md)。
+`app/backup.py` 每日於 `BACKUP_HOUR` 後自動備份 SQLite 與 HTML 快照（資料庫透過線上備份 API，服務不停機），sink 自選：`local`（輪替 zip，預設）／`rclone`（40+ 雲端）／`git`（版本歷史）／`off`。備份方式、時間與保留份數在「設定 › 資料與備份」設定（舊做法寫在 `.env`，見 `.env.example`）；「專案監看」面板的「備份」分頁可以按「立即備份」。還原用 `scripts/restore_backup.py`，步驟見 [backup_restore.md](backup_restore.md)。
 
 ## 相關檔案
 
@@ -42,17 +46,17 @@ OmniKeep 不再只是被動收藏雷達：它會**監看你自己機器上的專
 | `app/watch/redact.py` | 機密遮蔽層（內容 pattern + 檔名風險判定） |
 | `app/watch/scanner.py` | L0 風險掃描 + 指紋生成（Agnes / 本地統計雙路徑） |
 | `app/backup.py` | 多 sink 每日備份 |
-| `app/routers/watch.py` | 監看／提案／備份 API |
-| `frontend/src/components/modals/WatchDialog.vue` | 監看中心 UI（權限矩陣 + 提案卡 + 備份） |
+| `app/routers/watch.py` | 專案監看、建議與備份的 API |
+| `frontend/src/components/modals/WatchDialog.vue` | 「專案監看」面板（權限矩陣、建議、備份） |
 
 ## 路線圖位置
 
-P0（已上線）= 監看 + 風險提案 + 指紋 + 備份。P1（已上線）= Telegram 滑卡（👍/👎/⭐/💤稍後）+ 行為事件落庫 + origin 分流。P2（已上線）= **品味學習**（滑動標籤即時回饋進雷達主題權重，14 天半衰期衰減；deck 以同一套權重排序並保留 4:1 探索間奏）+ **雷達×指紋關聯提案**（新雷達情報與監看專案標籤重疊 ≥2 時出提案卡，外送同意者交 Agnes 評審、否則本地保守出卡）+ 雷達摘要 Telegram 推播。
+P0（已上線）= 專案監看 + 風險建議 + 指紋 + 備份。P1（已上線）= Telegram 的逐則篩選（保留／加星／稍後／略過）+ 行為事件寫入資料庫 + origin 分流。P2（已上線）= **喜好學習**（逐則篩選時的選擇會即時調整探索的主題權重，14 天半衰期衰減；逐則篩選的清單（`/deck`）用同一套權重排序，並保留 4:1 的比例穿插沒看過的主題）+ **探索與專案指紋的關聯建議**（探索抓到的新收藏與監看專案的標籤重疊 2 個以上時提出建議，同意外送的專案交 Agnes 評審，否則在本機保守地提出）+ 精選的 Telegram 通知。
 
 ### P2 模組
 
 | 檔案 | 角色 |
 |---|---|
-| `app/watch/taste.py` | 滑動→主題權重橋接（💤 永不進權重）+ deck ε-greedy 排序 |
-| `app/watch/relevance.py` | 雷達×指紋關聯比對與提案（每情報每目標 30 天去重，每情報至多一張卡） |
-| `app/radar/scheduler.py` | 掛鉤：雷達循環後觸發 relevance 檢查 + digest 推播 Telegram |
+| `app/watch/taste.py` | 逐則篩選的選擇轉成主題權重（「稍後」不計入權重）+ deck 的 ε-greedy 排序 |
+| `app/watch/relevance.py` | 探索的收藏與專案指紋的關聯比對與建議（每則收藏對每個專案 30 天內只提一次，每則收藏最多一則建議） |
+| `app/radar/scheduler.py` | 掛鉤：探索每輪檢查後觸發 relevance 檢查，並把精選（digest）送到 Telegram |

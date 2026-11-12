@@ -15,7 +15,7 @@ from app.pipeline import interest_profile_block
 logger = logging.getLogger("omnikeep.radar.digest")
 
 # Title of each digest type; "daily" is the one maybe_send_daily_digest sends at the owner's hour.
-DIGEST_TYPE_NAMES = {"evening": "晚間焦點戰報", "morning": "清晨技術晨報", "daily": "每日摘要", "custom": "特報"}
+DIGEST_TYPE_NAMES = {"evening": "晚間精選", "morning": "晨間精選", "daily": "每日精選", "custom": "精選"}
 
 DIGEST_PROMPT_TEMPLATE = """你是一位高階系統架構師與首席技術情報官。
 以下是 OmniKeep 情報雷達近期自適應巡檢獲取的一批高質量技術項目（涵蓋 YouTube、GitHub、技術博客）：
@@ -70,7 +70,7 @@ async def generate_radar_digest(item_ids: List[str], digest_type: str = "evening
         return {"success": False, "message": "摘要產生失敗：AI 沒有回傳內容。"}
 
     now_str = datetime.now().strftime("%m/%d %H:%M")
-    title = f"OmniKeep 雷達 {DIGEST_TYPE_NAMES.get(digest_type, '焦點戰報')} ({now_str})"
+    title = f"OmniKeep 探索{DIGEST_TYPE_NAMES.get(digest_type, '精選')}（{now_str}）"
 
     digest_id = save_radar_digest({
         "title": title,

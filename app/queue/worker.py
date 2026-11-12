@@ -393,7 +393,7 @@ class TaskWorker:
                     await notify_task_heartbeat(
                         int(chat_id),
                         int(mid),
-                        "<b>正在進行多模態情報解析...</b>"
+                        "<b>正在讀取並分析…</b>"
                     )
                 except Exception as e:
                     logger.warning(f"[Queue Worker] Telegram heartbeat error: {e}")
@@ -434,7 +434,7 @@ class TaskWorker:
                         try:
                             await notify_task_heartbeat(
                                 int(chat_id), int(mid),
-                                f"<b>API 限流暫緩中</b>\n\n任務已排入延遲重試（第 {retry_count + 1} 次），約 {int(backoff)} 秒後自動繼續，無需重發。",
+                                f"<b>AI 服務限流，稍後自動再試</b>\n\n這是第 {retry_count + 1} 次重試，約 {int(backoff)} 秒後自動繼續，不用重新傳送。",
                             )
                         except Exception as e:
                             logger.warning(f"[Queue Worker] Telegram heartbeat error: {e}")
@@ -442,7 +442,7 @@ class TaskWorker:
                 # Out of rate-limit retries — fail with actionable guidance.
                 friendly = (
                     f"AI 服務持續限流（免費額度用完，或請求太頻繁），自動重試 {_MAX_RATE_LIMIT_RETRIES} 次仍未恢復。"
-                    "可以晚一點重新傳送這個連結；常發生的話到「設定 › AI 服務商」把請求間隔調長、"
+                    "可以晚一點重新傳送這個連結；常發生的話到「設定 › AI」把請求間隔調長、"
                     "加一條備援連線，或升級服務商方案。"
                 )
                 await self._fail_task(task_id, friendly)
