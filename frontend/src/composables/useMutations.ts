@@ -173,28 +173,6 @@ export function useMutations() {
     }
   }
 
-  /** Long-form note ingest. */
-  async function noteIngest(content: string, category: string | null): Promise<boolean> {
-    ui.isIngesting = true
-    const t = toast.loading('筆記建立中…')
-    try {
-      const data = await api.ingest(content, { category })
-      if (data.success) {
-        toast.success('筆記已建立', { id: t })
-        await itemsStore.refreshAll()
-        if (data.item) ui.activeItem = data.item
-        return true
-      }
-      toast.error('解析失敗', { id: t, description: data.detail || '未知錯誤' })
-      return false
-    } catch (e) {
-      toast.error('擷取失敗', { id: t, description: (e as Error).message })
-      return false
-    } finally {
-      ui.isIngesting = false
-    }
-  }
-
   /** Show the offline HTML snapshot (link-rot protection) in SnapshotDialog's sandboxed frame. */
   async function openSnapshot(item: Item) {
     try {
@@ -211,5 +189,5 @@ export function useMutations() {
     }
   }
 
-  return { toggleStar, toggleRead, updateCategory, removeItem, quickIngest, noteIngest, openSnapshot, track }
+  return { toggleStar, toggleRead, updateCategory, removeItem, quickIngest, openSnapshot, track }
 }

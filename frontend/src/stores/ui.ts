@@ -33,8 +33,6 @@ export const useUiStore = defineStore('ui', () => {
   const showAddModal = ref(false)
   /** Text the 新增 panel opens with (an address pasted on the page). */
   const addDraft = ref('')
-  // Only NoteDialog.vue and CommandPalette.vue still read these two; nothing opens them any more.
-  const showNoteModal = ref(false)
   const showCategoryModal = ref(false)
   const showShortcutsModal = ref(false)
   const showRadarModal = ref(false)
@@ -48,7 +46,6 @@ export const useUiStore = defineStore('ui', () => {
   const showDeckModal = ref(false)
   const showDailyDeckModal = ref(false)
   const showBrainModal = ref(false)
-  const showCommandPalette = ref(false)
 
   // Settings: a full page over the workspace (components/settings/SettingsPage.vue).
   const showSettingsModal = ref(false)
@@ -111,8 +108,8 @@ export const useUiStore = defineStore('ui', () => {
   return {
     sidebarOpen, sidebarMobileOpen, searchFocusRequests, pendingQuestion, ask,
     activeItem, cursorId, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
-    showAddModal, addDraft, openAdd, showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showWatchModal, showImportModal, importTab, importFile, openImport, showDeckModal,
-    showDailyDeckModal, showBrainModal, showCommandPalette,
+    showAddModal, addDraft, openAdd, showCategoryModal, showShortcutsModal, showRadarModal, showWatchModal, showImportModal, importTab, importFile, openImport, showDeckModal,
+    showDailyDeckModal, showBrainModal,
     showSettingsModal, settingsTab, settingsBlock, settingsLevel, settingsCloseRequests, settingsCard, settingsVersion, openSettings, showSetupWizard,
     watchTab, snapshotView,
     isIngesting,
