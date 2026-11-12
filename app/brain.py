@@ -92,6 +92,15 @@ async def ask_brain(
 
     # 1. Hybrid Search over knowledge base
     retrieved_items = await search_hybrid(clean_q, limit=limit, vector_weight=0.55)
+    if not retrieved_items:
+        # Nothing to cite: a model asked anyway makes up an answer and its sources.
+        return {
+            "question": clean_q,
+            "answer": "還沒有相關的收藏，所以沒有可以引用的內容。先收藏幾則相關的連結再問一次。",
+            "citations": [],
+            "model": "none",
+            "provider": "retrieval_only",
+        }
 
     citations = []
     for idx, item in enumerate(retrieved_items, start=1):

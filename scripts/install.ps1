@@ -55,7 +55,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $TaskName = 'OmniKeep Watchdog'
-$HealthUrl = 'http://127.0.0.1:5000/health'
+# Set once the install folder is known: the port is PORT in its .env, 5000 when not set there.
+$Port = 5000
+$HealthUrl = "http://127.0.0.1:$Port/health"
 $MinPython = [version]'3.12'
 
 function Write-Step([string]$message) { Write-Host "==> $message" -ForegroundColor Cyan }
@@ -113,7 +115,7 @@ function Find-Python {
 function Test-NodeVersion([string]$text) {
     if ($text -notmatch '^v?(\d+)\.(\d+)') { return $false }
     $major = [int]$Matches[1]; $minor = [int]$Matches[2]
-    # Vite 7 needs Node 20.19+ or 22.12+.
+    # Vite 8 needs Node 20.19+ or 22.12+.
     if ($major -eq 20) { return $minor -ge 19 }
     if ($major -eq 22) { return $minor -ge 12 }
     return $major -ge 23
@@ -222,6 +224,19 @@ if ($envExisted) {
         Invoke-Native $VenvPython @((Join-Path $InstallDir 'scripts\bootstrap_env.py'), '--project-dir', $InstallDir)
     }
 }
+
+# The port the service listens on: PORT in .env, 5000 when it is not set there (as scripts\watchdog.ps1 reads it).
+function Get-ServicePort([string]$root) {
+    $envFile = Join-Path $root '.env'
+    if (Test-Path $envFile -PathType Leaf) {
+        foreach ($line in [IO.File]::ReadAllLines($envFile)) {
+            if ($line -match '^\s*PORT\s*=\s*["'']?(\d{1,5})["'']?\s*(#.*)?$') { return [int]$Matches[1] }
+        }
+    }
+    return 5000
+}
+$Port = Get-ServicePort $InstallDir
+$HealthUrl = "http://127.0.0.1:$Port/health"
 
 # ── 5. 前端 ──────────────────────────────────────────────────────
 
@@ -340,7 +355,7 @@ if ($NoStart) {
         }
         if ($healthy) {
             $serviceUp = $true
-            Write-Note "OmniKeep 已啟動：http://127.0.0.1:5000"
+            Write-Note "OmniKeep 已啟動：http://127.0.0.1:$Port"
         } else {
             Write-Warn "90 秒內沒等到 $HealthUrl 回應。看 %LOCALAPPDATA%\OmniKeep\logs 的 service-*.stderr.log。"
         }
@@ -373,10 +388,10 @@ if ($DryRun) {
 } else {
     Write-Host '安裝完成。' -ForegroundColor Green
     if ($serviceUp -and -not $envExisted) {
-        Write-Host '在這台電腦用瀏覽器打開 http://127.0.0.1:5000 就能直接使用，不用登入。'
+        Write-Host "在這台電腦用瀏覽器打開 http://127.0.0.1:$Port 就能直接使用，不用登入。"
     } elseif ($serviceUp) {
         # An older .env may still say LOCAL_AUTO_LOGIN=false, which keeps the login page.
-        Write-Host '在這台電腦用瀏覽器打開 http://127.0.0.1:5000 就能使用，預設不用登入。'
+        Write-Host "在這台電腦用瀏覽器打開 http://127.0.0.1:$Port 就能使用，預設不用登入。"
         Write-Host '看到登入頁的話（例如 .env 裡寫了 LOCAL_AUTO_LOGIN=false），輸入 .env 的 API_KEY。'
     }
     Write-Host '下一步：開一個新的 agent session（Claude Code、Codex 或 Antigravity），說「幫我設定 OmniKeep」。'

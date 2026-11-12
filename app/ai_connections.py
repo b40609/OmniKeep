@@ -23,6 +23,7 @@ those back (push_brain_settings).
 """
 import json
 import logging
+import os
 import re
 import threading
 from contextlib import closing
@@ -39,13 +40,13 @@ logger = logging.getLogger("omnikeep.ai_connections")
 
 SLOTS = ("analysis", "brain", "radar", "embeddings", "video")
 SLOT_LABELS = {
-    "analysis": "分析", "brain": "Ask Brain", "radar": "雷達評分", "embeddings": "向量（語意搜尋）",
+    "analysis": "分析", "brain": "提問", "radar": "探索評分", "embeddings": "向量（語意搜尋）",
     "video": "影片解析",
 }
 SLOT_HELP = {
     "analysis": "收藏的摘要、分類與深度剖析。清單是空的時候沿用舊的「主要服務商」設定。",
-    "brain": "Ask Brain 回答問題。第一個是本機 Ollama 時，會先用它；清單用完後改用分析的清單。",
-    "radar": "雷達的相關性評分與每日摘要。清單用完（或是空的）就用分析的清單。",
+    "brain": "用收藏回答你的提問。第一個是本機 Ollama 時，會先用它；清單用完後改用分析的清單。",
+    "radar": "探索的相關性評分與精選。清單用完（或是空的）就用分析的清單。",
     "embeddings": "語意搜尋的向量。都失敗時改用本機雜湊向量。換模型後，既有向量要重建才查得到。",
     "video": "YouTube 影片解析（只有 Gemini 能看影片）。沒設定或失敗時，改用字幕或本機語音轉錄（中文用 Breeze-ASR-25）的逐字稿，"
              "裝了畫面 OCR 時再加上畫面文字，交給分析清單。",
@@ -649,6 +650,33 @@ def _ollama_values(base_url: str, model: str, label: str) -> Dict[str, Any]:
             "min_interval": None, "max_concurrency": None, "enabled": True}
 
 
+def ollama_answers(base_url: str) -> bool:
+    """Whether an Ollama runner answers at `base_url` (its own machine: no proxy, a short wait).
+
+    Unit tests (OMNIKEEP_TESTING=1) never reach a real runner on this machine, as in app/vector.py.
+    """
+    if os.environ.get("OMNIKEEP_TESTING") == "1":
+        return True
+    try:
+        import httpx
+        with httpx.Client(timeout=1.5, trust_env=False) as client:
+            return client.get(f"{base_url.rstrip('/')}/api/tags").status_code == 200
+    except Exception:
+        return False
+
+
+def _ollama_expected(base_url: str, field: str) -> bool:
+    """Whether to list an Ollama connection for this address when migrating.
+
+    An address the owner wrote is kept as it is. The built-in default (127.0.0.1:11434) is on
+    every install, Ollama or not, so it only counts when a runner answers there: a fresh
+    install without Ollama used to list a "本機 Ollama" connection that nothing stood behind.
+    """
+    from app.config import Settings
+    default = str(Settings.model_fields[field].default).rstrip("/")
+    return base_url != default or ollama_answers(base_url)
+
+
 def migrated() -> bool:
     try:
         with closing(get_db_connection()) as db:
@@ -680,13 +708,18 @@ def migrate_legacy() -> bool:
             ollama_url = (settings.OLLAMA_BASE_URL or "").strip().rstrip("/")
             brain_local = settings.BRAIN_PROVIDER in ("ollama", "strata")
             brain_url = settings.BRAIN_BASE_URL.rstrip("/")
+            if ollama_url and not _ollama_expected(ollama_url, "OLLAMA_BASE_URL"):
+                logger.info("No Ollama runner answers at %s: no local connection is listed", ollama_url)
+                ollama_url = ""
+            if brain_local and brain_url and not _ollama_expected(brain_url, "BRAIN_BASE_URL"):
+                brain_local = False
             if ollama_url:
                 ids["ollama"] = _insert(db, _ollama_values(ollama_url, settings.BRAIN_MODEL, "本機 Ollama"),
                                         origin="legacy_ollama")
             if brain_local and brain_url and brain_url != ollama_url:
-                ids["brain"] = _insert(db, _ollama_values(brain_url, settings.BRAIN_MODEL, "Ask Brain 本機模型（原設定）"),
+                ids["brain"] = _insert(db, _ollama_values(brain_url, settings.BRAIN_MODEL, "提問用的本機模型（原設定）"),
                                        origin="legacy_brain")
-            elif brain_local and brain_url:
+            elif brain_local and brain_url and "ollama" in ids:
                 ids["brain"] = ids["ollama"]
 
             plan: Dict[str, List[Tuple[int, str]]] = {slot: [] for slot in SLOTS}
@@ -797,7 +830,7 @@ def sync_from_settings(keys: Iterable[str]) -> None:
                 found = db.execute("SELECT id FROM ai_connections WHERE kind = 'ollama' AND base_url = ? "
                                    "ORDER BY id LIMIT 1", (url,)).fetchone()
                 local_id = found["id"] if found else _insert(
-                    db, _ollama_values(url, settings.BRAIN_MODEL, "Ask Brain 本機模型"), origin="legacy_brain")
+                    db, _ollama_values(url, settings.BRAIN_MODEL, "提問用的本機模型"), origin="legacy_brain")
                 rows = [(local_id, settings.BRAIN_MODEL)] + cloud
             else:
                 rows = cloud
