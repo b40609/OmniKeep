@@ -1,6 +1,6 @@
 ---
 name: omnikeep-setup
-description: 安裝 OmniKeep（自架的連結收藏工具：在 Telegram 丟連結，它幫你讀完，之後找得到），並用簡短訪談帶使用者完成首次設定：接上 AI、接上 Telegram、丟第一個連結。探索（實驗功能）的關注主題、探索來源與精選通知，只在使用者開了實驗功能時才問。使用者說「幫我安裝 OmniKeep」「幫我設定 OmniKeep」「重新設定 OmniKeep」「OmniKeep 裝好了然後呢」「多加幾個 X 的來源」「摘要改到晚上」「匯入書籤」時使用。Installs OmniKeep and runs its first-time setup interview.
+description: 安裝 OmniKeep（自架的連結收藏工具：在 Telegram 丟連結，它幫你讀完，之後找得到），並用簡短訪談帶使用者完成首次設定：接上 AI、接上 Telegram、丟第一個連結。探索（實驗功能）的關注主題、探索來源與精選通知，只在使用者開了實驗功能時才問。使用者說「幫我安裝 OmniKeep」「幫我設定 OmniKeep」「重新設定 OmniKeep」「OmniKeep 裝好了然後呢」「更新 OmniKeep」「升級 OmniKeep」「多加幾個 X 的來源」「摘要改到晚上」「匯入書籤」時使用。Installs, updates OmniKeep and runs its first-time setup interview.
 ---
 
 # OmniKeep 安裝與設定
@@ -62,6 +62,33 @@ description: 安裝 OmniKeep（自架的連結收藏工具：在 Telegram 丟連
    - 有另一個已經登入的瀏覽器：在那邊打開「設定 › 收錄管道 ›「手機登入」」產生配對碼（QR code 或 8 碼，5 分鐘內有效、只能用一次），在登入頁輸入。
    - 沒有：請使用者自己打開 OmniKeep 資料夾裡的 `.env`，複製 `API_KEY=` 後面的值，貼到登入頁。你不要讀 `.env`、不要印出金鑰，也不要請使用者把金鑰貼到聊天。
 5. MCP 要開新的 session 才會載入：請使用者開新的 session（Claude Code 也可以重新啟動），說「繼續設定 OmniKeep」，從第 1 步接著做。
+
+## 更新（使用者說「更新 OmniKeep」「升級 OmniKeep」時）
+
+不重跑訪談，設定與收藏都不會動。照順序做，任何一步失敗就停下來照錯誤訊息處理，不要跳過：
+
+1. **找到安裝資料夾**：預設是家目錄的 `OmniKeep`；找不到就問使用者。以下指令都在那個資料夾執行，Python 一律用 `.venv` 裡的（Windows `.venv\Scripts\python.exe`，macOS、Linux `.venv/bin/python`）。
+2. **檢查有沒有本機修改**：`git status --short`。除了沒追蹤的檔案以外還有修改時，先列給使用者看、問要怎麼處理，不要自己丟掉或 stash。
+3. **看有什麼新東西**：`git fetch`，再用 `git log --oneline HEAD..origin/main` 列出新的 commit，用 3 到 5 行跟使用者說這次更新了什麼。沒有新 commit 就說已是最新版，到此為止。
+4. **先備份資料庫**（服務可以繼續跑）：
+   ```
+   <.venv 的 python> -c "from app.backup import snapshot_archive; print(snapshot_archive('preupdate'))"
+   ```
+   印出的 zip 路徑告訴使用者。要還原時用 `python scripts/restore_backup.py <zip> --yes`（先停止服務，見 `docs/backup_restore.md`）。
+5. **取得新版**：`git pull --ff-only`。失敗（通常是第 2 步的本機修改）就停下來問使用者。
+6. **重跑安裝腳本**：Windows `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1`，macOS、Linux `bash scripts/install.sh`。它會更新 Python 依賴、重建前端，並把新版的這份 Skill 註冊到 agent；`.env` 不會被覆寫。腳本回報「Skill 被改過、沒有覆蓋」時，告訴使用者，不要自己加 `--force`。
+7. **重啟服務**：服務已經在跑時，安裝腳本不會重啟它，新版要重啟才會生效。資料庫結構的變更在服務啟動時自動套用，不用另外執行。
+   - Windows：結束這個資料夾的 `run.py` 行程，再啟動排程讓它立刻重開：
+     ```
+     $dir = (Get-Location).Path
+     Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*$dir*run.py*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+     Start-ScheduledTask -TaskName 'OmniKeep Watchdog'
+     ```
+   - Linux（systemd）：`systemctl --user restart omnikeep`
+   - macOS（launchd）：`launchctl kickstart -k gui/$(id -u)/com.omnikeep.server`
+   - 都沒有（用 nohup 啟動的）：結束 `run.py` 行程，再跑一次 `bash scripts/install.sh`，它會重新啟動。
+8. **確認**：等到 `http://127.0.0.1:5000/health` 回 `healthy`（`.env` 改過 `PORT` 就用那個埠），最多等 90 秒；沒等到就看 `%LOCALAPPDATA%\OmniKeep\logs`（macOS、Linux 是 `~/.local/state/omnikeep/logs` 或 install.sh 印出的位置）的 `service-*.stderr.log`。用 `git log -1 --oneline` 告訴使用者現在的版本。
+9. **提醒**：已經開著的 OmniKeep 分頁要重新整理，舊頁面可能一片空白。這次 Skill 也更新了，要開新的 session 才會讀到新版。
 
 ## 1. 掃描
 

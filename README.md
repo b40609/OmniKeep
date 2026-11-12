@@ -83,6 +83,26 @@ curl -fsSL https://raw.githubusercontent.com/b40609/OmniKeep/main/scripts/instal
 
 之後要找，用頂部的搜尋框：搜尋、提問、篩選都在這一個框。
 
+### 更新到新版
+
+對 agent 說：
+
+> 幫我更新 OmniKeep，照 https://github.com/b40609/OmniKeep 的 README「更新到新版」一節
+
+（2026-11-12 之後安裝的，說「更新 OmniKeep」就夠了；更早的 Skill 還沒有這一段，所以要附上這個網址。）
+
+agent 會照 [`skills/omnikeep-setup`](skills/omnikeep-setup/SKILL.md) 的「更新」一節做。想自己來，在 OmniKeep 資料夾依序：
+
+1. `git status --short` 確認沒有自己改過的檔案。
+2. 先備份資料庫：`.venv` 的 Python 執行 `-c "from app.backup import snapshot_archive; print(snapshot_archive('preupdate'))"`（Windows 是 `.venv\Scripts\python.exe`，macOS、Linux 是 `.venv/bin/python`）。
+3. `git pull --ff-only`。
+4. 重跑安裝腳本：Windows `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1`，macOS、Linux `bash scripts/install.sh`。會更新依賴、重建前端、更新 Skill，不會動 `.env` 與資料。
+5. 重啟服務（服務已在跑時，安裝腳本不會重啟它）：
+   - Windows：結束這個資料夾的 `run.py` 行程，再 `Start-ScheduledTask -TaskName 'OmniKeep Watchdog'`。
+   - Linux：`systemctl --user restart omnikeep`。
+   - macOS：`launchctl kickstart -k gui/$(id -u)/com.omnikeep.server`。
+6. 打開 `http://127.0.0.1:5000/health` 看到 `healthy` 就完成。資料庫結構的變更會在啟動時自動套用。已經開著的 OmniKeep 分頁要重新整理。
+
 ---
 
 ## 它能做什麼
