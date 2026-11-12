@@ -14,7 +14,7 @@ export const SETTING_TEXT: Record<string, SettingText> = {
   USER_BACKGROUND: { label: '使用者背景', help: '你的身分、專長和手上的專案。工程與工具類的收藏會多一段結合背景的建議；留空就不加。' },
   LOCAL_HARDWARE: { label: '本機硬體', help: '這台電腦的處理器、顯示卡和記憶體。分析 AI 模型時會評估能不能在這台跑；留空則只列出需求。' },
 
-  TELEGRAM_BOT_TOKEN: { label: '機器人權杖', help: '在 Telegram 向 @BotFather 建立機器人後取得。儲存後機器人立即重新連線。' },
+  TELEGRAM_BOT_TOKEN: { label: '機器人權杖', help: '在 Telegram 向 @BotFather 建立機器人後取得，樣子是一串數字、冒號，再接一長串英數字。儲存後機器人立即重新連線。' },
   TELEGRAM_ALLOWED_USER_IDS: { label: '已綁定的帳號', help: '只有這些 Telegram 帳號能把連結傳給機器人。用配對連結新增；移除後立即失去存取權。' },
   LINE_CHANNEL_SECRET: { label: '頻道密鑰', help: 'LINE 後台的 Channel secret。' },
   LINE_CHANNEL_ACCESS_TOKEN: { label: '頻道存取權杖', help: 'LINE 後台的 Channel access token。' },

@@ -6,10 +6,12 @@ import SettingRow from './SettingRow.vue'
 import FieldRow from './FieldRow.vue'
 import SaveBar from './SaveBar.vue'
 import CheckButton from './CheckButton.vue'
+import TelegramGuide from './TelegramGuide.vue'
 import TelegramPairing from './TelegramPairing.vue'
 import MobilePairing from './MobilePairing.vue'
 import SessionPanel from './SessionPanel.vue'
 import { useSettingsForm } from '@/composables/useSettingsForm'
+import { TELEGRAM_TOKEN_EXAMPLE } from '@/lib/telegramGuide'
 import { useUiStore } from '@/stores/ui'
 
 /** 設定 › 收錄管道: every way content gets in, and the sign-ins used to read it. */
@@ -32,7 +34,8 @@ function onTelegramRefreshed(boundIds: number[]) {
 
 <template>
   <SettingBlock id="telegram" title="Telegram" description="把連結傳給你的 Telegram 機器人，就會收進來。">
-    <FieldRow field-key="TELEGRAM_BOT_TOKEN" />
+    <template #above><TelegramGuide /></template>
+    <FieldRow field-key="TELEGRAM_BOT_TOKEN" :placeholder="`尚未設定，例如 ${TELEGRAM_TOKEN_EXAMPLE.slice(0, 16)}…`" />
     <FieldRow field-key="TELEGRAM_ALLOWED_USER_IDS" placeholder="或手動輸入帳號編號">
       <template #ids><TelegramPairing ref="telegram" @refreshed="onTelegramRefreshed" /></template>
     </FieldRow>

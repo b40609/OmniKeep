@@ -50,7 +50,7 @@ const problem = computed(() => {
       tab: 'ai',
     }
   }
-  if (s.needs_setup) return { text: '還沒有 AI 連線，新收藏不會經過 AI 分析。', action: '開始設定', tab: 'wizard' }
+  if (s.needs_setup) return { text: '還沒有接上 AI。新收藏會先存下來，標成「尚未分析」，接上後補分析。', action: '開始設定', tab: 'wizard' }
   return null
 })
 

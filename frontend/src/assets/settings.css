@@ -391,6 +391,47 @@
     text-decoration: underline;
   }
 
+  /* Numbered steps (how to connect Telegram): a number, a title and a line or two each. */
+  .set-guide {
+    display: grid;
+    gap: 12px;
+    max-width: 560px;
+    margin-top: 12px;
+  }
+  .set-guide__steps {
+    display: grid;
+    gap: 12px;
+  }
+  .set-guide__steps > li {
+    display: flex;
+    gap: 12px;
+  }
+  .set-guide__number {
+    display: flex;
+    width: 24px;
+    height: 24px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: var(--surface-2);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    font-variant-numeric: tabular-nums;
+  }
+  .set-guide__title {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 24px;
+  }
+  .set-guide__body {
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--muted-foreground);
+    text-wrap: pretty;
+  }
+
   /* Switch: square like every other control. */
   .ui-switch {
     position: relative;

@@ -44,12 +44,16 @@ const emptyState = computed(() => {
   if (items.error) return { title: '無法載入收藏', body: items.error, action: '重新載入' }
   if (items.searchQuery.trim()) return { title: '找不到符合的收藏', body: '換個關鍵字，或清除搜尋條件。', action: '清除搜尋條件' }
   if (items.currentCategory !== '全部') return { title: '這個分類沒有項目', body: '可以改看所有分類的收藏。', action: '顯示所有分類' }
-  if (firstUse.value) return { title: '還沒有任何收藏', body: '按「新增」貼上連結、寫筆記，或把書籤檔拖進來。', action: '新增' }
+  if (firstUse.value) return { title: '還沒有任何收藏', body: '按「新增」貼上連結或寫筆記', wide: '，也可以把書籤檔拖進來', action: '新增' }
   if (items.triageView === 'inbox') return { title: '收件匣已清空', body: '封存的項目可以在「封存」或「全部」找到。', action: '查看全部' }
   if (items.triageView === 'starred') return { title: '還沒有加星的項目', body: '在項目上按星號，就會出現在這裡。', action: '查看全部' }
   if (items.triageView === 'archived') return { title: '還沒有封存的項目', body: '在項目上按封存，就會收到這裡。', action: '查看全部' }
-  return { title: '目前沒有收藏', body: '按「新增」貼上連結、寫筆記，或把書籤檔拖進來。', action: '新增' }
+  return { title: '目前沒有收藏', body: '按「新增」貼上連結或寫筆記', wide: '，也可以把書籤檔拖進來', action: '新增' }
 })
+/** 設定 › 收錄管道 › Telegram: the main way in, offered next to 新增 on a first visit. */
+function openTelegramSetup() {
+  ui.openSettings('channels', '', 'telegram')
+}
 function recoverEmpty() {
   if (items.error) return void items.loadItems()
   if (firstUse.value || (!items.searchQuery.trim() && items.triageView === 'all' && items.currentCategory === '全部')) {
@@ -280,16 +284,21 @@ defineExpose({ scrollToIndex, scrollToItem })
       <Inbox class="size-8 text-muted-foreground" aria-hidden="true" />
       <div>
         <p class="text-lg font-semibold text-foreground">{{ emptyState.title }}</p>
+        <!-- `wide` is what only a computer can do (dragging a file in): a phone does not see it -->
         <p class="mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
-          {{ emptyState.body }}
+          {{ emptyState.body }}<template v-if="'wide' in emptyState"><span class="max-sm:hidden">{{ emptyState.wide }}</span>。</template>
         </p>
       </div>
-      <button class="min-h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary-hover" @click="recoverEmpty">{{ emptyState.action }}</button>
+      <div class="flex flex-wrap items-center justify-center gap-2">
+        <button class="min-h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary-hover" @click="recoverEmpty">{{ emptyState.action }}</button>
+        <button v-if="firstUse" class="min-h-10 rounded-lg bg-surface-2 px-4 text-sm font-medium text-foreground hover:bg-surface-3" @click="openTelegramSetup">用 Telegram 丟連結</button>
+      </div>
 
       <!-- Other ways in, for a first visit -->
       <details v-if="firstUse" class="w-full max-w-md text-left text-sm">
         <summary class="min-h-10 cursor-pointer py-3 text-center text-muted-foreground">其他收錄方式與範例</summary>
-        <div class="mt-3 border-t border-hairline pt-4 text-left">
+        <!-- Dragging a button to the bookmarks bar needs a computer -->
+        <div class="mt-3 border-t border-hairline pt-4 text-left max-sm:hidden">
           <div class="mb-2 flex items-center gap-2 font-semibold text-foreground">
             <Bookmark class="size-4" aria-hidden="true" />
             <span>書籤小工具（不需安裝外掛）</span>

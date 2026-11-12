@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { FileText, Loader2, Paperclip, X } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
+import { useMediaQuery } from '@vueuse/core'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import Select from '@/components/ui/select/Select.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
@@ -36,6 +37,8 @@ const error = ref('')
 const progress = ref('')
 const submitting = ref(false)
 const dragDepth = ref(0)
+/** A phone cannot drag a file in, so the box does not suggest it there. */
+const canDrag = useMediaQuery('(min-width: 640px)')
 
 /** What the text is on its own, before either switch: it decides which switch is offered. */
 const natural = computed(() => planAdd(text.value))
@@ -234,7 +237,7 @@ function onKeydown(event: KeyboardEvent) {
           aria-label="要新增的內容"
           :aria-invalid="!!error"
           aria-describedby="add-outcome add-error"
-          placeholder="貼上連結、寫筆記，或把檔案拖進來"
+          :placeholder="canDrag ? '貼上連結、寫筆記，或把檔案拖進來' : '貼上連結或寫筆記'"
           :disabled="busy"
           @input="error = ''"
           @keydown="onKeydown"
