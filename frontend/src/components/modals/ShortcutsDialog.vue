@@ -18,8 +18,8 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
       ['K / ↑', '上一則'],
       ['Enter', '開啟選取的收藏'],
       ['Esc', '關閉面板或對話框'],
-      ['/', '搜尋'],
-      ['Ctrl/Cmd+K', '命令列'],
+      ['/ 或 Ctrl/Cmd+K', '搜尋、篩選與動作'],
+      ['B', '提問'],
       ['Ctrl/Cmd+B', '展開或收合側邊欄'],
     ],
   },
@@ -34,10 +34,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
   {
     title: '新增與開啟',
     items: [
-      ['N', '貼上連結'],
-      ['Shift+N', '新增筆記'],
-      ['I', '匯入書籤'],
-      ['B', '提問'],
+      ['N', '新增連結、筆記或書籤檔'],
       ['R', '探索設定', 'radar'],
       ['D', '逐則篩選', 'radar'],
       ['Shift+D', '每日回顧', 'daily'],
