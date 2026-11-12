@@ -6,6 +6,8 @@ which a remote query vector can never match. Local vectors are deterministic:
 recomputing one from the item's text and getting the same numbers proves where a
 row came from, without calling any API.
 """
+import asyncio
+import logging
 from collections import Counter
 from contextlib import closing
 from typing import Any, Dict, List
@@ -26,9 +28,14 @@ from app.vector import (
     store_item_embedding,
 )
 
+logger = logging.getLogger("omnikeep.reindex")
+
 # Re-embedding stops after this many fallbacks in a row: the endpoint is down, and
 # overwriting rows with more local vectors would not help.
 MAX_FALLBACKS_IN_A_ROW = 3
+# The background backfill: how often it looks, and how many items it embeds per look.
+BACKFILL_TICK_SECONDS = 600
+BACKFILL_BATCH = 50
 
 
 def target_model() -> str:
@@ -146,3 +153,45 @@ async def reembed(item_ids: List[str], progress=lambda done, total: None) -> Dic
         result["reembedded"] += 1
         progress(done, len(item_ids))
     return result
+
+
+def pending_item_ids(limit: int = BACKFILL_BATCH) -> List[str]:
+    """Analysed items the configured model has yet to embed, newest first: the ones saved
+    without a vector while it was down (app.vector.store_item_embedding), and the ones that only
+    hold the hashed stand-in from before that rule. Empty when the hashed vectors are the
+    configured choice. Rows made by another real model are left to
+    scripts/rebuild_embeddings.py: changing models is a decision, and with a cloud
+    endpoint re-embedding everything is paid for per item."""
+    if target_model() == LOCAL_EMBEDDING_MODEL:
+        return []
+    with closing(get_db_connection()) as conn:
+        try:
+            rows = conn.execute(
+                """SELECT i.id FROM items i LEFT JOIN item_embeddings e ON e.item_id = i.id
+                   WHERE COALESCE(i.analysis_status, '') != 'pending' AND (e.item_id IS NULL OR e.model = ?)
+                   ORDER BY i.created_at DESC LIMIT ?""",
+                (LOCAL_EMBEDDING_MODEL, limit)).fetchall()
+        except Exception:  # no item_embeddings table yet: nothing has been indexed here
+            return []
+    return [r["id"] for r in rows]
+
+
+async def backfill_pending(limit: int = BACKFILL_BATCH) -> Dict[str, Any]:
+    """Embed up to `limit` pending items with the configured model. A vector is only
+    written when that model made it, so running this while it is still down changes nothing."""
+    item_ids = pending_item_ids(limit)
+    if not item_ids:
+        return {"pending": 0, "reembedded": 0, "fell_back": 0, "stopped": None}
+    return {"pending": len(item_ids), **(await reembed(item_ids))}
+
+
+async def backfill_loop(tick_seconds: int = BACKFILL_TICK_SECONDS, initial_delay: float = 90.0) -> None:
+    await asyncio.sleep(initial_delay)
+    while True:
+        try:
+            stats = await backfill_pending()
+            if stats["reembedded"]:
+                logger.info("[Reindex] Embedded %s item(s) that were waiting for the embedding model", stats["reembedded"])
+        except Exception as exc:
+            logger.error("[Reindex] backfill tick failed (%s)", type(exc).__name__)
+        await asyncio.sleep(tick_seconds)

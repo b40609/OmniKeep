@@ -11,6 +11,7 @@ import math
 import os
 import re
 import struct
+import time
 from contextlib import closing
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
@@ -29,7 +30,28 @@ _SQLITE_VEC_AVAILABLE: Optional[bool] = None
 # Vectors from different models live in different spaces and must never be
 # compared against each other, so the label has to say what really produced them.
 LOCAL_EMBEDDING_MODEL = "local-hash-v1"
-_warned_model_mix: set = set()
+# Seconds the local runner gets for one embedding. It has to cover loading the model:
+# a first load took 14 s on a machine where later ones took 2 s, and with the earlier
+# 10 s limit the request was dropped and the model never got loaded.
+OLLAMA_EMBED_TIMEOUT = 30.0
+# A repeated warning is logged again after this many seconds, not once per process:
+# "semantic search is off" has to stay visible in the log for as long as it is true.
+WARN_AGAIN_AFTER = 600.0
+_last_warned: Dict[Any, float] = {}
+
+
+def _warn_now_and_then(key: Any, message: str, *args: Any) -> None:
+    now = time.monotonic()
+    if now - _last_warned.get(key, -WARN_AGAIN_AFTER) < WARN_AGAIN_AFTER:
+        return
+    _last_warned[key] = now
+    logger.warning(message, *args)
+
+
+class HybridResults(list):
+    """The items of search_hybrid, plus `semantic`: what the vector side did for this
+    query (see semantic_state). A plain list to every caller that only wants the items."""
+    semantic: Dict[str, Any] = {}
 
 
 def is_sqlite_vec_available() -> bool:
@@ -184,7 +206,7 @@ async def _ollama_embedding(clean_text: str, dim: int, is_query: bool, base_url:
     url = f"{base_url}/api/embed"
     try:
         import httpx
-        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+        async with httpx.AsyncClient(timeout=OLLAMA_EMBED_TIMEOUT, trust_env=False) as client:
             resp = await client.post(url, json={"model": model, "input": prompt_input})
         if resp.status_code == 200:
             embs = resp.json().get("embeddings") or []
@@ -192,13 +214,17 @@ async def _ollama_embedding(clean_text: str, dim: int, is_query: bool, base_url:
                 ai_status.record_success(status_key, label)
                 return _normalized(embs[0], dim)
             ai_status.record_failure(status_key, 200, f"{model} 沒有回傳 {dim} 維以上的向量", label)
-            logger.debug("[Vector] Ollama returned no usable %s-dim embedding, checking fallback...", dim)
+            failure = f"no usable {dim}-dim vector in the response"
         else:
             ai_status.record_failure(status_key, resp.status_code, (resp.text or "")[:200], label)
-            logger.debug("[Vector] Ollama embedding returned HTTP %s, checking fallback...", resp.status_code)
+            failure = f"HTTP {resp.status_code}"
     except Exception as e:
         ai_status.record_failure(status_key, None, f"連不上 {base_url}（{type(e).__name__}）", label)
-        logger.debug(f"[Vector] Local Ollama embedding failed ({e}), checking fallback...")
+        failure = type(e).__name__
+    # Not at debug level: with this failing, nothing is indexed and questions lose their
+    # semantic side, and the service log is where that gets looked up afterwards.
+    _warn_now_and_then(("ollama-embedding", base_url, model, failure),
+                       "[Vector] %s on the local runner at %s gave no embedding (%s).", model, base_url, failure)
     return None
 
 
@@ -318,7 +344,19 @@ async def generate_embedding(text: str, is_query: bool = False) -> List[float]:
 
 
 def store_item_embedding(item_id: str, embedding: List[float], model: str = "") -> bool:
-    """Stores the embedding vector into both the fallback table and sqlite-vec table."""
+    """Stores the embedding vector into both the fallback table and sqlite-vec table.
+
+    Returns False, storing nothing, for a hashed stand-in vector while a real model is
+    configured (the runner was down or slow when the item was saved). Such a vector
+    matches no query made by the real model, and a query that falls back the same way
+    would be compared with those few rows only. The item keeps whatever vector it had
+    and app.reindex.backfill_pending embeds it once the model answers again."""
+    if model == LOCAL_EMBEDDING_MODEL and target_embedding_model() != LOCAL_EMBEDDING_MODEL:
+        _warn_now_and_then(
+            ("deferred-index", target_embedding_model()),
+            "[Vector] %s did not answer, so new items are saved without a vector for now "
+            "(keyword search finds them); they are indexed once it is back.", target_embedding_model())
+        return False
     dim = len(embedding)
     packed = struct.pack(f"{dim}f", *embedding)
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -496,27 +534,64 @@ def search_similar_items(
     return results[:limit]
 
 
-def _warn_if_index_model_mismatch(query_model: str) -> None:
-    """Log (once per model set) when stored vectors come from a different model
-    than the query vector: those rows are in another space and need re-indexing."""
+def index_model_counts() -> Dict[str, int]:
+    """How many stored vectors each model made."""
     try:
         with closing(get_db_connection()) as conn:
-            rows = conn.execute(
-                "SELECT model, COUNT(*) AS n FROM item_embeddings GROUP BY model"
-            ).fetchall()
-    except Exception:
+            rows = conn.execute("SELECT model, COUNT(*) AS n FROM item_embeddings GROUP BY model").fetchall()
+    except Exception:  # no such table: nothing was ever indexed in this database
+        return {}
+    return {r["model"]: r["n"] for r in rows}
+
+
+def semantic_state(query_model: str) -> Dict[str, Any]:
+    """What the vector side can do for a query embedded by `query_model`.
+
+    state        "ok": every stored vector is from the query's model.
+                 "partial": most are; `not_indexed` rows from other models cannot match.
+                 "empty": nothing is indexed yet.
+                 "unavailable": the vector side must not be used for this query.
+    reason       why it is unavailable: "embedding_unreachable" when a real model is
+                 configured but the query only got the hashed stand-in, "model_mismatch"
+                 when most of the index was made by another model than the query.
+    query_model, index_model (the one most vectors are from), indexed, not_indexed.
+
+    Vectors of two models are in unrelated spaces. Comparing the query with the handful
+    of rows that happen to share its model returns whatever is least far among them,
+    which reads as a confident citation of something irrelevant; so the minority side
+    never answers."""
+    counts = index_model_counts()
+    mine = counts.get(query_model, 0)
+    total = sum(counts.values())
+    index_model = max(counts, key=lambda m: counts[m]) if counts else ""
+    state, reason = "ok", ""
+    if query_model == LOCAL_EMBEDDING_MODEL and target_embedding_model() != LOCAL_EMBEDDING_MODEL:
+        state, reason = "unavailable", "embedding_unreachable"
+    elif not total:
+        state = "empty"
+    elif mine < counts[index_model]:
+        state, reason = "unavailable", "model_mismatch"
+    elif mine < total:
+        state = "partial"
+    return {"state": state, "reason": reason, "query_model": query_model, "index_model": index_model,
+            "indexed": mine, "not_indexed": total - mine}
+
+
+def _warn_about_semantic_state(semantic: Dict[str, Any]) -> None:
+    """Log when stored vectors come from another model than the query vector: those
+    rows are in another space and need re-indexing."""
+    if not semantic["not_indexed"]:
         return
-    others = {r["model"]: r["n"] for r in rows if r["model"] != query_model}
-    if not others:
-        return
-    key = (query_model, tuple(sorted(others)))
-    if key in _warned_model_mix:
-        return
-    _warned_model_mix.add(key)
-    logger.warning(
+    counts = index_model_counts()
+    others = {m: n for m, n in counts.items() if m != semantic["query_model"]}
+    skipped = " Semantic search is skipped for this query; only keywords are used." \
+        if semantic["state"] == "unavailable" else ""
+    _warn_now_and_then(
+        ("model-mix", semantic["query_model"], tuple(sorted(others)), semantic["state"]),
         "[Vector] Query embeddings use model %r but %s stored vector(s) were indexed with %s; "
-        "those items will not match semantically until re-indexed.",
-        query_model, sum(others.values()), ", ".join(f"{m!r} x{n}" for m, n in others.items()),
+        "those items will not match semantically until re-indexed.%s",
+        semantic["query_model"], sum(others.values()), ", ".join(f"{m!r} x{n}" for m, n in others.items()),
+        skipped,
     )
 
 
@@ -570,19 +645,29 @@ def _merge_hybrid_results(
     return scored_items[:limit]
 
 
-async def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5) -> List[Dict[str, Any]]:
+async def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5) -> HybridResults:
     """
     Hybrid Search combining keyword search (FTS) and vector semantic search via Reciprocal Rank Fusion (RRF).
+    The result is a list of items; its `semantic` attribute says what the vector side
+    did (semantic_state), so a caller can tell the person when it was left out.
     """
-    from app.database import get_items
+    from app.database import search_candidates
 
-    # 1. Lexical search. get_items returns matches best first (bm25, column rank), and that
-    #    order is the lexical rank fused below.
-    fts_items = get_items(query=query, limit=limit * 2)
+    # 1. Lexical search. search_candidates returns matches best first (every word, then the
+    #    terms of a query typed as a sentence, then any word), and that order is the lexical
+    #    rank fused below.
+    fts_items = search_candidates(query, limit=limit * 2)
 
     # 2. Vector search: same embedding path as indexing (app.pipeline), so the
     #    query vector is in the same space as the stored item vectors; only
-    #    vectors labelled with the query's model are compared.
+    #    vectors labelled with the query's model are compared, and only when that
+    #    model made most of the index.
     q_vec, q_model = await generate_embedding_with_model(query, is_query=True)
-    _warn_if_index_model_mismatch(q_model)
-    return _merge_hybrid_results(fts_items, q_vec, limit=limit, vector_weight=vector_weight, model=q_model)
+    semantic = semantic_state(q_model)
+    _warn_about_semantic_state(semantic)
+    if semantic["state"] == "unavailable":
+        q_vec = [0.0] * len(q_vec)  # an all-zero query vector ranks by the lexical side alone
+    results = HybridResults(
+        _merge_hybrid_results(fts_items, q_vec, limit=limit, vector_weight=vector_weight, model=q_model))
+    results.semantic = semantic
+    return results

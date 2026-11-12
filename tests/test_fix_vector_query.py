@@ -160,7 +160,7 @@ def test_search_hybrid_still_works_fully_local(monkeypatch):
 
 def test_search_hybrid_warns_on_index_model_mismatch(monkeypatch, caplog):
     import app.vector as vector_mod
-    monkeypatch.setattr(vector_mod, "_warned_model_mix", set())
+    monkeypatch.setattr(vector_mod, "_last_warned", {})
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
 
     item_id = save_item({"url": "https://example.test/d", "title_l1": "Old row", "summary_l1": "", "tech_tags": []})

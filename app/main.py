@@ -92,6 +92,9 @@ async def _service_lifespan(app: FastAPI):
         # Items whose fetch got only an error page are fetched again for a week (app.refetch).
         from app.refetch import refetch_loop
         tasks.append(asyncio.create_task(refetch_loop()))
+        # Items saved while the embedding model was down get their vector once it answers.
+        from app.reindex import backfill_loop
+        tasks.append(asyncio.create_task(backfill_loop()))
         # Telegram polling lives in app.services so a token saved in the app restarts it.
         services.start_telegram()
         yield
