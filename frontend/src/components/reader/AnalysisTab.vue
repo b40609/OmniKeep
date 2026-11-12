@@ -293,7 +293,7 @@ function openItem(id: number | string) {
       </nav>
       <div v-if="ui.activeItem.deep_analysis" ref="contentRef" class="prose-reader text-base" v-html="renderMarkdown(ui.activeItem.deep_analysis)" />
       <div v-else class="py-8 text-center text-sm text-muted-foreground">
-        這個項目還沒有重點分析，可以改看「原文」。
+        這則收藏還沒有重點分析，可以改看「原文」。
       </div>
     </section>
 

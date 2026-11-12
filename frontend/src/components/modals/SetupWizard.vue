@@ -58,6 +58,11 @@ const STEPS: { id: Step; label: string }[] = [
   { id: 'done', label: '完成' },
 ]
 const stepIndex = computed(() => STEPS.findIndex((s) => s.id === step.value))
+/** An earlier step shows a tick only when it was really done, not when it was skipped. */
+function stepDone(index: number): boolean {
+  if (index >= stepIndex.value) return false
+  return STEPS[index].id === 'telegram' ? telegramBound.value : aiSaved.value
+}
 
 function choose(id: string) {
   cardId.value = id
@@ -239,9 +244,9 @@ onMounted(async () => {
         >
           <span
             class="flex size-6 items-center justify-center rounded-full border text-xs tabular-nums"
-            :class="i < stepIndex ? 'border-primary bg-primary text-primary-foreground' : i === stepIndex ? 'border-primary text-foreground' : 'border-border'"
+            :class="stepDone(i) ? 'border-primary bg-primary text-primary-foreground' : i === stepIndex ? 'border-primary text-foreground' : 'border-border'"
           >
-            <Check v-if="i < stepIndex" class="size-3.5" aria-hidden="true" />
+            <Check v-if="stepDone(i)" class="size-3.5" aria-hidden="true" />
             <template v-else>{{ i + 1 }}</template>
           </span>
           <!-- A phone has room for the current step's name only -->
@@ -265,7 +270,7 @@ onMounted(async () => {
               type="button"
               role="radio"
               :aria-checked="cardId === c.id"
-              class="min-w-0 cursor-pointer rounded-lg border p-3 text-left transition-colors"
+              class="flex min-w-0 cursor-pointer flex-col rounded-lg border p-3 text-left transition-colors"
               :class="cardId === c.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted'"
               @click="choose(c.id)"
             >
