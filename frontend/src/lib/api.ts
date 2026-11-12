@@ -650,6 +650,8 @@ export interface IngestOptions {
   /** What the user's browser showed for the page (bookmarklet); the server uses it as a hint. */
   pageTitle?: string
   pageDescription?: string
+  /** Save the text as a note even when it holds an address (the server would otherwise save that page). */
+  asNote?: boolean
 }
 
 export function ingest(content: string, opts: IngestOptions = {}): Promise<IngestResult> {
@@ -661,6 +663,7 @@ export function ingest(content: string, opts: IngestOptions = {}): Promise<Inges
       async_mode: opts.async ?? false,
       ...(opts.pageTitle ? { page_title: opts.pageTitle } : {}),
       ...(opts.pageDescription ? { page_description: opts.pageDescription } : {}),
+      ...(opts.asNote ? { as_note: true } : {}),
     }),
   })
 }

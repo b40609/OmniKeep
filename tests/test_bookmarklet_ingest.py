@@ -67,3 +67,32 @@ async def test_without_hints_there_is_nothing_to_analyse():
     generate.assert_not_awaited()  # no AI analysis made up from an empty page
     assert item["title_l1"] == "example.com/members/post"
     assert item["summary_l1"].startswith(pipeline.FETCH_FAILED_TAG)
+
+
+# The 新增 panel: text the owner chose to keep as a note stays a note, even when it is
+# short and holds one address (which is otherwise read as a shared link).
+def test_ingest_api_passes_the_note_choice_on_and_does_not_treat_the_text_as_an_address(monkeypatch):
+    run = AsyncMock(return_value={"id": "x"})
+    monkeypatch.setattr(ingest, "run_pipeline", run)
+    with _client() as client:
+        res = client.post("/api/ingest", json={"content": "http://127.0.0.1/admin 這個位址要記得關", "as_note": True})
+        assert res.status_code == 200
+        # Without the choice the same text is an address to fetch, and a private one is refused.
+        assert client.post("/api/ingest", json={"content": "http://127.0.0.1/admin 這個位址要記得關"}).status_code == 400
+    assert run.await_count == 1
+    assert run.await_args.kwargs["as_note"] is True
+
+
+async def test_a_note_with_one_address_is_saved_as_the_note_not_as_that_page():
+    text = "這篇值得再看 https://example.com/members/post"
+    provider = AsyncMock()
+    provider.generate_json = AsyncMock(return_value={"title_l1": "值得再看的文章", "summary_l1": "一則筆記"})
+    fetch = AsyncMock(return_value=dict(LOGIN_WALL))
+    with patch.object(pipeline, "get_primary_provider", return_value=provider), \
+         patch.object(pipeline, "parse_web_page", fetch):
+        assert pipeline.extract_target_url(text) == "https://example.com/members/post"
+        item = await pipeline.run_pipeline(text, as_note=True)
+    fetch.assert_not_awaited()
+    saved = get_item_by_id(item["id"])
+    assert saved["source_type"] == "snippet"
+    assert saved["content_raw"] == text

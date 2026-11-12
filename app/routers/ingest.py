@@ -20,6 +20,8 @@ class IngestRequest(BaseModel):
     # The page's title and description as the user's browser shows them (bookmarklet).
     page_title: Optional[str] = None
     page_description: Optional[str] = None
+    # Keep the text as a note even when it holds an address (the 新增 panel's choice).
+    as_note: Optional[bool] = False
 
 
 def _page_hint(value: Optional[str], limit: int) -> str:
@@ -35,7 +37,8 @@ async def ingest_url(
         raise HTTPException(status_code=400, detail="請提供網址或文字段落內容 (URL or text is required)")
 
     clean_input = raw_input.strip()
-    if req.url or clean_input.lower().startswith(("http://", "https://")):
+    as_note = bool(req.as_note) and not req.url
+    if not as_note and (req.url or clean_input.lower().startswith(("http://", "https://"))):
         try:
             validate_url(clean_input)
         except UnsafeURL as exc:
@@ -55,7 +58,8 @@ async def ingest_url(
     try:
         item = await run_pipeline(clean_input, req.category,
                                   page_title=_page_hint(req.page_title, 300),
-                                  page_description=_page_hint(req.page_description, 1000))
+                                  page_description=_page_hint(req.page_description, 1000),
+                                  **({"as_note": True} if as_note else {}))
         return {
             "success": True,
             "status": "completed",

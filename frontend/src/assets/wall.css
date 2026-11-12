@@ -790,6 +790,164 @@
   .search-box input::-webkit-search-cancel-button {
     -webkit-appearance: none;
   }
+  /* The box and, under it, its panel: search, ask, filters and actions in one place. */
+  .search {
+    position: relative;
+    min-width: 0;
+  }
+  .search-box--ask {
+    border-color: var(--ring);
+  }
+  .search-box__mode {
+    flex: none;
+    margin-right: -4px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    color: var(--foreground);
+  }
+  .search-box__toggle {
+    height: 28px;
+    flex: none;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 20px;
+    cursor: pointer;
+    transition: background-color 150ms ease-out, color 150ms ease-out;
+  }
+  .search-box__toggle:hover,
+  .search-box__toggle[aria-pressed='true'] {
+    background: var(--surface-2);
+    color: var(--foreground);
+  }
+  .search-box__ask {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    place-items: center;
+    margin: 0 -4px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 150ms ease-out, color 150ms ease-out;
+  }
+  .search-box__ask:hover {
+    background: var(--surface-2);
+    color: var(--foreground);
+  }
+  .search-box__ask[aria-pressed='true'] {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .search-box__ask svg {
+    width: 20px;
+    height: 20px;
+    stroke-width: 1.75;
+  }
+  .omni-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    left: 0;
+    z-index: 60;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--popover);
+    color: var(--popover-foreground);
+    box-shadow: var(--float-shadow);
+  }
+  .omni-panel__list {
+    max-height: min(72vh, 680px);
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .omni-panel__label {
+    padding: 8px 12px 4px;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--muted-foreground);
+  }
+  .omni-panel__hint {
+    padding: 16px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--muted-foreground);
+  }
+  .omni-row {
+    display: flex;
+    min-height: 40px;
+    align-items: center;
+    gap: 16px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 20px;
+    cursor: pointer;
+  }
+  .omni-row > svg {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    stroke-width: 1.75;
+    color: var(--muted-foreground);
+  }
+  .omni-row[aria-selected='true'] {
+    background: var(--surface-3);
+  }
+  .omni-row__label {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .omni-row__end {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  .omni-row__end svg {
+    width: 16px;
+    height: 16px;
+    color: var(--foreground);
+  }
+  /* ---------- 新增 panel ---------- */
+  .add-panel--drop {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
+  textarea.add-panel__box {
+    min-height: 152px;
+    max-height: 50vh;
+    font-size: 16px;
+    line-height: 22px;
+  }
+  .add-file {
+    display: flex;
+    min-height: 56px;
+    align-items: center;
+    gap: 12px;
+    padding: 0 8px 0 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--input);
+    font-size: 16px;
+    line-height: 22px;
+  }
+  .add-file > svg {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    stroke-width: 1.75;
+    color: var(--muted-foreground);
+  }
   /* The "/" hint inside the search box */
   .key-hint {
     min-width: 24px;

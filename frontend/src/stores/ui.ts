@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import type { Item } from '@/lib/api'
 import { DEFAULT_SECTION, resolveSettingsTarget, type SettingsSectionId } from '@/lib/settingsSections'
@@ -14,6 +14,8 @@ export const useUiStore = defineStore('ui', () => {
   const sidebarMobileOpen = ref(false)
   /** Bumped to ask the header to open and focus its search box (the mobile bottom bar does this). */
   const searchFocusRequests = ref(0)
+  /** A question picked in the search box, waiting for the answer dialog to send it. */
+  const pendingQuestion = ref('')
 
   // Reader pane — deep reactive: the same item exists as separate objects in
   // the list and here, so mutations are synced into both copies by id.
@@ -27,6 +29,11 @@ export const useUiStore = defineStore('ui', () => {
   const focusMode = ref(false)
 
   // Modals
+  /** 新增: one panel for links, notes and bookmark files (components/modals/AddDialog.vue). */
+  const showAddModal = ref(false)
+  /** Text the 新增 panel opens with (an address pasted on the page). */
+  const addDraft = ref('')
+  // Only NoteDialog.vue and CommandPalette.vue still read these two; nothing opens them any more.
   const showNoteModal = ref(false)
   const showCategoryModal = ref(false)
   const showShortcutsModal = ref(false)
@@ -36,6 +43,8 @@ export const useUiStore = defineStore('ui', () => {
   const showImportModal = ref(false)
   /** Tab the import dialog opens on. */
   const importTab = ref<ImportTab>('file')
+  /** A bookmark file handed over by the 新增 panel; the import dialog takes it and clears this. */
+  const importFile = shallowRef<File | null>(null)
   const showDeckModal = ref(false)
   const showDailyDeckModal = ref(false)
   const showBrainModal = ref(false)
@@ -73,9 +82,24 @@ export const useUiStore = defineStore('ui', () => {
     sidebarMobileOpen.value = false
   }
 
-  function openImport(tab: ImportTab = 'file') {
+  function openImport(tab: ImportTab = 'file', file: File | null = null) {
     importTab.value = tab
+    importFile.value = file
     showImportModal.value = true
+  }
+
+  function openAdd(text = '') {
+    addDraft.value = text
+    showAddModal.value = true
+    sidebarMobileOpen.value = false
+  }
+
+  /** Answer a question from the saved items: the answer dialog opens and sends it. */
+  function ask(question: string) {
+    const q = question.trim()
+    if (!q) return
+    pendingQuestion.value = q
+    showBrainModal.value = true
   }
 
   /** Saved page shown in SnapshotDialog; null while closed. */
@@ -85,9 +109,9 @@ export const useUiStore = defineStore('ui', () => {
   const isIngesting = ref(false)
 
   return {
-    sidebarOpen, sidebarMobileOpen, searchFocusRequests,
+    sidebarOpen, sidebarMobileOpen, searchFocusRequests, pendingQuestion, ask,
     activeItem, cursorId, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
-    showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showWatchModal, showImportModal, importTab, openImport, showDeckModal,
+    showAddModal, addDraft, openAdd, showNoteModal, showCategoryModal, showShortcutsModal, showRadarModal, showWatchModal, showImportModal, importTab, importFile, openImport, showDeckModal,
     showDailyDeckModal, showBrainModal, showCommandPalette,
     showSettingsModal, settingsTab, settingsBlock, settingsLevel, settingsCloseRequests, settingsCard, settingsVersion, openSettings, showSetupWizard,
     watchTab, snapshotView,

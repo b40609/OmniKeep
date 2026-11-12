@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import {
   UploadCloud,
   FileCode,
@@ -154,6 +154,19 @@ function processFile(file: File) {
   }
   reader.readAsText(file)
 }
+
+// A bookmark file dropped on 新增 arrives through the store, as if it had been chosen here.
+watch(
+  () => [ui.showImportModal, ui.importFile] as const,
+  ([open, handed]) => {
+    if (!open || !handed) return
+    ui.importFile = null
+    resetState()
+    activeTab.value = 'file'
+    processFile(handed)
+  },
+  { immediate: true },
+)
 
 function onFileSelected(e: Event) {
   const target = e.target as HTMLInputElement

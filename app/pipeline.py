@@ -362,7 +362,8 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
 
 async def run_pipeline(content_input: str, manual_category: Optional[str] = None,
                        is_sub_task: bool = False, origin: str = "manual",
-                       page_title: str = "", page_description: str = "") -> Dict[str, Any]:
+                       page_title: str = "", page_description: str = "",
+                       as_note: bool = False) -> Dict[str, Any]:
     # 1. Fetch available categories
     cat_rows = get_all_categories()
     category_names = [c["name"] for c in cat_rows]
@@ -376,14 +377,15 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     reason_line = ""
 
     user_note = ""
-    if "#note=" in clean_input:
+    if not as_note and "#note=" in clean_input:
         from urllib.parse import unquote
         parts = clean_input.split("#note=", 1)
         clean_input = parts[0]
         user_note = unquote(parts[1]).strip()
 
     # 2. Route by input type (Pure URL / Mobile Share Snippet vs Text Note)
-    detected_url = extract_target_url(clean_input)
+    # as_note: the owner chose to keep the text itself, even if it is short and holds one address.
+    detected_url = None if as_note else extract_target_url(clean_input)
     if detected_url:
         parsed = await parse_url(detected_url, page_title=page_title, page_description=page_description)
         kind = parsed["kind"]
