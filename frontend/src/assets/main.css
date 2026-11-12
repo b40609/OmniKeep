@@ -4,6 +4,7 @@
    utility classes in components/ui/sonner/Toaster.vue still win. */
 @import 'vue-sonner/style.css' layer(components);
 @import './wall.css';
+@import './settings.css';
 
 @custom-variant dark (&:is(.dark *));
 
