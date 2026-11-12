@@ -1,6 +1,6 @@
 /**
  * Provider cards (GET /api/ai/catalog, app/provider_catalog.py) turned into the
- * connection the first-run wizard and 設定 › AI 服務商 test and save.
+ * connection the first-run wizard and 設定 › AI test and save.
  * Kept free of app imports so tests can run it directly under node.
  */
 

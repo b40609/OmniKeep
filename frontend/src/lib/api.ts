@@ -374,7 +374,7 @@ export interface ServiceStatus {
   undecryptable: string[]
 }
 
-/* ---------------- AI connections (設定 › AI 服務商) ---------------- */
+/* ---------------- AI connections (設定 › AI) ---------------- */
 
 export type AiKind = 'openai' | 'gemini' | 'ollama'
 export type AiSlotId = 'analysis' | 'brain' | 'radar' | 'embeddings' | 'video'

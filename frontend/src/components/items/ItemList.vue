@@ -233,11 +233,11 @@ defineExpose({ scrollToIndex, scrollToItem })
       </div>
     </div>
 
-    <!-- The sidebar's single 雷達 entry lands here; its settings and the quick review are one step away -->
+    <!-- The sidebar's single 探索 entry lands here; its settings and the quick review are one step away -->
     <div v-if="items.triageView === 'radar'" class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-3 text-sm text-muted-foreground sm:px-6" :class="{ 'wall-column': items.viewMode === 'list' }">
-      <span class="mr-auto">雷達自動找到、還沒處理的內容。</span>
-      <button type="button" class="top-button" title="快速篩選　D" @click="ui.showDeckModal = true"><ListChecks /><strong>快速篩選</strong></button>
-      <button type="button" class="top-button" title="雷達設定　R" @click="openRadarSettings"><SlidersHorizontal /><strong>雷達設定</strong></button>
+      <span class="mr-auto">探索找到、還沒處理的內容。</span>
+      <button type="button" class="top-button" title="逐則篩選　D" @click="ui.showDeckModal = true"><ListChecks /><strong>逐則篩選</strong></button>
+      <button type="button" class="top-button" title="探索設定　R" @click="openRadarSettings"><SlidersHorizontal /><strong>探索設定</strong></button>
     </div>
 
     <div v-if="items.error && items.items.length" class="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2 text-sm sm:px-6" role="alert">

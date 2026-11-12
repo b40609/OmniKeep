@@ -139,7 +139,7 @@ onMounted(async () => {
 })
 
 const inputClass =
-  'h-9 w-full rounded-lg border border-border bg-input px-3 text-xs text-foreground transition-all placeholder:text-subtle-foreground focus:border-primary focus:ring-2 focus:ring-primary/25 focus:outline-none disabled:opacity-50'
+  'h-9 w-full rounded-lg border border-border bg-input px-3 text-sm text-foreground transition-all placeholder:text-subtle-foreground focus:border-primary focus:ring-2 focus:ring-primary/25 focus:outline-none disabled:opacity-50'
 </script>
 
 <template>
@@ -151,13 +151,13 @@ const inputClass =
         </div>
         <DialogHeader>
           <DialogTitle>開始使用 OmniKeep</DialogTitle>
-          <DialogDescription class="text-xs">
-            OmniKeep 用 AI 幫收藏寫摘要、分類並建立語意搜尋。先接上一個 AI 服務，之後可以在「設定 › AI 服務商」加備援、依用途分開。
+          <DialogDescription class="text-sm">
+            OmniKeep 用 AI 幫收藏寫摘要、分類並建立語意搜尋。先接上一個 AI 服務，之後可以在「設定 › AI」加備援、依用途分開。
           </DialogDescription>
         </DialogHeader>
       </div>
 
-      <ol class="flex shrink-0 items-center gap-2 border-b border-border px-5 py-2.5 text-2xs" aria-label="設定步驟">
+      <ol class="flex shrink-0 items-center gap-2 border-b border-border px-5 py-2.5 text-sm" aria-label="設定步驟">
         <li
           v-for="(s, i) in STEPS"
           :key="s.id"
@@ -180,9 +180,9 @@ const inputClass =
       <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 text-sm">
         <!-- 1. Choose a provider card -->
         <template v-if="step === 'choose'">
-          <p v-if="catalogError" class="text-xs text-danger">無法讀取服務商清單：{{ catalogError }}</p>
-          <p v-else-if="!cards.length" class="text-xs text-muted-foreground">讀取中…</p>
-          <p v-else class="text-2xs text-muted-foreground">
+          <p v-if="catalogError" class="text-sm text-danger">無法讀取服務商清單：{{ catalogError }}</p>
+          <p v-else-if="!cards.length" class="text-sm text-muted-foreground">讀取中…</p>
+          <p v-else class="text-sm text-muted-foreground">
             每個選項的費用與限制不同，沒有預設答案。也可以請你的 Claude、Codex 或 Antigravity 依你的狀況說明怎麼選。
           </p>
           <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="AI 服務商">
@@ -197,25 +197,25 @@ const inputClass =
               @click="choose(c.id)"
             >
               <span class="flex items-baseline justify-between gap-2">
-                <span class="text-xs font-semibold">{{ c.label }}<span v-if="c.no_signup" class="ml-1.5 rounded bg-success/15 px-1 py-0.5 text-2xs font-normal text-success">不用註冊</span><span v-if="c.ended" class="ml-1.5 rounded bg-warning/15 px-1 py-0.5 text-2xs font-normal text-warning">活動已結束</span></span>
-                <span class="shrink-0 text-2xs text-muted-foreground">{{ c.cost }}</span>
+                <span class="text-sm font-semibold">{{ c.label }}<span v-if="c.no_signup" class="ml-1.5 rounded bg-success/15 px-1 py-0.5 text-2xs font-normal text-success">不用註冊</span><span v-if="c.ended" class="ml-1.5 rounded bg-warning/15 px-1 py-0.5 text-2xs font-normal text-warning">活動已結束</span></span>
+                <span class="shrink-0 text-sm text-muted-foreground">{{ c.cost }}</span>
               </span>
-              <span class="mt-1 block text-2xs text-muted-foreground">{{ c.limits }}（{{ c.verified }} 查證）</span>
+              <span class="mt-1 block text-sm text-muted-foreground">{{ c.limits }}（{{ c.verified }} 查證）</span>
             </button>
           </div>
-          <p v-if="cards.length" class="text-2xs text-subtle-foreground">還沒有任何金鑰也沒關係：標了「不用註冊」的可以先試，之後再加其他家。限額以服務商後台為準。</p>
+          <p v-if="cards.length" class="text-sm text-subtle-foreground">還沒有任何金鑰也沒關係：標了「不用註冊」的可以先試，之後再加其他家。限額以服務商後台為準。</p>
         </template>
 
         <!-- 2. Address, key, model, then test -->
         <template v-else-if="step === 'connect' && card">
-          <div class="space-y-1 text-xs text-muted-foreground">
+          <div class="space-y-1 text-sm text-muted-foreground">
             <p><span class="font-semibold text-foreground">{{ card.label }}</span>：{{ card.limits }}</p>
             <p v-if="card.notes">{{ card.notes }}</p>
             <p v-if="card.training_note" class="text-warning">提醒：{{ card.training_note }}</p>
           </div>
 
           <div v-if="card.kind !== 'gemini'" class="space-y-1.5">
-            <label for="setup-url" class="text-xs font-semibold">API 位址</label>
+            <label for="setup-url" class="text-sm font-semibold">API 位址</label>
             <input
               id="setup-url"
               v-model="form.baseUrl"
@@ -225,14 +225,14 @@ const inputClass =
               :readonly="!card.editable_url"
               :class="[inputClass, !card.editable_url && 'text-muted-foreground']"
             >
-            <p v-if="card.kind === 'ollama'" class="text-2xs text-muted-foreground">
+            <p v-if="card.kind === 'ollama'" class="text-sm text-muted-foreground">
               Ollama 裝在別台電腦時，把 127.0.0.1 換成那台的位址。模型要先下載：<code>ollama pull {{ form.model || 'qwen3:8b' }}</code>
             </p>
           </div>
 
           <div v-if="card.key_mode !== 'none'" class="space-y-1.5">
             <div class="flex items-center justify-between gap-2">
-              <label for="setup-key" class="text-xs font-semibold">
+              <label for="setup-key" class="text-sm font-semibold">
                 API 金鑰<span v-if="card.key_mode === 'optional'" class="font-normal text-muted-foreground">（選填）</span>
               </label>
               <a
@@ -240,7 +240,7 @@ const inputClass =
                 :href="card.key_url"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="inline-flex items-center gap-1 text-2xs text-primary hover:underline"
+                class="inline-flex items-center gap-1 text-sm text-primary hover:underline"
               >
                 取得金鑰 <ExternalLink class="size-3" />
               </a>
@@ -254,16 +254,16 @@ const inputClass =
               :placeholder="card.kind === 'gemini' ? '多把金鑰用逗號分隔' : '貼上金鑰'"
               :class="inputClass"
             >
-            <p class="text-2xs text-muted-foreground">金鑰會加密後存在這台伺服器，之後不會再顯示。</p>
+            <p class="text-sm text-muted-foreground">金鑰會加密後存在這台伺服器，之後不會再顯示。</p>
           </div>
 
           <div class="space-y-1.5">
-            <label for="setup-model" class="text-xs font-semibold">分析模型</label>
+            <label for="setup-model" class="text-sm font-semibold">分析模型</label>
             <input id="setup-model" v-model="form.model" type="text" spellcheck="false" list="setup-models" :class="inputClass">
             <datalist id="setup-models">
               <option v-for="m in modelChoices" :key="m" :value="m" />
             </datalist>
-            <p v-if="result?.models?.length" class="text-2xs text-muted-foreground">服務商列出 {{ result.models.length }} 個模型，點欄位可以挑。</p>
+            <p v-if="result?.models?.length" class="text-sm text-muted-foreground">服務商列出 {{ result.models.length }} 個模型，點欄位可以挑。</p>
           </div>
 
           <div class="space-y-2 border-t border-border pt-3">
@@ -273,13 +273,13 @@ const inputClass =
                 <PlugZap v-else class="size-3" />
                 測試連線
               </Button>
-              <span v-if="problem" class="text-2xs text-muted-foreground">{{ problem }}</span>
-              <span v-else-if="!result" class="text-2xs text-muted-foreground">會實際送一筆小的中文請求；測試成功後才能儲存。</span>
+              <span v-if="problem" class="text-sm text-muted-foreground">{{ problem }}</span>
+              <span v-else-if="!result" class="text-sm text-muted-foreground">會實際送一筆小的中文請求；測試成功後才能儲存。</span>
             </div>
             <div
               v-if="result"
               role="status"
-              class="flex gap-2 rounded-lg border p-2.5 text-xs"
+              class="flex gap-2 rounded-lg border p-2.5 text-sm"
               :class="result.ok ? 'border-success/30 text-success' : 'border-danger/30 text-danger'"
             >
               <CircleCheck v-if="result.ok" class="mt-0.5 size-3.5 shrink-0" />
@@ -290,7 +290,7 @@ const inputClass =
                 <a v-if="result.fix_url" :href="result.fix_url" target="_blank" rel="noopener noreferrer" class="mt-1 inline-flex items-center gap-1 underline">
                   前往修復 <ExternalLink class="size-3" />
                 </a>
-                <p v-if="result.detail" class="mt-1 break-all font-mono text-2xs opacity-80">{{ result.detail }}</p>
+                <p v-if="result.detail" class="mt-1 break-all font-mono text-sm opacity-80">{{ result.detail }}</p>
               </div>
             </div>
           </div>
@@ -298,14 +298,14 @@ const inputClass =
 
         <!-- 3. Done -->
         <template v-else-if="step === 'done'">
-          <div class="flex gap-2 rounded-lg border border-success/30 p-3 text-xs text-success">
+          <div class="flex gap-2 rounded-lg border border-success/30 p-3 text-sm text-success">
             <CircleCheck class="mt-0.5 size-4 shrink-0" />
             <p>已經接上 {{ card?.label }}，立即生效。新的收藏會自動經過 AI 分析。</p>
           </div>
-          <ul class="list-disc space-y-1 pl-5 text-2xs text-muted-foreground">
-            <li>到「設定 › AI 服務商」可以再加一條備援連線（例如第二把金鑰），這條失敗時會自動換過去。</li>
-            <li>Ask Brain、雷達評分、向量、影片解析也可以各自選服務商；沒選的就跟分析用同一條。</li>
-            <li>Telegram、LINE Bot、GitHub Token 與備份也都在「設定」裡填，不需要修改 .env。</li>
+          <ul class="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>到「設定 › AI」可以再加一條備援連線（例如第二把金鑰），這條失敗時會自動換過去。</li>
+            <li>提問、探索、語意搜尋、影片也可以各自選 AI 連線；沒選的就跟分析用同一條。</li>
+            <li>Telegram、LINE、GitHub 權杖與備份也都在「設定」裡填。</li>
           </ul>
         </template>
       </div>
@@ -314,7 +314,7 @@ const inputClass =
         <button
           v-if="step !== 'done'"
           type="button"
-          class="cursor-pointer text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          class="cursor-pointer text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           @click="later"
         >
           稍後再說
@@ -322,7 +322,7 @@ const inputClass =
         <button
           v-else
           type="button"
-          class="cursor-pointer text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          class="cursor-pointer text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           @click="openFullSettings"
         >
           開啟完整設定

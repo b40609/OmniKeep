@@ -24,6 +24,8 @@ import {
   Save,
   Pause,
   Play,
+  TrendingUp,
+  TrendingDown,
 } from 'lucide-vue-next'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import Badge from '@/components/ui/badge/Badge.vue'
@@ -78,7 +80,7 @@ async function handleSaveSettings() {
   isSavingSettings.value = true
   try {
     await radar.updateSettings(scheduleSettings.value)
-    toast.success('排程與推播設定已儲存更新')
+    toast.success('排程與通知設定已儲存')
   } catch (e) {
     toast.error('儲存設定失敗', { description: (e as Error).message })
   } finally {
@@ -104,7 +106,7 @@ async function addSource() {
   if (!newSource.value.name || !newSource.value.url) return
   try {
     await api.addRadarSource(newSource.value)
-    toast.success(`已加入追蹤：${newSource.value.name}`)
+    toast.success(`已加入探索來源：${newSource.value.name}`)
     newSource.value = { name: '', source_type: 'youtube', url: '' }
     await radar.load()
   } catch (e) {
@@ -115,7 +117,7 @@ async function addSource() {
 async function removeSource(id: number) {
   try {
     await api.deleteRadarSource(id)
-    toast.success('已移除情報來源')
+    toast.success('已移除探索來源')
     await radar.load()
   } catch (e) {
     toast.error('移除失敗', { description: (e as Error).message })
@@ -124,14 +126,14 @@ async function removeSource(id: number) {
 
 async function scan() {
   isScanning.value = true
-  const t = toast.loading('自適應巡檢啟動，時段感知採集中…')
+  const t = toast.loading('正在檢查探索來源…')
   try {
     const data = await api.radarScan()
     const count = data.result?.new_items_count ?? 0
-    toast.success(`巡檢完成，捕獲 ${count} 筆新情報`, { id: t })
+    toast.success(`檢查完成，找到 ${count} 則新內容`, { id: t })
     await radar.load()
   } catch (e) {
-    toast.error('巡檢異常', { id: t, description: (e as Error).message })
+    toast.error('檢查失敗', { id: t, description: (e as Error).message })
   } finally {
     isScanning.value = false
   }
@@ -157,7 +159,7 @@ async function loadProfileAndDreamPass() {
     profileUpdatedAt.value = pRes.updated_at || null
     dreamPassProposal.value = dpRes.proposal
   } catch (e) {
-    toast.error('載入畫像或提案失敗', { description: (e as Error).message })
+    toast.error('無法載入興趣描述或建議', { description: (e as Error).message })
   } finally {
     isProfileLoading.value = false
   }
@@ -168,9 +170,9 @@ async function saveProfile() {
   try {
     const res = await api.updateInterestProfile(profileText.value)
     profileUpdatedAt.value = res.updated_at || null
-    toast.success('品味畫像已儲存更新')
+    toast.success('興趣描述已儲存')
   } catch (e) {
-    toast.error('儲存畫像失敗', { description: (e as Error).message })
+    toast.error('儲存興趣描述失敗', { description: (e as Error).message })
   } finally {
     isProfileSaving.value = false
   }
@@ -178,13 +180,13 @@ async function saveProfile() {
 
 async function triggerDreamPass() {
   isDreamPassRunning.value = true
-  const t = toast.loading('正在深度聚合近 7 天品味訊號與啟發式自省…')
+  const t = toast.loading('正在整理最近 7 天的使用紀錄…')
   try {
     const res = await api.runDreamPass(7)
     dreamPassProposal.value = res.proposal
-    toast.success('Dream Pass 自省完成，已生成畫像修訂提案！', { id: t })
+    toast.success('整理完成，有一份修訂建議', { id: t })
   } catch (e) {
-    toast.error('自省執行失敗', { id: t, description: (e as Error).message })
+    toast.error('整理失敗', { id: t, description: (e as Error).message })
   } finally {
     isDreamPassRunning.value = false
   }
@@ -198,7 +200,7 @@ async function handleApplyDreamPass(id: number) {
     if (dreamPassProposal.value && dreamPassProposal.value.id === id) {
       dreamPassProposal.value.status = 'applied'
     }
-    toast.success('已一鍵採用自省建議，畫像已同步更新')
+    toast.success('已採用建議，興趣描述已更新')
   } catch (e) {
     toast.error('採用失敗', { description: (e as Error).message })
   } finally {
@@ -212,7 +214,7 @@ async function handleDismissDreamPass(id: number) {
     if (dreamPassProposal.value && dreamPassProposal.value.id === id) {
       dreamPassProposal.value.status = 'dismissed'
     }
-    toast.info('已忽略此自省提案')
+    toast.info('已忽略這份建議')
   } catch (e) {
     toast.error('操作失敗', { description: (e as Error).message })
   }
@@ -252,7 +254,7 @@ async function loadRules() {
   try {
     rules.value = await api.getRules()
   } catch (e) {
-    toast.error('載入硬規則失敗', { description: (e as Error).message })
+    toast.error('無法載入規則', { description: (e as Error).message })
   } finally {
     isRulesLoading.value = false
   }
@@ -312,9 +314,9 @@ async function runRuleTest() {
     const res = await api.testRule(testSample.value)
     testResult.value = res
     if (res.matched_rules.length === 0) {
-      toast.info('測試樣本未匹配任何有效硬規則')
+      toast.info('測試內容沒有符合任何規則')
     } else {
-      toast.success(`命中 ${res.matched_rules.length} 條規則！`)
+      toast.success(`符合 ${res.matched_rules.length} 條規則`)
     }
   } catch (e) {
     toast.error('測試失敗', { description: (e as Error).message })
@@ -354,29 +356,26 @@ watch(tab, (t) => {
             <Radar class="size-4.5" />
           </div>
           <DialogHeader>
-            <DialogTitle class="flex items-center gap-2">
-              自動訂閱排程與監控中心 (Radar Engine)
-              <span class="rounded border border-primary/30 bg-primary-soft px-1.5 py-px font-mono text-2xs text-primary-soft-foreground">ADAPTIVE RADAR</span>
-            </DialogTitle>
-            <DialogDescription>自適應排程 · Google News · 網頁監控 · Dream Pass 自省 · 0 Token 確定性規則</DialogDescription>
+            <DialogTitle>探索</DialogTitle>
+            <DialogDescription>自動到你指定的來源找新內容，依你的興趣挑出值得看的。</DialogDescription>
           </DialogHeader>
         </div>
         <Button :disabled="isScanning" @click="scan">
           <Loader2 v-if="isScanning" class="size-3.5 animate-spin" />
-          {{ isScanning ? '巡檢中…' : '立即巡檢' }}
+          {{ isScanning ? '檢查中…' : '立即檢查' }}
         </Button>
       </div>
 
       <!-- Tabs -->
-      <div class="flex shrink-0 items-center gap-1 border-b border-border px-5 text-xs overflow-x-auto" role="tablist">
+      <div class="flex shrink-0 items-center gap-1 border-b border-border px-5 text-sm overflow-x-auto" role="tablist">
         <button
           v-for="t in [
-            { id: 'settings', label: '排程與推播' },
-            { id: 'sources', label: `訂閱來源 (${radar.sources.length})` },
-            { id: 'topics', label: `主題偏好 (${radar.topics.length})` },
-            { id: 'digests', label: `戰報彙整 (${radar.digests.length})` },
-            { id: 'dreampass', label: '興趣畫像' },
-            { id: 'rules', label: `自動化規則 (${rules.length || '•'})` },
+            { id: 'settings', label: '排程與通知' },
+            { id: 'sources', label: `探索來源（${radar.sources.length}）` },
+            { id: 'topics', label: `主題偏好（${radar.topics.length}）` },
+            { id: 'digests', label: `精選（${radar.digests.length}）` },
+            { id: 'dreampass', label: '興趣描述' },
+            { id: 'rules', label: rules.length ? `自動規則（${rules.length}）` : '自動規則' },
           ]"
           :key="t.id" 
           role="tab"
@@ -399,15 +398,15 @@ watch(tab, (t) => {
             <div class="space-y-0.5">
               <div class="flex items-center gap-2">
                 <Clock class="size-4 text-primary" />
-                <span class="text-sm font-semibold text-foreground">背景自動巡檢排程</span>
+                <span class="text-sm font-semibold text-foreground">自動檢查</span>
               </div>
-              <p class="text-2xs text-muted-foreground">
-                開啟後系統將在背景依照設定間隔週期自動探測來源更新。關閉時僅在點擊「立即巡檢」時觸發。
+              <p class="text-sm text-muted-foreground">
+                開啟後會依下面的間隔在背景檢查探索來源。關閉時只有按「立即檢查」才會檢查。
               </p>
-              <p v-if="scheduleNote" class="text-2xs font-medium" :class="NOTE_TONE[scheduleNote.tone]">
+              <p v-if="scheduleNote" class="text-sm font-medium" :class="NOTE_TONE[scheduleNote.tone]">
                 {{ scheduleNote.text }}
               </p>
-              <p v-if="scheduleUnsaved" class="text-2xs font-medium text-amber-600 dark:text-amber-400">
+              <p v-if="scheduleUnsaved" class="text-sm font-medium text-amber-600 dark:text-amber-400">
                 尚未儲存：按下方「儲存排程設定」後才會生效。
               </p>
             </div>
@@ -430,35 +429,35 @@ watch(tab, (t) => {
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <!-- Interval -->
             <div class="glass-tint rounded-xl p-3.5 space-y-2">
-              <label class="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <label class="text-sm font-semibold text-foreground flex items-center gap-1.5">
                 <RefreshCw class="size-3.5 text-muted-foreground" />
-                巡檢週期頻率
+                檢查間隔
               </label>
               <select
                 v-model.number="scheduleSettings.interval_minutes"
                 :disabled="!scheduleSettings.enabled"
-                class="w-full h-8.5 rounded-md border border-border bg-input px-2.5 text-xs text-foreground focus:border-primary focus:outline-none disabled:opacity-50"
+                class="w-full h-8.5 rounded-md border border-border bg-input px-2.5 text-sm text-foreground focus:border-primary focus:outline-none disabled:opacity-50"
               >
-                <option :value="0">手動巡檢（不排程）</option>
+                <option :value="0">只手動檢查</option>
                 <option :value="60">每 1 小時</option>
-                <option :value="180">每 3 小時（預設推薦）</option>
+                <option :value="180">每 3 小時（預設）</option>
                 <option :value="360">每 6 小時</option>
                 <option :value="720">每 12 小時</option>
-                <option :value="1440">每 24 小時（每日一次）</option>
+                <option :value="1440">每 24 小時</option>
               </select>
-              <p class="text-3xs text-subtle-foreground">
-                自適應演算法會在非熱門更新時段主動退避，兼顧及時性與系統節能。
+              <p class="text-sm text-subtle-foreground">
+                來源很少更新的時段會自動少檢查幾次。
               </p>
             </div>
 
             <!-- Budget Cap -->
             <div class="glass-tint rounded-xl p-3.5 space-y-2">
               <div class="flex items-center justify-between">
-                <label class="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <label class="text-sm font-semibold text-foreground flex items-center gap-1.5">
                   <Sliders class="size-3.5 text-muted-foreground" />
-                  單輪 AI 分析上限
+                  每次最多分析幾則
                 </label>
-                <span class="font-mono text-xs font-bold text-primary">{{ scheduleSettings.max_analyze_per_cycle }} 篇</span>
+                <span class="font-mono text-sm font-bold text-primary">{{ scheduleSettings.max_analyze_per_cycle }} 則</span>
               </div>
               <input
                 v-model.number="scheduleSettings.max_analyze_per_cycle"
@@ -468,8 +467,8 @@ watch(tab, (t) => {
                 step="1"
                 class="w-full accent-primary h-2 bg-muted rounded-lg cursor-pointer mt-1"
               >
-              <p class="text-3xs text-subtle-foreground">
-                超額候選文章將延後暫存為待分析 stub，分攤至後續輪次，避免消耗過多額度。
+              <p class="text-sm text-subtle-foreground">
+                超過的會留到之後幾次再分析，避免一次用掉太多 AI 額度。
               </p>
             </div>
           </div>
@@ -477,12 +476,12 @@ watch(tab, (t) => {
           <!-- Telegram Notification Policy -->
           <div class="glass-tint rounded-xl p-3.5 space-y-3">
             <div class="flex items-center justify-between">
-              <label class="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <label class="text-sm font-semibold text-foreground flex items-center gap-1.5">
                 <Bell class="size-3.5 text-muted-foreground" />
-                Telegram 推播策略
+                Telegram 通知
               </label>
               <span class="text-3xs text-muted-foreground font-mono">
-                當前模式：{{ scheduleSettings.notification_mode === 'silent' ? '完全靜音' : scheduleSettings.notification_mode === 'daily_digest' ? '每日戰報' : 'VIP警戒' }}
+                目前：{{ scheduleSettings.notification_mode === 'silent' ? '不通知' : scheduleSettings.notification_mode === 'daily_digest' ? '每日精選' : '只通知高分內容' }}
               </span>
             </div>
 
@@ -494,14 +493,14 @@ watch(tab, (t) => {
                 @click="scheduleSettings.notification_mode = 'silent'"
               >
                 <div class="flex items-center justify-between mb-1.5">
-                  <span class="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                  <span class="text-sm font-semibold flex items-center gap-1.5 text-foreground">
                     <BellOff class="size-3.5 text-muted-foreground" />
-                    完全靜音入庫
+                    不通知
                   </span>
-                  <span class="text-3xs rounded px-1.5 py-0.5 bg-primary/10 text-primary font-mono">推薦</span>
+                  <span class="text-3xs rounded px-1.5 py-0.5 bg-primary/10 text-primary">預設</span>
                 </div>
-                <p class="text-3xs leading-relaxed">
-                  巡檢與 AI 分析正常入庫，完全不推播 Telegram 訊息，消除通知疲勞。
+                <p class="text-sm leading-relaxed">
+                  照常收錄與分析，不傳 Telegram 訊息。
                 </p>
               </div>
 
@@ -512,13 +511,13 @@ watch(tab, (t) => {
                 @click="scheduleSettings.notification_mode = 'daily_digest'"
               >
                 <div class="flex items-center justify-between mb-1.5">
-                  <span class="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                  <span class="text-sm font-semibold flex items-center gap-1.5 text-foreground">
                     <Clock class="size-3.5 text-muted-foreground" />
-                    每日定時戰報
+                    每日精選
                   </span>
                 </div>
-                <p class="text-3xs leading-relaxed">
-                  每天於指定時段彙整當日精華，發送單則彙整，不零散干擾。
+                <p class="text-sm leading-relaxed">
+                  每天在指定時間傳一則當日摘要。
                 </p>
               </div>
 
@@ -529,23 +528,23 @@ watch(tab, (t) => {
                 @click="scheduleSettings.notification_mode = 'vip_alert'"
               >
                 <div class="flex items-center justify-between mb-1.5">
-                  <span class="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                  <span class="text-sm font-semibold flex items-center gap-1.5 text-foreground">
                     <Star class="size-3.5 text-amber-500" />
-                    重大警戒推播
+                    只通知高分內容
                   </span>
                 </div>
-                <p class="text-3xs leading-relaxed">
-                  平時完全靜默，僅在命中高分星標情報時立即推播。
+                <p class="text-sm leading-relaxed">
+                  平常不通知，出現高分內容時立刻通知。
                 </p>
               </div>
             </div>
 
             <!-- Conditional sub-settings for daily_digest -->
-            <div v-if="scheduleSettings.notification_mode === 'daily_digest'" class="pt-2 border-t border-border/50 flex items-center justify-between text-xs">
-              <span class="text-muted-foreground text-2xs">每日戰報發送時段：</span>
+            <div v-if="scheduleSettings.notification_mode === 'daily_digest'" class="pt-2 border-t border-border/50 flex items-center justify-between text-sm">
+              <span class="text-muted-foreground text-sm">精選傳送時間</span>
               <select
                 v-model.number="scheduleSettings.daily_digest_hour"
-                class="h-7 rounded border border-border bg-input px-2 text-2xs text-foreground focus:border-primary focus:outline-none"
+                class="h-7 rounded border border-border bg-input px-2 text-sm text-foreground focus:border-primary focus:outline-none"
               >
                 <option v-for="h in 24" :key="h-1" :value="h-1">
                   {{ String(h-1).padStart(2, '0') }}:00（{{ h-1 < 12 ? '上午' : '下午' }}）
@@ -554,8 +553,8 @@ watch(tab, (t) => {
             </div>
 
             <!-- Conditional sub-settings for vip_alert -->
-            <div v-if="scheduleSettings.notification_mode === 'vip_alert'" class="pt-2 border-t border-border/50 flex items-center justify-between text-xs">
-              <span class="text-muted-foreground text-2xs">推播評分門檻：</span>
+            <div v-if="scheduleSettings.notification_mode === 'vip_alert'" class="pt-2 border-t border-border/50 flex items-center justify-between text-sm">
+              <span class="text-muted-foreground text-sm">通知的分數門檻</span>
               <div class="flex items-center gap-2">
                 <input
                   v-model.number="scheduleSettings.vip_threshold"
@@ -565,7 +564,7 @@ watch(tab, (t) => {
                   step="0.5"
                   class="w-24 accent-primary h-1.5 bg-muted rounded cursor-pointer"
                 >
-                <span class="font-mono text-xs font-semibold text-primary">>= {{ scheduleSettings.vip_threshold.toFixed(1) }}</span>
+                <span class="font-mono text-sm font-semibold text-primary">>= {{ scheduleSettings.vip_threshold.toFixed(1) }}</span>
               </div>
             </div>
           </div>
@@ -587,26 +586,26 @@ watch(tab, (t) => {
         <!-- Sources -->
         <div v-if="tab === 'sources'" class="space-y-4">
           <div class="glass-tint rounded-xl p-3.5">
-            <p class="mb-2.5 text-xs font-semibold text-foreground">新增自動追蹤來源</p>
-            <div class="grid grid-cols-1 gap-2 text-xs sm:grid-cols-4">
-              <input v-model="newSource.name" type="text" placeholder="名稱（如：Anthropic Claude Blog）" class="h-8 rounded-md border border-border bg-input px-2.5 text-xs text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none">
-              <select v-model="newSource.source_type" class="h-8 rounded-md border border-border bg-input px-2 text-xs text-foreground focus:border-primary focus:outline-none">
+            <p class="mb-2.5 text-sm font-semibold text-foreground">新增探索來源</p>
+            <div class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-4">
+              <input v-model="newSource.name" type="text" placeholder="名稱（例如：某某部落格）" class="h-8 rounded-md border border-border bg-input px-2.5 text-sm text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none">
+              <select v-model="newSource.source_type" class="h-8 rounded-md border border-border bg-input px-2 text-sm text-foreground focus:border-primary focus:outline-none">
                 <option value="youtube">YouTube 頻道</option>
-                <option value="github">GitHub 倉庫/Trending</option>
-                <option value="rss">技術 Blog / RSS</option>
-                <option value="google_news">Google 新聞 (關鍵字)</option>
-                <option value="web_change">網頁異動監控 (Changelog)</option>
+                <option value="github">GitHub 專案或 Trending</option>
+                <option value="rss">部落格或 RSS</option>
+                <option value="google_news">Google 新聞（關鍵字）</option>
+                <option value="web_change">網頁變更（例如更新紀錄）</option>
               </select>
               <input
                 v-model="newSource.url"
                 type="text"
-                :placeholder="newSource.source_type === 'google_news' ? '關鍵字（如：DeepSeek R1 或 URL）' : newSource.source_type === 'web_change' ? '要監控的網址（如：https://...）' : 'URL 網址或頻道連結'"
-                class="h-8 rounded-md border border-border bg-input px-2.5 text-xs text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none sm:col-span-2"
+                :placeholder="newSource.source_type === 'google_news' ? '關鍵字（例如：DeepSeek R1）或網址' : newSource.source_type === 'web_change' ? '要留意變更的網址（https://…）' : '網址或頻道連結'"
+                class="h-8 rounded-md border border-border bg-input px-2.5 text-sm text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none sm:col-span-2"
               >
             </div>
             <div class="mt-2.5 flex justify-end">
               <Button size="sm" :disabled="!newSource.name || !newSource.url" @click="addSource">
-                <Plus class="size-3.5" /> 加入追蹤
+                <Plus class="size-3.5" /> 加入來源
               </Button>
             </div>
           </div>
@@ -618,7 +617,7 @@ watch(tab, (t) => {
                         <div
               v-for="src in radar.sources"
               :key="src.id"
-              class="flex items-center justify-between gap-3 rounded-xl border-0 p-3 text-xs shadow-sm transition-all"
+              class="flex items-center justify-between gap-3 rounded-xl border-0 p-3 text-sm shadow-sm transition-all"
               :class="src.is_active === 0
                 ? 'bg-muted/30 opacity-60 dark:bg-white/[0.02]'
                 : 'bg-white/45 hover:bg-white/70 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]'"
@@ -628,7 +627,7 @@ watch(tab, (t) => {
                   <Badge :class="sourceMeta(src.source_type).badgeClass">{{ sourceMeta(src.source_type).label }}</Badge>
                   <span class="truncate font-semibold text-foreground">{{ src.name }}</span>
                   <span v-if="src.is_active === 0" class="rounded bg-muted px-1.5 py-px text-2xs text-muted-foreground font-mono">已暫停</span>
-                  <span v-else class="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-px text-2xs font-mono">運行中</span>
+                  <span v-else class="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-px text-2xs font-mono">啟用中</span>
                   <span class="font-mono text-2xs text-subtle-foreground">Tier {{ src.tier ?? '—' }}</span>
                 </div>
                 <div class="flex items-center gap-3 truncate font-mono text-2xs text-subtle-foreground">
@@ -636,7 +635,7 @@ watch(tab, (t) => {
                   <span v-if="(src.hot_hours ?? []).length" class="shrink-0 rounded bg-primary-soft px-1.5 py-px text-primary-soft-foreground">
                     學習時段 {{ (src.hot_hours ?? []).map((h) => h + ':00').join('、') }}
                   </span>
-                  <span v-else class="shrink-0">時段學習中</span>
+                  <span v-else class="shrink-0">還在學習更新時段</span>
                 </div>
               </div>
               <div class="flex items-center gap-1 shrink-0">
@@ -645,7 +644,7 @@ watch(tab, (t) => {
                   :class="src.is_active === 0
                     ? 'text-primary hover:bg-primary-soft'
                     : 'text-subtle-foreground hover:bg-muted hover:text-foreground'"
-                  :title="src.is_active === 0 ? '恢復自動巡檢' : '暫停此來源'"
+                  :title="src.is_active === 0 ? '恢復檢查' : '暫停這個來源'"
                   :aria-label="src.is_active === 0 ? '恢復' : '暫停'"
                   @click="handleToggleSource(src)"
                 >
@@ -667,44 +666,44 @@ watch(tab, (t) => {
 
         <!-- Topics -->
         <div v-else-if="tab === 'topics'" class="space-y-1">
-          <p class="glass-tint mb-3 rounded-lg p-2.5 text-2xs text-muted-foreground">
-            點擊清單項目或閱讀器旁的 ↗ / ↘ 進行信號調諧；被屏蔽之標籤將自動攔截。
+          <p class="glass-tint mb-3 rounded-lg p-2.5 text-sm text-muted-foreground">
+            在收藏上按「多推薦」或「少推薦」會調整這裡的主題權重；靜音的主題不會再出現。
           </p>
           <div
             v-for="tp in radar.topics"
             :key="tp.topic_tag"
-            class="flex items-center justify-between gap-2 rounded-lg px-2 py-2 font-mono text-xs transition-colors hover:bg-accent/50"
+            class="flex items-center justify-between gap-2 rounded-lg px-2 py-2 font-mono text-sm transition-colors hover:bg-accent/50"
           >
             <div class="flex items-center gap-2.5">
               <span class="font-semibold" :class="tp.is_blocked ? 'text-subtle-foreground line-through' : 'text-foreground'">#{{ tp.topic_tag }}</span>
-              <span v-if="tp.is_blocked" class="rounded border border-danger/30 bg-danger-soft px-1.5 py-px text-2xs text-danger">MUTED</span>
+              <span v-if="tp.is_blocked" class="rounded border border-danger/30 bg-danger-soft px-1.5 py-px text-2xs text-danger">已靜音</span>
               <span v-else-if="tp.weight > 1" class="rounded border border-primary/30 bg-primary-soft px-1.5 py-px text-2xs text-primary-soft-foreground">+{{ (tp.weight - 1).toFixed(1) }}</span>
               <span v-else-if="tp.weight < 1" class="rounded border border-warning/30 bg-warning-soft px-1.5 py-px text-2xs text-warning">{{ (tp.weight - 1).toFixed(1) }}</span>
             </div>
             <div class="flex items-center gap-1">
-              <button class="h-6 rounded-md bg-muted px-2 text-2xs text-primary-soft-foreground transition-colors hover:bg-accent" title="增益 +0.5" @click="tuneTopic(tp.topic_tag, 'boost')">↗ 加深</button>
-              <button class="h-6 rounded-md bg-muted px-2 text-2xs text-danger transition-colors hover:bg-accent" title="降頻 -1.0" @click="tuneTopic(tp.topic_tag, 'dampen')">↘ 降頻</button>
-              <button class="h-6 rounded-md bg-muted px-2 text-2xs text-muted-foreground transition-colors hover:bg-accent" @click="tuneTopic(tp.topic_tag, tp.is_blocked ? 'reset' : 'mute')">
-                {{ tp.is_blocked ? '解除' : '靜音' }}
+              <button class="inline-flex h-7 items-center gap-1 rounded-md bg-muted px-2 font-sans text-sm text-primary-soft-foreground transition-colors hover:bg-accent" title="權重 +0.5" @click="tuneTopic(tp.topic_tag, 'boost')"><TrendingUp class="size-3.5" />多推薦</button>
+              <button class="inline-flex h-7 items-center gap-1 rounded-md bg-muted px-2 font-sans text-sm text-danger transition-colors hover:bg-accent" title="權重 -1.0" @click="tuneTopic(tp.topic_tag, 'dampen')"><TrendingDown class="size-3.5" />少推薦</button>
+              <button class="h-7 rounded-md bg-muted px-2 font-sans text-sm text-muted-foreground transition-colors hover:bg-accent" @click="tuneTopic(tp.topic_tag, tp.is_blocked ? 'reset' : 'mute')">
+                {{ tp.is_blocked ? '取消靜音' : '靜音' }}
               </button>
             </div>
           </div>
-          <p v-if="radar.topics.length === 0" class="py-10 text-center text-xs text-muted-foreground">
-            尚無調諧記錄。可於主介面卡片點擊 ↗ / ↘ 或對特定標籤加權。
+          <p v-if="radar.topics.length === 0" class="py-10 text-center text-sm text-muted-foreground">
+            還沒有調整過任何主題。在收藏上按「多推薦」或「少推薦」後會出現在這裡。
           </p>
         </div>
 
         <!-- Digests -->
         <div v-else-if="tab === 'digests'" class="space-y-4">
           <article v-for="dig in radar.digests" :key="dig.id" class="rounded-xl border border-border bg-background-subtle p-4">
-            <div class="flex items-center justify-between border-b border-hairline pb-2.5 text-xs">
+            <div class="flex items-center justify-between border-b border-hairline pb-2.5 text-sm">
               <span class="font-bold text-foreground">{{ dig.title }}</span>
               <span class="font-mono text-2xs text-subtle-foreground">{{ formatRelativeTime(dig.created_at) }}</span>
             </div>
-            <div class="prose-reader mt-3 max-h-60 overflow-y-auto text-xs" v-html="renderMarkdown(dig.markdown_content)" />
+            <div class="prose-reader mt-3 max-h-60 overflow-y-auto text-sm" v-html="renderMarkdown(dig.markdown_content)" />
           </article>
-          <p v-if="radar.digests.length === 0" class="py-12 text-center text-xs text-muted-foreground">
-            尚無焦點戰報。雷達偵測到同一波峰多篇高價值情報時，將自動聚合推播。
+          <p v-if="radar.digests.length === 0" class="py-12 text-center text-sm text-muted-foreground">
+            還沒有精選。同一段時間出現多則高分內容時，會整理成一份精選。
           </p>
         </div>
 
@@ -715,7 +714,7 @@ watch(tab, (t) => {
             <div class="mb-2 flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <Sparkles class="size-4 text-primary" />
-                <span class="text-xs font-semibold text-foreground">目前品味畫像 (User Interest Profile)</span>
+                <span class="text-sm font-semibold text-foreground">你的興趣描述</span>
                 <span v-if="profileUpdatedAt" class="font-mono text-2xs text-subtle-foreground">
                   最後更新：{{ formatRelativeTime(profileUpdatedAt) }}
                 </span>
@@ -723,23 +722,23 @@ watch(tab, (t) => {
               <div class="flex items-center gap-2">
                 <Button size="sm" variant="outline" :disabled="isProfileSaving" @click="saveProfile">
                   <Loader2 v-if="isProfileSaving" class="size-3 animate-spin" />
-                  儲存畫像
+                  儲存
                 </Button>
                 <Button size="sm" :disabled="isDreamPassRunning" @click="triggerDreamPass">
                   <RefreshCw v-if="!isDreamPassRunning" class="size-3" />
                   <Loader2 v-else class="size-3 animate-spin" />
-                  {{ isDreamPassRunning ? '自省中…' : '執行 7 天自省' }}
+                  {{ isDreamPassRunning ? '整理中…' : '依最近 7 天整理建議' }}
                 </Button>
               </div>
             </div>
-            <p class="mb-2 text-2xs text-muted-foreground">
-              前移 AI 成本閘門依據此段品味定義計算相關度；當情報價值 >= 2.5 即自動精選入庫。
+            <p class="mb-2 text-sm text-muted-foreground">
+              探索用這段描述判斷內容和你的相關程度；分數 >= 2.5 的會自動收錄。
             </p>
             <textarea
               v-model="profileText"
               rows="3"
-              placeholder="例如：專注 Rust / AI Agent / 金融高頻量化架構 / 工業自動化；排除娛樂炒作..."
-              class="w-full rounded-lg border border-border bg-input p-2.5 font-mono text-xs text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none"
+              placeholder="例如：關注 Rust、AI Agent、工業自動化；不看娛樂新聞"
+              class="w-full rounded-lg border border-border bg-input p-2.5 font-mono text-sm text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none"
             />
           </div>
 
@@ -748,11 +747,11 @@ watch(tab, (t) => {
             <div class="mb-3 flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <Sliders class="size-4 text-primary" />
-                <span class="text-xs font-bold text-foreground">Dream Pass 品味自省建議提案</span>
+                <span class="text-sm font-bold text-foreground">修訂建議</span>
                 <Badge
                   :class="dreamPassProposal.status === 'applied' ? 'bg-success-soft text-success' : dreamPassProposal.status === 'dismissed' ? 'bg-muted text-muted-foreground' : 'bg-warning-soft text-warning'"
                 >
-                  {{ dreamPassProposal.status === 'applied' ? '已採用' : dreamPassProposal.status === 'dismissed' ? '已忽略' : '待審查' }}
+                  {{ dreamPassProposal.status === 'applied' ? '已採用' : dreamPassProposal.status === 'dismissed' ? '已忽略' : '待決定' }}
                 </Badge>
               </div>
               <span class="font-mono text-2xs text-subtle-foreground">
@@ -761,26 +760,26 @@ watch(tab, (t) => {
             </div>
 
             <!-- 觀察理由 -->
-            <div class="mb-3 rounded-lg bg-background/60 p-3 text-xs">
-              <div class="mb-1 font-semibold text-foreground">品味行為觀察分析：</div>
+            <div class="mb-3 rounded-lg bg-background/60 p-3 text-sm">
+              <div class="mb-1 font-semibold text-foreground">觀察到的使用情形</div>
               <div class="text-muted-foreground leading-relaxed">{{ dreamPassProposal.observations }}</div>
             </div>
 
             <!-- 建議演進差異對比 -->
-            <div class="mb-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+            <div class="mb-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
               <div class="rounded-lg border border-border/50 bg-background/40 p-2.5">
-                <div class="mb-1 font-semibold text-subtle-foreground">目前畫像基準：</div>
-                <div class="font-mono text-2xs text-muted-foreground line-clamp-4">{{ dreamPassProposal.current_profile }}</div>
+                <div class="mb-1 font-semibold text-subtle-foreground">目前的描述</div>
+                <div class="text-sm text-muted-foreground line-clamp-4">{{ dreamPassProposal.current_profile }}</div>
               </div>
               <div class="rounded-lg border border-primary/30 bg-primary-soft/20 p-2.5">
-                <div class="mb-1 font-semibold text-primary-soft-foreground">建議修訂後畫像：</div>
-                <div class="font-mono text-2xs text-foreground line-clamp-4">{{ dreamPassProposal.suggested_profile }}</div>
+                <div class="mb-1 font-semibold text-primary-soft-foreground">建議改成</div>
+                <div class="text-sm text-foreground line-clamp-4">{{ dreamPassProposal.suggested_profile }}</div>
               </div>
             </div>
 
             <!-- 差異摘要 -->
-            <div v-if="dreamPassProposal.diff_summary" class="mb-3 text-2xs text-muted-foreground">
-              <span class="font-semibold text-foreground">演進摘要：</span> {{ dreamPassProposal.diff_summary }}
+            <div v-if="dreamPassProposal.diff_summary" class="mb-3 text-sm text-muted-foreground">
+              <span class="font-semibold text-foreground">差異：</span> {{ dreamPassProposal.diff_summary }}
             </div>
 
             <!-- 操作按鈕 -->
@@ -791,13 +790,13 @@ watch(tab, (t) => {
               <Button size="sm" :disabled="isDreamPassApplying" @click="handleApplyDreamPass(dreamPassProposal.id)">
                 <Check class="size-3.5" />
                 <Loader2 v-if="isDreamPassApplying" class="size-3.5 animate-spin" />
-                一鍵採用
+                採用
               </Button>
             </div>
           </div>
-          <div v-else class="rounded-xl border border-dashed border-border p-8 text-center text-xs text-muted-foreground">
+          <div v-else class="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             <Sparkles class="mx-auto mb-2 size-6 text-muted-foreground/60" />
-            <p>目前尚無自省提案。點擊上方「執行 7 天自省」將自動深度分析最近的加權、標籤與閱讀動向。</p>
+            <p>還沒有修訂建議。按上面的「依最近 7 天整理建議」，會依你最近的加星、標籤與閱讀紀錄提出修改。</p>
           </div>
         </div>
 
@@ -806,32 +805,32 @@ watch(tab, (t) => {
           <!-- 新增規則表單 -->
           <div class="glass-tint rounded-xl p-3.5">
             <div class="mb-2 flex items-center justify-between">
-              <span class="text-xs font-semibold text-foreground">新增確定性硬規則（0 Token 即時管線）</span>
+              <span class="text-sm font-semibold text-foreground">新增規則（不使用 AI，收錄時立即套用）</span>
               <button
-                class="flex items-center gap-1 font-mono text-2xs text-primary transition-colors hover:underline"
+                class="flex items-center gap-1 font-mono text-sm text-primary transition-colors hover:underline"
                 @click="showRuleSandbox = !showRuleSandbox"
               >
                 <FlaskConical class="size-3" />
-                {{ showRuleSandbox ? '隱藏測試沙盒' : '開啟測試沙盒' }}
+                {{ showRuleSandbox ? '收起測試' : '測試規則' }}
               </button>
             </div>
 
-            <div class="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
+            <div class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
               <input
                 v-model="newRule.name"
                 type="text"
-                placeholder="規則名稱（如：GitHub 自動打標）"
-                class="h-8 rounded-md border border-border bg-input px-2.5 text-xs text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none"
+                placeholder="規則名稱（例如：GitHub 自動加標籤）"
+                class="h-8 rounded-md border border-border bg-input px-2.5 text-sm text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none"
               >
               <div class="flex gap-1.5 sm:col-span-2">
-                <select v-model="newRule.field" class="h-8 w-28 rounded-md border border-border bg-input px-2 text-xs text-foreground focus:border-primary focus:outline-none">
-                  <option value="domain">Domain (網域)</option>
-                  <option value="url">URL (網址)</option>
-                  <option value="title">Title (標題)</option>
+                <select v-model="newRule.field" class="h-8 w-32 rounded-md border border-border bg-input px-2 text-sm text-foreground focus:border-primary focus:outline-none">
+                  <option value="domain">網域</option>
+                  <option value="url">網址</option>
+                  <option value="title">標題</option>
                   <option value="source_type">來源類型</option>
-                  <option value="content">Content (全文)</option>
+                  <option value="content">全文</option>
                 </select>
-                <select v-model="newRule.operator" class="h-8 w-24 rounded-md border border-border bg-input px-2 text-xs text-foreground focus:border-primary focus:outline-none">
+                <select v-model="newRule.operator" class="h-8 w-28 rounded-md border border-border bg-input px-2 text-sm text-foreground focus:border-primary focus:outline-none">
                   <option value="contains">包含</option>
                   <option value="equals">等於</option>
                   <option value="startswith">開頭是</option>
@@ -841,39 +840,39 @@ watch(tab, (t) => {
                 <input
                   v-model="newRule.value"
                   type="text"
-                  placeholder="比對關鍵字或值（如：github.com）"
-                  class="h-8 flex-1 rounded-md border border-border bg-input px-2.5 text-xs text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none"
+                  placeholder="要比對的文字（例如：github.com）"
+                  class="h-8 flex-1 rounded-md border border-border bg-input px-2.5 text-sm text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none"
                 >
               </div>
             </div>
 
-            <div class="mt-2 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
+            <div class="mt-2 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
               <div class="flex gap-1.5 sm:col-span-2">
-                <select v-model="newRule.action_type" class="h-8 w-32 rounded-md border border-border bg-input px-2 text-xs text-foreground focus:border-primary focus:outline-none">
-                  <option value="add_tag">新增標籤 (Add Tag)</option>
-                  <option value="set_category">設定分類 (Category)</option>
-                  <option value="star">標記星標 (Star)</option>
-                  <option value="archive">直接封存 (Archive)</option>
-                  <option value="mute">靜音攔截 (Mute)</option>
+                <select v-model="newRule.action_type" class="h-8 w-36 rounded-md border border-border bg-input px-2 text-sm text-foreground focus:border-primary focus:outline-none">
+                  <option value="add_tag">加上標籤</option>
+                  <option value="set_category">設定分類</option>
+                  <option value="star">加星</option>
+                  <option value="archive">封存</option>
+                  <option value="mute">靜音</option>
                 </select>
                 <input
                   v-if="['add_tag', 'set_category'].includes(newRule.action_type || '')"
                   v-model="newRule.action_value"
                   type="text"
-                  :placeholder="newRule.action_type === 'add_tag' ? '標籤名（如：dev）' : '分類名（如：工程架構）'"
-                  class="h-8 flex-1 rounded-md border border-border bg-input px-2.5 text-xs text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none"
+                  :placeholder="newRule.action_type === 'add_tag' ? '標籤名稱（例如：dev）' : '分類名稱（例如：工程架構）'"
+                  class="h-8 flex-1 rounded-md border border-border bg-input px-2.5 text-sm text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none"
                 >
-                <div v-else class="flex h-8 flex-1 items-center px-2 text-2xs text-muted-foreground">
-                  無需額外參數
+                <div v-else class="flex h-8 flex-1 items-center px-2 text-sm text-muted-foreground">
+                  不需要其他設定
                 </div>
               </div>
               <div class="flex items-center justify-end gap-2">
                 <div class="flex items-center gap-1 font-mono text-2xs text-subtle-foreground">
-                  <span>優先級</span>
+                  <span>優先順序</span>
                   <input
                     v-model.number="newRule.priority"
                     type="number"
-                    class="h-8 w-14 rounded-md border border-border bg-input px-1.5 text-center text-xs text-foreground focus:border-primary focus:outline-none"
+                    class="h-8 w-14 rounded-md border border-border bg-input px-1.5 text-center text-sm text-foreground focus:border-primary focus:outline-none"
                   >
                 </div>
                 <Button size="sm" :disabled="!newRule.name || !newRule.value || isCreatingRule" @click="handleCreateRule">
@@ -884,26 +883,26 @@ watch(tab, (t) => {
           </div>
 
           <!-- 測試沙盒 -->
-          <div v-if="showRuleSandbox" class="rounded-xl border border-primary/30 bg-primary-soft/5 p-3.5 text-xs">
+          <div v-if="showRuleSandbox" class="rounded-xl border border-primary/30 bg-primary-soft/5 p-3.5 text-sm">
             <div class="mb-2 flex items-center justify-between">
-              <span class="font-semibold text-foreground">規則即時預覽沙盒 (Dry-run Simulation)</span>
+              <span class="font-semibold text-foreground">測試規則（不會儲存任何東西）</span>
               <Button size="sm" variant="outline" :disabled="isTestingRule" @click="runRuleTest">
                 <FlaskConical class="size-3" />
-                {{ isTestingRule ? '測試中…' : '執行比對' }}
+                {{ isTestingRule ? '測試中…' : '測試' }}
               </Button>
             </div>
-            <div class="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+            <div class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
               <div>
-                <label class="font-mono text-2xs text-subtle-foreground">測試標題</label>
-                <input v-model="testSample.title" class="h-7 w-full rounded border border-border bg-input px-2 text-xs text-foreground">
+                <label class="font-mono text-sm text-subtle-foreground">測試標題</label>
+                <input v-model="testSample.title" class="h-7 w-full rounded border border-border bg-input px-2 text-sm text-foreground">
               </div>
               <div>
-                <label class="font-mono text-2xs text-subtle-foreground">測試 URL</label>
-                <input v-model="testSample.url" class="h-7 w-full rounded border border-border bg-input px-2 text-xs text-foreground">
+                <label class="font-mono text-sm text-subtle-foreground">測試網址</label>
+                <input v-model="testSample.url" class="h-7 w-full rounded border border-border bg-input px-2 text-sm text-foreground">
               </div>
             </div>
-            <div v-if="testResult" class="mt-2.5 rounded bg-background/80 p-2 font-mono text-2xs">
-              <div class="font-bold text-foreground">命中規則：{{ testResult.matched_rules.length ? testResult.matched_rules.join(', ') : '無' }}</div>
+            <div v-if="testResult" class="mt-2.5 rounded bg-background/80 p-2 font-mono text-sm">
+              <div class="font-bold text-foreground">符合的規則：{{ testResult.matched_rules.length ? testResult.matched_rules.join(', ') : '無' }}</div>
               <div v-if="Object.keys(testResult.changes).length" class="mt-1 text-primary-soft-foreground">
                 <div v-for="(v, k) in testResult.changes" :key="k">
                   {{ k }}: {{ JSON.stringify(v.before) }} <ArrowRight class="inline size-2.5" /> {{ JSON.stringify(v.after) }}
@@ -916,19 +915,19 @@ watch(tab, (t) => {
           <div v-if="isRulesLoading" class="space-y-2">
             <Skeleton v-for="i in 3" :key="i" class="h-14 w-full rounded-xl" />
           </div>
-          <div v-else-if="rules.length === 0" class="py-10 text-center text-xs text-muted-foreground">
-            尚無硬規則。設定條件可自動在情報入庫前加上自訂標籤、分類或星標。
+          <div v-else-if="rules.length === 0" class="py-10 text-center text-sm text-muted-foreground">
+            還沒有規則。規則會在收錄時自動加上標籤、分類或加星。
           </div>
           <div v-else class="space-y-2">
             <div
               v-for="r in rules"
               :key="r.id"
-              class="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-white/45 p-3 text-xs shadow-sm transition-colors hover:bg-white/70 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]"
+              class="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-white/45 p-3 text-sm shadow-sm transition-colors hover:bg-white/70 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]"
             >
               <div class="min-w-0 flex-1">
                 <div class="mb-1 flex items-center gap-2">
                   <span class="font-semibold text-foreground">{{ r.name }}</span>
-                  <span class="font-mono text-2xs text-subtle-foreground">優先級 {{ r.priority }}</span>
+                  <span class="font-mono text-2xs text-subtle-foreground">優先順序 {{ r.priority }}</span>
                   <Badge :class="r.is_active ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground'">
                     {{ r.is_active ? '啟用' : '停用' }}
                   </Badge>
@@ -943,7 +942,7 @@ watch(tab, (t) => {
                 </div>
               </div>
               <div class="flex items-center gap-1">
-                <Button size="sm" variant="ghost" class="h-7 px-2 text-2xs" @click="handleToggleRule(r)">
+                <Button size="sm" variant="ghost" class="h-7 px-2 text-sm" @click="handleToggleRule(r)">
                   {{ r.is_active ? '停用' : '啟用' }}
                 </Button>
                 <button

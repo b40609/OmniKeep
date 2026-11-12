@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch, type Component } from 'vue'
 import { toast } from 'vue-sonner'
-import { ExternalLink, RotateCw, X } from 'lucide-vue-next'
+import { Clock, Compass, ExternalLink, RotateCw, Star, ThumbsDown, ThumbsUp, X } from 'lucide-vue-next'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import Button from '@/components/ui/button/Button.vue'
 import { getSwipeDeck, recordSwipe, type DeckItem, type SwipeAction } from '@/lib/api'
@@ -10,7 +10,7 @@ import { useUiStore } from '@/stores/ui'
 
 /**
  * Radar swipe deck — the PWA twin of Telegram /deck (same four verbs).
- * 👍/👎/⭐ are taste labels; 💤 only re-queues the card for tomorrow.
+ * Want / skip / star are taste labels; later only re-queues the card for tomorrow.
  * Touch / pen / mouse: drag right 想看, left 略過, up 收藏, down 稍後.
  * Keyboard: → ← ↑ ↓ (or L H S Z), O opens the source.
  */
@@ -19,11 +19,11 @@ const items = useItemsStore()
 
 type Direction = 'right' | 'left' | 'up' | 'down'
 
-const ACTIONS: { action: SwipeAction; dir: Direction; emoji: string; label: string; done: string; key: string; keys: string[] }[] = [
-  { action: 'swipe_down', dir: 'left', emoji: '👎', label: '略過', done: '已略過 👎', key: '←', keys: ['ArrowLeft', 'h', 'H'] },
-  { action: 'snooze', dir: 'down', emoji: '💤', label: '稍後', done: '明天再見 💤', key: '↓', keys: ['ArrowDown', 'z', 'Z'] },
-  { action: 'swipe_star', dir: 'up', emoji: '⭐', label: '收藏', done: '已收藏 ⭐', key: '↑', keys: ['ArrowUp', 's', 'S'] },
-  { action: 'swipe_up', dir: 'right', emoji: '👍', label: '想看', done: '已記錄 👍', key: '→', keys: ['ArrowRight', 'l', 'L'] },
+const ACTIONS: { action: SwipeAction; dir: Direction; icon: Component; label: string; done: string; key: string; keys: string[] }[] = [
+  { action: 'swipe_down', dir: 'left', icon: ThumbsDown, label: '略過', done: '已略過', key: '←', keys: ['ArrowLeft', 'h', 'H'] },
+  { action: 'snooze', dir: 'down', icon: Clock, label: '稍後', done: '明天再出現', key: '↓', keys: ['ArrowDown', 'z', 'Z'] },
+  { action: 'swipe_star', dir: 'up', icon: Star, label: '加星', done: '已加星', key: '↑', keys: ['ArrowUp', 's', 'S'] },
+  { action: 'swipe_up', dir: 'right', icon: ThumbsUp, label: '想看', done: '已記錄想看', key: '→', keys: ['ArrowRight', 'l', 'L'] },
 ]
 const byDir = Object.fromEntries(ACTIONS.map((a) => [a.dir, a])) as Record<Direction, (typeof ACTIONS)[number]>
 const FLY: Record<Direction, [number, number]> = { right: [1, 0], left: [-1, 0], up: [0, -1], down: [0, 1] }
@@ -56,7 +56,7 @@ async function loadDeck() {
     const res = await getSwipeDeck(50)
     cards.value = res.items.filter((c) => !decided.has(String(c.id)))
   } catch (e) {
-    toast.error('載入雷達滑卡失敗', { description: e instanceof Error ? e.message : String(e) })
+    toast.error('無法載入逐則篩選', { description: e instanceof Error ? e.message : String(e) })
   } finally {
     loading.value = false
   }
@@ -142,9 +142,9 @@ async function commit(dir: Direction) {
     const message = e instanceof Error ? e.message : String(e)
     if (/unknown item/i.test(message)) {
       cards.value = cards.value.filter((c) => c.id !== card.id)
-      toast.error('這張卡片的項目已被刪除，已略過')
+      toast.error('這則收藏已被刪除，跳到下一則')
     } else {
-      toast.error('記錄失敗，卡片已放回', { description: message })
+      toast.error('記錄失敗，這則已放回', { description: message })
     }
   } finally {
     resetDrag()
@@ -198,8 +198,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       <DialogHeader>
         <div class="flex items-center gap-2">
           <DialogTitle class="flex items-center gap-2">
-            🃏 雷達滑卡
-            <span v-if="cards.length" class="rounded-md bg-muted px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">剩 {{ cards.length }} 張</span>
+            逐則篩選
+            <span v-if="cards.length" class="rounded-md bg-muted px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">剩 {{ cards.length }} 則</span>
           </DialogTitle>
           <!-- Full-screen on phones leaves no backdrop to tap, so closing needs a real button. -->
           <button
@@ -210,8 +210,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <X class="size-3.5" />
           </button>
         </div>
-        <DialogDescription class="text-xs">
-          👍/👎/⭐ 會教會 OmniKeep 你的品味；💤 稍後明天再出現，不算意見。
+        <DialogDescription class="text-sm">
+          想看、略過、加星會用來調整之後的推薦；選稍後的明天再出現，不列入。
         </DialogDescription>
       </DialogHeader>
 
@@ -223,9 +223,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           v-else-if="!current"
           class="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border p-6 text-center"
         >
-          <p class="text-3xl">🎉</p>
-          <p class="text-sm font-medium">雷達滑卡全部清空！</p>
-          <p class="text-xs text-muted-foreground">等雷達進貨後再來。稍後的卡片明天會再出現。</p>
+          <p class="text-sm font-medium">探索找到的內容都看完了</p>
+          <p class="text-sm text-muted-foreground">探索找到新內容後會出現在這裡。選了稍後的明天再出現。</p>
           <Button variant="secondary" size="sm" :disabled="loading" @click="loadDeck">
             <RotateCw class="size-3.5" /> 重新整理
           </Button>
@@ -244,7 +243,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             class="absolute inset-0 flex touch-none flex-col gap-3 overflow-hidden rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-xl select-none"
             :class="busy ? 'cursor-default' : dragging ? 'cursor-grabbing' : 'cursor-grab'"
             :style="cardStyle"
-            aria-roledescription="滑卡"
+            aria-roledescription="卡片"
             :aria-label="current.title_l1"
             @pointerdown="onPointerDown"
             @pointermove="onPointerMove"
@@ -254,7 +253,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <div class="flex flex-wrap items-center gap-1.5 text-2xs">
               <span class="rounded-md bg-muted px-1.5 py-0.5 font-semibold uppercase text-muted-foreground">{{ current.source_type }}</span>
               <span v-if="current.category_name" class="rounded-md bg-primary-soft px-1.5 py-0.5 font-semibold text-primary-soft-foreground">{{ current.category_name }}</span>
-              <span v-if="current.is_exploration" class="rounded-md bg-info-soft px-1.5 py-0.5 font-semibold text-info">🧭 探索卡</span>
+              <span v-if="current.is_exploration" class="inline-flex items-center gap-1 rounded-md bg-info-soft px-1.5 py-0.5 font-semibold text-info"><Compass class="size-3" />探索</span>
             </div>
 
             <h3 class="line-clamp-3 text-lg leading-snug font-semibold tracking-tight">
@@ -264,7 +263,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
             <p class="line-clamp-6 text-sm leading-relaxed text-muted-foreground">{{ current.summary_l1 }}</p>
 
-            <div v-if="current.reasons?.length" class="space-y-0.5 text-xs">
+            <div v-if="current.reasons?.length" class="space-y-0.5 text-sm">
               <p class="font-semibold text-foreground">為什麼給你看：</p>
               <p v-for="r in current.reasons.slice(0, 3)" :key="r" class="text-muted-foreground">· {{ r }}</p>
             </div>
@@ -284,7 +283,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               :style="{ opacity: hint.opacity }"
               aria-hidden="true"
             >
-              <span class="rounded-xl border-2 border-foreground/70 px-4 py-2 text-2xl font-bold">{{ hint.emoji }} {{ hint.label }}</span>
+              <span class="inline-flex items-center gap-2 rounded-xl border-2 border-foreground/70 px-4 py-2 text-2xl font-bold"><component :is="hint.icon" class="size-6" />{{ hint.label }}</span>
             </div>
           </article>
         </template>
@@ -301,8 +300,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           :aria-label="`${a.label}（${a.key}）`"
           @click="commit(a.dir)"
         >
-          <span class="text-lg leading-none">{{ a.emoji }}</span>
-          <span class="text-xs">{{ a.label }}</span>
+          <component :is="a.icon" class="size-5" />
+          <span class="text-sm">{{ a.label }}</span>
           <kbd class="font-mono text-3xs text-subtle-foreground max-sm:hidden">{{ a.key }}</kbd>
         </Button>
       </div>

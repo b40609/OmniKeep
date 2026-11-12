@@ -9,8 +9,8 @@ const ui = useUiStore()
 
 const views = computed(() => [
   { id: 'inbox' as TriageView, label: '待讀', icon: Inbox, count: items.stats.inbox },
-  { id: 'radar' as TriageView, label: '雷達', icon: Radio, count: items.stats.radar },
-  { id: 'starred' as TriageView, label: '星標', icon: Star, count: items.stats.starred },
+  { id: 'radar' as TriageView, label: '探索', icon: Radio, count: items.stats.radar },
+  { id: 'starred' as TriageView, label: '加星', icon: Star, count: items.stats.starred },
   { id: 'archived' as TriageView, label: '封存', icon: Archive, count: items.stats.archived },
   { id: 'all' as TriageView, label: '全部', icon: Layers, count: items.stats.total },
 ])

@@ -272,17 +272,17 @@ onUnmounted(() => {
               <Sparkles class="size-4" />
             </div>
             <div>
-              <DialogTitle class="text-sm font-bold tracking-tight text-foreground">
-                每日回顧 Deck
+              <DialogTitle class="text-lg font-semibold text-foreground">
+                每日回顧
               </DialogTitle>
-              <DialogDescription class="text-2xs text-muted-foreground">
-                未讀精選 + 間隔重複舊收藏溫故知新
+              <DialogDescription class="text-sm text-muted-foreground">
+                還沒讀的收藏，加上值得再看一次的舊收藏。
               </DialogDescription>
             </div>
           </div>
 
           <div v-if="deckCards.length && !completed" class="flex items-center gap-2">
-            <span class="text-xs font-mono font-semibold text-primary">
+            <span class="text-sm font-mono font-semibold text-primary">
               {{ currentIndex + 1 }} / {{ deckCards.length }}
             </span>
           </div>
@@ -300,15 +300,15 @@ onUnmounted(() => {
       <!-- Loading State -->
       <div v-if="loading" class="flex flex-col items-center justify-center py-20 text-muted-foreground">
         <Loader2 class="size-8 animate-spin text-primary" />
-        <p class="mt-3 text-xs font-medium">正在為您準備今日 10 張精選回顧卡片…</p>
+        <p class="mt-3 text-sm font-medium">正在準備今天的回顧…</p>
       </div>
 
       <!-- Empty State -->
       <div v-else-if="!deckCards.length" class="flex flex-col items-center justify-center px-6 py-16 text-center">
         <CheckCircle2 class="size-10 text-green-500" />
-        <h3 class="mt-3 text-sm font-semibold text-foreground">目前沒有待回顧的卡片</h3>
-        <p class="mt-1 text-xs text-muted-foreground">已為您完成所有內容的巡檢與回顧！</p>
-        <Button class="mt-4" size="sm" @click="ui.showDailyDeckModal = false">完成</Button>
+        <h3 class="mt-3 text-sm font-semibold text-foreground">今天沒有要回顧的收藏</h3>
+        <p class="mt-1 text-sm text-muted-foreground">有新的未讀收藏後再回來看。</p>
+        <Button class="mt-4" size="sm" @click="ui.showDailyDeckModal = false">關閉</Button>
       </div>
 
       <!-- Completed State -->
@@ -316,27 +316,27 @@ onUnmounted(() => {
         <div class="mx-auto flex size-12 items-center justify-center rounded-2xl bg-green-500/10 text-green-500">
           <CheckCircle2 class="size-6" />
         </div>
-        <h3 class="mt-4 text-base font-bold text-foreground">今日 10 張精選回顧已完成！</h3>
-        <p class="mt-1 text-xs text-muted-foreground">您的回饋已即時寫入行為學習引擎，持續優化您的專屬興趣權重。</p>
+        <h3 class="mt-4 text-base font-bold text-foreground">今天的回顧完成了</h3>
+        <p class="mt-1 text-sm text-muted-foreground">你的選擇已記錄，之後的推薦會依此調整。</p>
 
         <!-- Stats summary chips -->
-        <div class="mt-6 flex flex-wrap justify-center gap-2 text-xs">
-          <span class="rounded-lg bg-primary/10 px-3 py-1.5 font-medium text-primary">
-            ⭐ 精選收藏：{{ summaryStats.starred }}
+        <div class="mt-6 flex flex-wrap justify-center gap-2 text-sm">
+          <span class="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 font-medium text-primary">
+            <Star class="size-4" />加星：{{ summaryStats.starred }}
           </span>
-          <span class="rounded-lg bg-green-500/10 px-3 py-1.5 font-medium text-green-600 dark:text-green-400">
-            👍 保留已讀：{{ summaryStats.kept }}
+          <span class="inline-flex items-center gap-1.5 rounded-lg bg-green-500/10 px-3 py-1.5 font-medium text-green-600 dark:text-green-400">
+            <ThumbsUp class="size-4" />保留：{{ summaryStats.kept }}
           </span>
-          <span class="rounded-lg bg-muted px-3 py-1.5 font-medium text-muted-foreground">
-            💤 稍後再看：{{ summaryStats.snoozed }}
+          <span class="inline-flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 font-medium text-muted-foreground">
+            <Clock class="size-4" />稍後再看：{{ summaryStats.snoozed }}
           </span>
-          <span class="rounded-lg bg-red-500/10 px-3 py-1.5 font-medium text-red-600 dark:text-red-400">
-            👎 略過降權：{{ summaryStats.skipped }}
+          <span class="inline-flex items-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-1.5 font-medium text-red-600 dark:text-red-400">
+            <ThumbsDown class="size-4" />略過：{{ summaryStats.skipped }}
           </span>
         </div>
 
         <div class="mt-8">
-          <Button size="sm" @click="ui.showDailyDeckModal = false">返回主頁</Button>
+          <Button size="sm" @click="ui.showDailyDeckModal = false">回到收藏</Button>
         </div>
       </div>
 
@@ -359,28 +359,28 @@ onUnmounted(() => {
             class="flex items-center gap-1.5 rounded-2xl border-2 border-amber-500 bg-amber-500/25 px-4 py-2 font-bold text-amber-500 backdrop-blur-md shadow-lg"
           >
             <Star class="size-5 fill-amber-500" />
-            <span class="text-sm">精選收藏 (右滑)</span>
+            <span class="text-sm">加星（右滑）</span>
           </div>
           <div
             v-else-if="swipeIntent === 'skip'"
             class="flex items-center gap-1.5 rounded-2xl border-2 border-red-500 bg-red-500/25 px-4 py-2 font-bold text-red-500 backdrop-blur-md shadow-lg"
           >
             <ThumbsDown class="size-5" />
-            <span class="text-sm">略過降權 (左滑)</span>
+            <span class="text-sm">略過（左滑）</span>
           </div>
           <div
             v-else-if="swipeIntent === 'keep'"
             class="flex items-center gap-1.5 rounded-2xl border-2 border-green-500 bg-green-500/25 px-4 py-2 font-bold text-green-500 backdrop-blur-md shadow-lg"
           >
             <ThumbsUp class="size-5" />
-            <span class="text-sm">保留入庫 (上滑)</span>
+            <span class="text-sm">保留（上滑）</span>
           </div>
           <div
             v-else-if="swipeIntent === 'snooze'"
             class="flex items-center gap-1.5 rounded-2xl border-2 border-muted-foreground bg-muted/90 px-4 py-2 font-bold text-foreground backdrop-blur-md shadow-lg"
           >
             <Clock class="size-5" />
-            <span class="text-sm">稍後再看 (下滑)</span>
+            <span class="text-sm">稍後再看（下滑）</span>
           </div>
         </div>
 
@@ -388,21 +388,21 @@ onUnmounted(() => {
         <div class="flex flex-wrap items-center gap-1.5">
           <Badge v-if="currentCard.is_resurfaced" variant="secondary" class="bg-amber-500/10 text-amber-600 dark:text-amber-400">
             <History class="mr-1 size-3" />
-            {{ currentCard.resurfaced_reason || '歷史重現' }}
+            {{ currentCard.resurfaced_reason || '再看一次' }}
           </Badge>
 
           <Badge v-else-if="currentCard.is_exploration" variant="secondary" class="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
             <Compass class="mr-1 size-3" />
-            探索卡（避免同溫層）
+            探索（平常少看的主題）
           </Badge>
 
           <Badge v-else variant="secondary" class="bg-primary/10 text-primary">
             <Sparkles class="mr-1 size-3" />
-            未讀精選
+            還沒讀
           </Badge>
 
           <Badge variant="outline" class="text-xs">
-            {{ currentCard.category_name || 'Inbox' }}
+            {{ currentCard.category_name || '收件匣' }}
           </Badge>
 
           <span class="ml-auto text-2xs text-muted-foreground font-mono">
@@ -431,9 +431,9 @@ onUnmounted(() => {
         </div>
 
         <!-- Summary -->
-        <div class="mt-3 rounded-xl border border-hairline bg-muted/40 p-3.5 text-xs leading-relaxed text-foreground/90">
+        <div class="mt-3 rounded-xl border border-hairline bg-muted/40 p-3.5 text-sm leading-relaxed text-foreground/90">
           <p class="line-clamp-4">
-            {{ currentCard.summary_l1 || '（無摘要資料）' }}
+            {{ currentCard.summary_l1 || '（沒有摘要）' }}
           </p>
         </div>
 
@@ -462,11 +462,11 @@ onUnmounted(() => {
         <!-- Open Reader Link -->
         <div class="mt-3 flex justify-end">
           <button
-            class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline cursor-pointer"
+            class="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline cursor-pointer"
             @click="openReader(currentCard)"
           >
             <BookOpen class="size-3.5" />
-            深入閱讀完整分析
+            開啟完整內容
           </button>
         </div>
 
@@ -479,8 +479,8 @@ onUnmounted(() => {
             @click="handleAction('snooze')"
           >
             <Clock class="size-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-            <span class="text-3xs sm:text-xs font-semibold text-foreground">稍後</span>
-            <kbd class="hidden sm:inline-block font-mono text-3xs text-muted-foreground">S / ↓</kbd>
+            <span class="text-sm font-semibold text-foreground">稍後</span>
+            <kbd class="hidden sm:inline-block font-mono text-3xs text-muted-foreground">S</kbd>
           </button>
 
           <!-- Swipe Down: Pass -->
@@ -490,8 +490,8 @@ onUnmounted(() => {
             @click="handleAction('swipe_down')"
           >
             <ThumbsDown class="size-4 text-muted-foreground group-hover:text-red-500 transition-colors" />
-            <span class="text-3xs sm:text-xs font-semibold text-foreground group-hover:text-red-500">略過</span>
-            <kbd class="hidden sm:inline-block font-mono text-3xs text-muted-foreground">J / ←</kbd>
+            <span class="text-sm font-semibold text-foreground group-hover:text-red-500">略過</span>
+            <kbd class="hidden sm:inline-block font-mono text-3xs text-muted-foreground">J / ↓</kbd>
           </button>
 
           <!-- Swipe Up: Keep -->
@@ -501,7 +501,7 @@ onUnmounted(() => {
             @click="handleAction('swipe_up')"
           >
             <ThumbsUp class="size-4 text-muted-foreground group-hover:text-green-500 transition-colors" />
-            <span class="text-3xs sm:text-xs font-semibold text-foreground group-hover:text-green-500">保留</span>
+            <span class="text-sm font-semibold text-foreground group-hover:text-green-500">保留</span>
             <kbd class="hidden sm:inline-block font-mono text-3xs text-muted-foreground">K / ↑</kbd>
           </button>
 
@@ -512,7 +512,7 @@ onUnmounted(() => {
             @click="handleAction('swipe_star')"
           >
             <Star class="size-4 text-amber-500 fill-amber-500 transition-transform group-hover:scale-110" />
-            <span class="text-3xs sm:text-xs font-semibold text-primary">精選</span>
+            <span class="text-sm font-semibold text-primary">加星</span>
             <kbd class="hidden sm:inline-block font-mono text-3xs text-primary/70">L / →</kbd>
           </button>
         </div>

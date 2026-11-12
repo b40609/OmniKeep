@@ -37,8 +37,8 @@ import { toast } from 'vue-sonner'
 const ui = useUiStore()
 const itemsStore = useItemsStore()
 
-type ImportTab = 'file' | 'text' | 'bookmarklet' | 'export'
-const activeTab = ref<ImportTab>('file')
+// The tab lives in the store, so the settings page can open this dialog on its export tab.
+const activeTab = computed({ get: () => ui.importTab, set: (tab) => (ui.importTab = tab) })
 
 const exportStarredOnly = ref(false)
 const isExporting = ref(false)
@@ -51,13 +51,13 @@ const bookmarkletHref = computed(() =>
 async function copyBookmarkletCode() {
   await navigator.clipboard.writeText(bookmarkletHref.value)
   copiedBookmarklet.value = true
-  toast.success('已複製書籤代碼至剪貼簿！')
+  toast.success('已複製書籤程式碼')
   setTimeout(() => (copiedBookmarklet.value = false), 2000)
 }
 
 async function handleExport(format: 'json' | 'markdown') {
   isExporting.value = true
-  const t = toast.loading(`正在打包 ${format.toUpperCase()} 備份…`)
+  const t = toast.loading(`正在準備 ${format.toUpperCase()} 匯出檔…`)
   try {
     const { blob, filename } = await api.exportItems(format, exportStarredOnly.value)
     const a = document.createElement('a')
@@ -69,7 +69,7 @@ async function handleExport(format: 'json' | 'markdown') {
     URL.revokeObjectURL(a.href)
     toast.success(`已開始下載 ${filename}`, { id: t })
   } catch (e) {
-    toast.error('匯出失敗: ' + (e as Error).message, { id: t })
+    toast.error('匯出失敗：' + (e as Error).message, { id: t })
   } finally {
     isExporting.value = false
   }
@@ -137,8 +137,8 @@ function processFile(file: File) {
   const isValid = validExts.some((ext) => lowerName.endsWith(ext))
 
   if (!isValid) {
-    toast.error('檔案格式不支援', {
-      description: '請選擇 Netscape HTML (.html)、Chrome/Raindrop JSON (.json) 或 CSV (.csv) 格式書籤',
+    toast.error('不支援這種檔案', {
+      description: '請選 .html、.json 或 .csv 的書籤檔',
     })
     return
   }
@@ -204,14 +204,14 @@ async function runImport() {
 
     importResult.value = res
     toast.success(
-      `匯入完成！成功納庫 ${res.imported_count || res.queued_count} 筆條目`,
+      `匯入完成，共 ${res.imported_count || res.queued_count} 則`,
       { id: toastId }
     )
     await itemsStore.refreshAll()
   } catch (err) {
     toast.error('書籤匯入失敗', {
       id: toastId,
-      description: err instanceof Error ? err.message : '請檢查書籤格式是否完整',
+      description: err instanceof Error ? err.message : '請確認書籤檔內容完整',
     })
   } finally {
     isImporting.value = false
@@ -234,19 +234,16 @@ function closeDialog() {
             <FolderInput class="size-4.5" />
           </div>
           <DialogHeader>
-            <DialogTitle class="flex items-center gap-2">
-              書籤與外部檔案匯入
-              <span class="rounded border border-primary/30 bg-primary-soft px-1.5 py-px font-mono text-2xs text-primary-soft-foreground">BOOKMARK IMPORT</span>
-            </DialogTitle>
+            <DialogTitle>匯入書籤</DialogTitle>
             <DialogDescription>
-              支援 Chrome / Edge / Safari / Arc / Firefox / Pocket / Raindrop 匯出之書籤
+              支援 Chrome、Edge、Safari、Arc、Firefox、Pocket、Raindrop 匯出的書籤檔。
             </DialogDescription>
           </DialogHeader>
         </div>
       </div>
 
       <!-- Mode Tabs (File drag vs Text paste) -->
-      <div class="flex shrink-0 items-center gap-1 border-b border-border px-5 text-xs" role="tablist">
+      <div class="flex shrink-0 items-center gap-1 border-b border-border px-5 text-sm" role="tablist">
         <button
           role="tab"
           :aria-selected="activeTab === 'file'"
@@ -254,7 +251,7 @@ function closeDialog() {
           :class="activeTab === 'file' ? 'text-primary-soft-foreground' : 'text-muted-foreground hover:text-foreground'"
           @click="activeTab = 'file'"
         >
-          檔案拖曳上傳 (.html / .json / .csv)
+          上傳檔案
           <span v-if="activeTab === 'file'" class="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" />
         </button>
         <button
@@ -264,7 +261,7 @@ function closeDialog() {
           :class="activeTab === 'text' ? 'text-primary-soft-foreground' : 'text-muted-foreground hover:text-foreground'"
           @click="activeTab = 'text'"
         >
-          直接貼上內容
+          貼上內容
           <span v-if="activeTab === 'text'" class="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" />
         </button>
         <button
@@ -274,7 +271,7 @@ function closeDialog() {
           :class="activeTab === 'bookmarklet' ? 'text-primary-soft-foreground' : 'text-muted-foreground hover:text-foreground'"
           @click="activeTab = 'bookmarklet'"
         >
-          一鍵隨手存書籤
+          書籤列按鈕
           <span v-if="activeTab === 'bookmarklet'" class="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" />
         </button>
         <button
@@ -284,7 +281,7 @@ function closeDialog() {
           :class="activeTab === 'export' ? 'text-primary-soft-foreground' : 'text-muted-foreground hover:text-foreground'"
           @click="activeTab = 'export'"
         >
-          資料庫全量匯出
+          匯出收藏
           <span v-if="activeTab === 'export'" class="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" />
         </button>
       </div>
@@ -296,34 +293,34 @@ function closeDialog() {
           <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-2">
               <CheckCircle2 class="size-5 text-success" />
-              <span class="text-sm font-bold text-foreground">書籤匯入作業完成</span>
+              <span class="text-sm font-bold text-foreground">匯入完成</span>
             </div>
-            <Button size="sm" variant="ghost" class="h-7 text-2xs" @click="resetState">
+            <Button size="sm" variant="ghost" class="h-7 text-sm" @click="resetState">
               <RotateCcw class="size-3" /> 匯入其他檔案
             </Button>
           </div>
 
-          <div class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+          <div class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
             <div class="rounded-lg bg-background/70 p-2.5">
-              <div class="text-2xs text-muted-foreground">解析總條目</div>
+              <div class="text-sm text-muted-foreground">讀到的書籤</div>
               <div class="text-base font-bold font-mono text-foreground">{{ importResult.total_parsed }}</div>
             </div>
             <div class="rounded-lg bg-success-soft/20 p-2.5">
-              <div class="text-2xs text-success">已成功納庫</div>
+              <div class="text-sm text-success">已匯入</div>
               <div class="text-base font-bold font-mono text-success">{{ importResult.imported_count }}</div>
             </div>
             <div class="rounded-lg bg-primary-soft/20 p-2.5">
-              <div class="text-2xs text-primary-soft-foreground">排入 AI 佇列</div>
+              <div class="text-sm text-primary-soft-foreground">等待 AI 分析</div>
               <div class="text-base font-bold font-mono text-primary-soft-foreground">{{ importResult.queued_count }}</div>
             </div>
             <div class="rounded-lg bg-muted p-2.5">
-              <div class="text-2xs text-muted-foreground">跳過/不安全</div>
+              <div class="text-sm text-muted-foreground">略過</div>
               <div class="text-base font-bold font-mono text-muted-foreground">{{ importResult.skipped_count }}</div>
             </div>
           </div>
 
-          <p v-if="importResult.skipped_count > 0" class="mt-2 text-2xs text-muted-foreground">
-            說明：基於 SSRF 防禦原則，已自動過濾內網/私有 IP（如 127.0.0.1、非公開網段）或無效協定。
+          <p v-if="importResult.skipped_count > 0" class="mt-2 text-sm text-muted-foreground">
+            略過的是內部網路位址（例如 127.0.0.1）或不是網頁的連結。
           </p>
         </div>
 
@@ -354,15 +351,15 @@ function closeDialog() {
                 <UploadCloud class="size-6" />
               </div>
               <p class="text-sm font-semibold text-foreground">
-                拖曳書籤檔案至此，或點擊選擇檔案
+                把書籤檔拖到這裡，或按一下選擇檔案
               </p>
-              <p class="mt-1 text-2xs text-subtle-foreground max-w-sm">
-                支援各大瀏覽器匯出之 bookmarks.html (Netscape 規範)、Raindrop/Chrome JSON 或 CSV 匯出檔
+              <p class="mt-1 text-sm text-subtle-foreground max-w-sm">
+                瀏覽器匯出的 bookmarks.html、Raindrop 或 Chrome 的 JSON、CSV 都可以。
               </p>
               <div class="mt-4 flex flex-wrap items-center justify-center gap-1.5 font-mono text-2xs">
                 <Badge variant="outline" class="bg-background/80">.html (Netscape)</Badge>
                 <Badge variant="outline" class="bg-background/80">.json (Chrome/Raindrop)</Badge>
-                <Badge variant="outline" class="bg-background/80">.csv (通用)</Badge>
+                <Badge variant="outline" class="bg-background/80">.csv</Badge>
               </div>
             </div>
 
@@ -376,11 +373,11 @@ function closeDialog() {
                     <FileText v-else class="size-5" />
                   </div>
                   <div class="min-w-0">
-                    <div class="truncate text-xs font-semibold text-foreground">{{ selectedFile.name }}</div>
+                    <div class="truncate text-sm font-semibold text-foreground">{{ selectedFile.name }}</div>
                     <div class="flex items-center gap-2 font-mono text-2xs text-subtle-foreground">
                       <span>{{ formatBytes(selectedFile.size) }}</span>
                       <span v-if="estimatedItemsCount !== null" class="text-primary-soft-foreground">
-                        • 預估約 {{ estimatedItemsCount }} 筆書籤
+                        約 {{ estimatedItemsCount }} 個書籤
                       </span>
                     </div>
                   </div>
@@ -402,17 +399,17 @@ function closeDialog() {
             <textarea
               v-model="pastedContent"
               rows="7"
-              placeholder="貼上 Netscape HTML（包含 <A HREF=...>）、JSON 陣列或 CSV 內容…"
-              class="w-full resize-none rounded-xl border border-border bg-input p-3 font-mono text-xs text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none"
+              placeholder="貼上書籤檔的 HTML、JSON 或 CSV 內容"
+              class="w-full resize-none rounded-xl border border-border bg-input p-3 font-mono text-sm text-foreground placeholder:text-subtle-foreground focus:border-primary focus:outline-none"
             />
-            <p class="text-2xs text-muted-foreground">
-              系統將自動偵測標頭格式並提取 URL、標題、時間與標籤屬性。
+            <p class="text-sm text-muted-foreground">
+              會自動判斷格式，讀出網址、標題、時間與標籤。
             </p>
           </div>
 
           <!-- Ingestion Options -->
-          <div class="mt-4 space-y-3 rounded-xl border border-border/50 bg-background-subtle/50 p-3.5 text-xs">
-            <div class="font-semibold text-foreground">匯入配置與策略</div>
+          <div class="mt-4 space-y-3 rounded-xl border border-border/50 bg-background-subtle/50 p-3.5 text-sm">
+            <div class="font-semibold text-foreground">匯入方式</div>
 
             <!-- Mode Selection Cards -->
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -426,10 +423,10 @@ function closeDialog() {
                 <div>
                   <div class="flex items-center gap-1 font-semibold text-foreground">
                     <Zap class="size-3 text-warning" />
-                    <span>秒速快速入庫 (推薦)</span>
+                    <span>只匯入，不分析（建議）</span>
                   </div>
-                  <div class="text-2xs text-muted-foreground leading-tight mt-0.5">
-                    0 LLM 成本消耗；保留階層資料夾標籤，並即時套用「硬規則引擎」完成分流。
+                  <div class="text-sm text-muted-foreground leading-tight mt-0.5">
+                    不使用 AI；保留原本的資料夾當標籤，並套用你設的自動規則。
                   </div>
                 </div>
               </label>
@@ -444,9 +441,9 @@ function closeDialog() {
                 <div>
                   <div class="flex items-center gap-1 font-semibold text-foreground">
                     <Sparkles class="size-3 text-primary" />
-                    <span>排入 AI 深度解析佇列</span>
+                    <span>匯入後交給 AI 分析</span>
                   </div>
-                  <div class="text-2xs text-muted-foreground leading-tight mt-0.5">
+                  <div class="text-sm text-muted-foreground leading-tight mt-0.5">
                     匯入後會在背景取得全文並整理摘要，可繼續瀏覽其他收藏。
                   </div>
                 </div>
@@ -455,12 +452,12 @@ function closeDialog() {
 
             <!-- Target Category -->
             <div class="flex items-center justify-between pt-1">
-              <span class="text-subtle-foreground text-2xs">預設收納分類</span>
+              <span class="text-muted-foreground text-sm">放進哪個分類</span>
               <select
                 v-model="selectedCategory"
-                class="h-7 rounded-md border border-border bg-input px-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                class="h-7 rounded-md border border-border bg-input px-2 text-sm text-foreground focus:border-primary focus:outline-none"
               >
-                <option value="Inbox" class="bg-popover text-foreground">Inbox (預設收件匣)</option>
+                <option value="Inbox" class="bg-popover text-foreground">收件匣</option>
                 <option v-for="c in itemsStore.categories" :key="c.id" :value="c.name" class="bg-popover text-foreground">
                   {{ c.name }}
                 </option>
@@ -470,28 +467,28 @@ function closeDialog() {
         </div>
         <!-- ── Bookmarklet Tab ── -->
         <div v-if="activeTab === 'bookmarklet'" class="space-y-4 py-2">
-          <div class="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs space-y-3">
+          <div class="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm space-y-3">
             <div class="flex items-center gap-2 font-semibold text-foreground">
               <Bookmark class="size-4 text-primary" />
-              <span>瀏覽器免安裝 1-Click 剪藏小工具</span>
+              <span>書籤列按鈕（不用安裝擴充功能）</span>
             </div>
             <p class="text-muted-foreground leading-relaxed">
-              只需將下方按鈕<b>「拖曳至瀏覽器書籤列」</b>（Chrome、Edge、Safari、Firefox 皆支援）。
-              閱讀文章、貼文或觀看影片時，點擊書籤即可將目前網址送到 OmniKeep 收錄。
+              把下面的按鈕拖到瀏覽器的書籤列（Chrome、Edge、Safari、Firefox 都可以）。
+              之後看到想留的文章、貼文或影片，按一下書籤就會把那一頁送到 OmniKeep 收錄。
             </p>
             <div class="flex flex-wrap items-center gap-3 pt-1">
               <a
                 :href="bookmarkletHref"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-primary bg-primary px-3.5 py-2 font-mono text-xs font-bold text-primary-foreground shadow-sm hover:opacity-90 active:scale-95 cursor-grab active:cursor-grabbing select-none"
-                title="請將我拖曳至瀏覽器書籤列"
-                @click.prevent="toast.info('請直接將按鈕拖曳到瀏覽器的書籤列（Bookmarks Bar）中！')"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-primary bg-primary px-3.5 py-2 font-mono text-sm font-bold text-primary-foreground shadow-sm hover:opacity-90 active:scale-95 cursor-grab active:cursor-grabbing select-none"
+                title="拖到瀏覽器的書籤列"
+                @click.prevent="toast.info('把這個按鈕拖到瀏覽器的書籤列')"
               >
-                <span>🧠 存入 OmniKeep</span>
+                <Bookmark class="size-4" /><span>存入 OmniKeep</span>
               </a>
-              <Button size="sm" variant="outline" class="h-8 gap-1.5 text-2xs" @click="copyBookmarkletCode">
+              <Button size="sm" variant="outline" class="h-8 gap-1.5 text-sm" @click="copyBookmarkletCode">
                 <Check v-if="copiedBookmarklet" class="size-3 text-success" />
                 <Copy v-else class="size-3" />
-                <span>{{ copiedBookmarklet ? '已複製代碼' : '複製 JavaScript 代碼' }}</span>
+                <span>{{ copiedBookmarklet ? '已複製' : '複製程式碼' }}</span>
               </Button>
             </div>
           </div>
@@ -499,13 +496,13 @@ function closeDialog() {
 
         <!-- ── Export Tab ── -->
         <div v-if="activeTab === 'export'" class="space-y-4 py-2">
-          <div class="rounded-xl border border-border bg-card p-4 text-xs space-y-3">
+          <div class="rounded-xl border border-border bg-card p-4 text-sm space-y-3">
             <div class="flex items-center gap-2 font-semibold text-foreground">
               <Download class="size-4 text-primary" />
-              <span>資料資產自主權（零廠商綁定）</span>
+              <span>匯出收藏</span>
             </div>
             <p class="text-muted-foreground leading-relaxed">
-              你的情報與筆記 100% 屬於你。你可以隨時將整個知識庫打包導出為標準 JSON 或包含 YAML Frontmatter 的 Markdown 壓縮包（無損遷移至 Obsidian、Logseq、Notion）。
+              收藏與筆記可以隨時整份匯出：標準 JSON，或每則一個 Markdown 檔的壓縮檔（可放進 Obsidian、Logseq、Notion）。
             </p>
 
             <div class="flex items-center gap-2 pt-1 pb-2">
@@ -515,8 +512,8 @@ function closeDialog() {
                 type="checkbox"
                 class="size-3.5 rounded border-border accent-primary cursor-pointer"
               />
-              <label for="export-starred" class="text-xs text-foreground cursor-pointer select-none">
-                僅匯出加星標（Starred）的重要收藏
+              <label for="export-starred" class="text-sm text-foreground cursor-pointer select-none">
+                只匯出加星的收藏
               </label>
             </div>
 
@@ -528,9 +525,9 @@ function closeDialog() {
               >
                 <div class="flex items-center gap-1.5 font-semibold text-foreground">
                   <FileCode class="size-4 text-primary" />
-                  <span>全量 JSON 備份</span>
+                  <span>完整 JSON</span>
                 </div>
-                <span class="text-2xs text-muted-foreground">包含所有中繼資料、白話重點、規格拆解與原文</span>
+                <span class="text-sm text-muted-foreground">包含所有欄位、摘要、分析與原文</span>
               </button>
 
               <button
@@ -540,9 +537,9 @@ function closeDialog() {
               >
                 <div class="flex items-center gap-1.5 font-semibold text-foreground">
                   <FileArchive class="size-4 text-violet-500" />
-                  <span>Obsidian / Logseq 筆記包 (.zip)</span>
+                  <span>Markdown 壓縮檔（.zip）</span>
                 </div>
-                <span class="text-2xs text-muted-foreground">每篇生成獨立 .md 檔案，支援標籤與雙向連結</span>
+                <span class="text-sm text-muted-foreground">每則一個 .md 檔，含標籤與連結</span>
               </button>
             </div>
           </div>
@@ -561,14 +558,14 @@ function closeDialog() {
           @click="runImport"
         >
           <Loader2 v-if="isImporting" class="size-3.5 animate-spin" />
-          {{ isImporting ? '匯入處理中…' : '開始匯入' }}
+          {{ isImporting ? '匯入中…' : '開始匯入' }}
         </Button>
         <Button
           v-else
           size="sm"
           @click="closeDialog"
         >
-          查看書籤庫
+          完成
         </Button>
       </div>
     </DialogContent>

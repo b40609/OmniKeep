@@ -17,10 +17,10 @@ const sources = [{ id: 1, is_active: 1 }, { id: 2, is_active: 0 }, { id: 3, is_a
 
 test('says what the radar is really doing once settings are loaded', () => {
   assert.equal(radarScheduleNote(null, sources), null)
-  assert.deepEqual(radarScheduleNote(saved({}), sources), { tone: 'ok', text: '目前：開啟，每 3 小時巡檢 2 個來源。' })
-  assert.equal(radarScheduleNote(saved({ interval_minutes: 90 }), sources).text, '目前：開啟，每 90 分鐘巡檢 2 個來源。')
+  assert.deepEqual(radarScheduleNote(saved({}), sources), { tone: 'ok', text: '目前：開啟，每 3 小時檢查 2 個來源。' })
+  assert.equal(radarScheduleNote(saved({ interval_minutes: 90 }), sources).text, '目前：開啟，每 90 分鐘檢查 2 個來源。')
   assert.equal(radarScheduleNote(saved({ enabled: false }), sources).tone, 'off')
-  assert.match(radarScheduleNote(saved({ interval_minutes: 0 }), sources).text, /手動巡檢/)
+  assert.match(radarScheduleNote(saved({ interval_minutes: 0 }), sources).text, /手動檢查/)
 })
 
 test('warns when switching on would not scan anything', () => {

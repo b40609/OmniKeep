@@ -29,9 +29,9 @@ const brainStatus = ref<BrainStatusResponse | null>(null)
 const forceCloud = ref(false)
 
 const sampleQuestions = [
-  '推薦我知識庫中與 AI Agent 和架構設計相關的內容',
-  'Andrej Karpathy 在知識庫中有哪些重點分析？',
-  '整理知識庫中討論前後端架構或全端優化的項目',
+  '我的收藏裡有哪些和 AI Agent、架構設計有關？',
+  '最近收藏的內容有哪些重點？',
+  '整理收藏裡討論前後端架構的內容',
 ]
 
 async function loadStatus() {
@@ -51,7 +51,7 @@ watch(
         // Initial welcome message
         chatHistory.value.push({
           role: 'assistant',
-          content: '你好！我是你的 **OmniKeep 知識大腦**。\n我優先用本機 Ollama 模型回答（連不上時改用雲端服務商），並以全庫項目的 **MRL 向量混合檢索 (RRF)** 找出相關收藏。\n你可以問我任何關於你的收藏、筆記或專題研究的深層問題，我會為你整理附帶引用文獻的精確解答。',
+          content: '這裡用你收藏的內容回答問題，並附上引用的收藏。\n優先用本機模型回答，連不上時改用雲端的 AI 連線。',
         })
       }
       void scrollToBottom()
@@ -97,7 +97,7 @@ async function sendQuery(text?: string) {
     console.error('Ask brain failed', err)
     chatHistory.value.push({
       role: 'assistant',
-      content: '很抱歉，大腦問答處理時發生異常，請確認本機服務狀態或稍後重試。',
+      content: '這次沒有回答成功。請確認 AI 連線正常後再試一次。',
       provider: 'error',
     })
   } finally {
@@ -110,7 +110,7 @@ function clearChat() {
   chatHistory.value = []
   chatHistory.value.push({
     role: 'assistant',
-    content: '對話記錄已清空。請輸入任何想向知識大腦提問的主題。',
+    content: '對話已清空。',
   })
 }
 
@@ -125,7 +125,7 @@ function renderGroundedAnswer(markdown: string) {
   let parsed = renderMarkdown(markdown)
   parsed = parsed.replace(
     /\[(\d+)\]/g,
-    '<span class="inline-flex items-center justify-center size-4 rounded-full bg-primary/15 text-primary text-3xs font-mono font-bold mx-0.5 align-text-top border border-primary/30 cursor-pointer" title="查看第 $1 筆引用文獻">[$1]</span>'
+    '<span class="inline-flex items-center justify-center size-4 rounded-full bg-primary/15 text-primary text-3xs font-mono font-bold mx-0.5 align-text-top border border-primary/30 cursor-pointer" title="第 $1 則引用">[$1]</span>'
   )
   return parsed
 }
@@ -148,14 +148,9 @@ function handleKeydown(e: KeyboardEvent) {
             <BrainCircuit class="size-4.5" />
           </div>
           <div>
-            <DialogTitle class="text-sm font-bold tracking-tight text-foreground flex items-center gap-2">
-              OmniKeep 對話大腦 (Ask Brain)
-              <Badge variant="outline" class="font-mono text-3xs font-normal text-primary border-primary/30">
-                GPU 向量檢索 + 深度問答
-              </Badge>
-            </DialogTitle>
-            <DialogDescription class="text-2xs text-muted-foreground flex items-center gap-2 mt-0.5">
-              <span>基於全庫項目之 Grounded Citations 引用式問答</span>
+            <DialogTitle class="text-lg font-semibold text-foreground">提問</DialogTitle>
+            <DialogDescription class="text-sm text-muted-foreground flex items-center gap-2 mt-0.5">
+              <span>用你收藏的內容回答，並附上引用的收藏。</span>
             </DialogDescription>
           </div>
         </div>
@@ -165,7 +160,7 @@ function handleKeydown(e: KeyboardEvent) {
           <div
             v-if="brainStatus"
             class="hidden sm:flex items-center gap-1.5 rounded-lg border border-border bg-muted/60 px-2.5 py-1 text-2xs font-medium text-foreground"
-            :title="brainStatus.ollama_ready ? '本機推論已就緒' : '本機 Ollama 未連線，會改用雲端服務商'"
+            :title="brainStatus.ollama_ready ? '本機推論已就緒' : '本機 Ollama 未連線，會改用雲端的 AI 連線'"
           >
             <Cpu class="size-3" :class="brainStatus.ollama_ready ? 'text-green-500' : 'text-muted-foreground'" />
             <span class="font-mono">{{ brainStatus.device_acceleration || brainStatus.configured_model }}</span>
@@ -186,7 +181,7 @@ function handleKeydown(e: KeyboardEvent) {
       <!-- Messages Stream -->
       <div
         ref="scrollContainer"
-        class="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6 text-xs leading-relaxed"
+        class="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6 text-sm leading-relaxed"
       >
         <div
           v-for="(msg, idx) in chatHistory"
@@ -219,7 +214,7 @@ function handleKeydown(e: KeyboardEvent) {
             <!-- Assistant Markdown & Grounded Citations -->
             <div v-else class="space-y-3">
               <div
-                class="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed"
+                class="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed"
                 v-html="renderGroundedAnswer(msg.content)"
               />
 
@@ -228,10 +223,10 @@ function handleKeydown(e: KeyboardEvent) {
                 v-if="msg.citations && msg.citations.length"
                 class="mt-4 rounded-xl border border-border/60 bg-muted/30 p-3"
               >
-                <div class="mb-2 flex items-center justify-between text-2xs font-semibold text-muted-foreground">
+                <div class="mb-2 flex items-center justify-between text-sm font-semibold text-muted-foreground">
                   <span class="flex items-center gap-1">
                     <BookOpen class="size-3 text-primary" />
-                    引用文獻來源（{{ msg.citations.length }} 篇相關收藏）
+                    引用的收藏（{{ msg.citations.length }} 則）
                   </span>
                 </div>
 
@@ -239,7 +234,7 @@ function handleKeydown(e: KeyboardEvent) {
                   <div
                     v-for="cite in msg.citations"
                     :key="cite.citation_index"
-                    class="rounded-lg border border-border/40 bg-card/60 p-2 text-2xs transition hover:border-primary/40 hover:bg-card"
+                    class="rounded-lg border border-border/40 bg-card/60 p-2 text-sm transition hover:border-primary/40 hover:bg-card"
                   >
                     <div class="flex items-start justify-between gap-2">
                       <div class="flex items-center gap-1.5 min-w-0">
@@ -251,7 +246,7 @@ function handleKeydown(e: KeyboardEvent) {
                         </span>
                       </div>
                       <Badge variant="outline" class="shrink-0 text-3xs font-mono">
-                        {{ cite.category_name || 'Inbox' }}
+                        {{ cite.category_name || '收件匣' }}
                       </Badge>
                     </div>
 
@@ -260,14 +255,14 @@ function handleKeydown(e: KeyboardEvent) {
                     </p>
 
                     <div class="mt-1.5 flex items-center justify-between text-3xs text-subtle-foreground font-mono">
-                      <span>RRF 分數: {{ cite.rrf_score?.toFixed(4) }}</span>
+                      <span>相關分數 {{ cite.rrf_score?.toFixed(4) }}</span>
                       <div class="flex items-center gap-2">
                         <button
                           type="button"
                           class="inline-flex items-center gap-1 text-primary hover:underline cursor-pointer"
                           @click="openItemInReader(cite.id)"
                         >
-                          <BookOpen class="size-2.5" /> 檢視
+                          <BookOpen class="size-2.5" /> 開啟
                         </button>
                         <a
                           v-if="cite.url"
@@ -276,7 +271,7 @@ function handleKeydown(e: KeyboardEvent) {
                           rel="noopener noreferrer"
                           class="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground"
                         >
-                          連結 <ExternalLink class="size-2.5" />
+                          原文 <ExternalLink class="size-2.5" />
                         </a>
                       </div>
                     </div>
@@ -286,9 +281,9 @@ function handleKeydown(e: KeyboardEvent) {
 
               <!-- Meta Footer -->
               <div v-if="msg.provider" class="flex items-center gap-2 text-3xs text-muted-foreground pt-1 border-t border-border/40">
-                <span>模型: {{ msg.model || '未知' }}</span>
-                <span>•</span>
-                <span>推論通道: {{ msg.provider === 'local_ollama_gpu' ? (brainStatus?.device_acceleration ? `本機（${brainStatus.device_acceleration}）` : '本機 Ollama') : '雲端高可用備援' }}</span>
+                <span>模型：{{ msg.model || '未知' }}</span>
+                <span>·</span>
+                <span>來源：{{ msg.provider === 'local_ollama_gpu' ? (brainStatus?.device_acceleration ? `本機（${brainStatus.device_acceleration}）` : '本機 Ollama') : '雲端 AI 連線' }}</span>
               </div>
             </div>
           </div>
@@ -308,9 +303,9 @@ function handleKeydown(e: KeyboardEvent) {
             <Bot class="size-4" />
           </div>
           <div class="rounded-2xl rounded-tl-sm border border-border/70 bg-card p-4 text-foreground shadow-sm">
-            <div class="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+            <div class="flex items-center gap-2 text-sm text-muted-foreground font-medium">
               <Loader2 class="size-3.5 animate-spin text-primary" />
-              <span>正在透過向量 RRF 檢索全庫項目並深度思考中…</span>
+              <span>正在找相關的收藏並整理回答…</span>
             </div>
           </div>
         </div>
@@ -318,12 +313,12 @@ function handleKeydown(e: KeyboardEvent) {
 
       <!-- Sample Prompt Chips (when conversation is fresh) -->
       <div v-if="chatHistory.length <= 1 && !loading" class="px-5 pb-2">
-        <p class="text-3xs text-muted-foreground font-semibold mb-1.5">推薦問題：</p>
+        <p class="text-sm text-muted-foreground font-semibold mb-1.5">可以這樣問</p>
         <div class="flex flex-wrap gap-1.5">
           <button
             v-for="q in sampleQuestions"
             :key="q"
-            class="rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-2xs text-foreground transition hover:border-primary/40 hover:bg-card cursor-pointer"
+            class="rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-sm text-foreground transition hover:border-primary/40 hover:bg-card cursor-pointer"
             @click="sendQuery(q)"
           >
             {{ q }}
@@ -337,15 +332,15 @@ function handleKeydown(e: KeyboardEvent) {
           <input
             v-model="inputQuery"
             type="text"
-            placeholder="向第二大腦提問… (支援全庫混合語意檢索，按 Enter 發送)"
-            class="h-11 w-full bg-transparent px-4 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
+            placeholder="問一個和收藏有關的問題"
+            class="h-11 w-full bg-transparent px-4 pr-12 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
             :disabled="loading"
             @keydown="handleKeydown"
           />
           <button
             class="absolute right-2 flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition hover:bg-primary-hover disabled:opacity-40 cursor-pointer"
             :disabled="!inputQuery.trim() || loading"
-            aria-label="發送問題"
+            aria-label="送出問題"
             @click="sendQuery()"
           >
             <Send class="size-3.5" />
@@ -353,8 +348,7 @@ function handleKeydown(e: KeyboardEvent) {
         </div>
 
         <div class="mt-2 flex items-center justify-between text-3xs text-muted-foreground px-1">
-          <span>支援 Shift + Enter 換行，Enter 發送提問</span>
-          <span class="font-mono">EmbeddingGemma-2 (256維 MRL) + Qwen3 / Strata</span>
+          <span>按 Enter 送出</span>
         </div>
       </div>
     </DialogContent>

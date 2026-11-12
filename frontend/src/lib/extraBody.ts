@@ -1,5 +1,5 @@
 /**
- * 設定 › AI 服務商: the "額外請求參數" field of a connection (caps.extra_body).
+ * 設定 › AI: the "額外請求參數" field of a connection (caps.extra_body).
  *
  * The field holds JSON text. A card can carry per-model presets (model_extra_body, e.g.
  * NVIDIA's DeepSeek needs its reasoning switched off); picking such a model fills the field,
