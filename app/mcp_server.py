@@ -94,7 +94,7 @@ async def hybrid_search_brain(
     """
     from app.vector import search_hybrid
     fetch_limit = min(limit * 3, 50)
-    raw_results = await search_hybrid(query=query, limit=fetch_limit)
+    raw_results = await search_hybrid(query=query, limit=fetch_limit, usable_only=True)
 
     filtered = []
     for item in raw_results:

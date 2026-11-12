@@ -116,7 +116,7 @@ async def ask_brain(
     limit = max(1, min(int(limit or 1), settings.BRAIN_MAX_CITATIONS))
 
     # 1. Hybrid Search over knowledge base
-    retrieved_items = await search_hybrid(clean_q, limit=limit, vector_weight=0.55)
+    retrieved_items = await search_hybrid(clean_q, limit=limit, vector_weight=0.55, usable_only=True)
     retrieval = retrieval_report(retrieved_items)
 
     citations = []

@@ -595,15 +595,32 @@ def _warn_about_semantic_state(semantic: Dict[str, Any]) -> None:
     )
 
 
+# Categories whose items were set aside as junk; the taste profile and the tool
+# resolver already leave them out (app.database, app.pipeline).
+QUARANTINE_CATEGORIES = frozenset({"隔離區"})
+
+
+def unusable_for_answers(item: Dict[str, Any]) -> bool:
+    """An item with nothing to cite: its fetch failed and no analysis was made, it is a
+    stub still waiting for analysis, or it sits in a quarantine category. Such items
+    still show in the item list and the search box; they are only kept out of answers."""
+    from app.pipeline import FETCH_FAILED_TAG
+    return (FETCH_FAILED_TAG in (item.get("summary_l1") or "")
+            or item.get("analysis_status") == "pending"
+            or item.get("category_name") in QUARANTINE_CATEGORIES)
+
+
 def _merge_hybrid_results(
     fts_items: List[Dict[str, Any]],
     q_vec: List[float],
     limit: int = 10,
     vector_weight: float = 0.5,
     model: Optional[str] = None,
+    usable_only: bool = False,
 ) -> List[Dict[str, Any]]:
     """Reciprocal Rank Fusion of FTS ranks and vector ranks. An all-zero query
-    vector (empty text) carries no meaning, so ranking then falls back to FTS."""
+    vector (empty text) carries no meaning, so ranking then falls back to FTS.
+    usable_only leaves out items with nothing to cite (unusable_for_answers)."""
     fts_ranks = {item["id"]: idx + 1 for idx, item in enumerate(fts_items)}
     has_valid_vector = any(v != 0.0 for v in q_vec)
 
@@ -624,7 +641,7 @@ def _merge_hybrid_results(
     k_const = 60.0
     for i_id in all_ids:
         item = get_item_by_id(i_id)
-        if not item:
+        if not item or (usable_only and unusable_for_answers(item)):
             continue
         rank_fts = fts_ranks.get(i_id, 9999)
         rank_vec = vec_ranks.get(i_id, 9999)
@@ -645,11 +662,13 @@ def _merge_hybrid_results(
     return scored_items[:limit]
 
 
-async def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5) -> HybridResults:
+async def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5,
+                        usable_only: bool = False) -> HybridResults:
     """
     Hybrid Search combining keyword search (FTS) and vector semantic search via Reciprocal Rank Fusion (RRF).
     The result is a list of items; its `semantic` attribute says what the vector side
     did (semantic_state), so a caller can tell the person when it was left out.
+    usable_only: for answers and citations, leave out items with nothing to cite.
     """
     from app.database import search_candidates
 
@@ -668,6 +687,7 @@ async def search_hybrid(query: str, limit: int = 10, vector_weight: float = 0.5)
     if semantic["state"] == "unavailable":
         q_vec = [0.0] * len(q_vec)  # an all-zero query vector ranks by the lexical side alone
     results = HybridResults(
-        _merge_hybrid_results(fts_items, q_vec, limit=limit, vector_weight=vector_weight, model=q_model))
+        _merge_hybrid_results(fts_items, q_vec, limit=limit, vector_weight=vector_weight, model=q_model,
+                              usable_only=usable_only))
     results.semantic = semantic
     return results

@@ -308,3 +308,41 @@ def test_an_agent_is_told_too(monkeypatch):
     assert "語意搜尋目前沒有運作" in found
     nothing = asyncio.run(mcp_server.hybrid_search_brain("zzzz-no-such-thing"))
     assert "未找到" in nothing and "語意搜尋目前沒有運作" in nothing
+
+
+# ── Items with nothing to cite ──────────────────────────────────
+
+def _items_with_nothing_to_cite():
+    from app.pipeline import FETCH_FAILED_TAG
+    failed = _item("failed", "ask.test/failed", f"{FETCH_FAILED_TAG}語音轉錄頁面打不開，稍後會自動重抓。")
+    quarantined = _item("junk", "無效內容", "語音轉錄：輸入內容只有導覽列", category_name="隔離區")
+    pending = _item("stub", "語音轉錄新聞", "語音轉錄", analysis_status="pending")
+    return failed, quarantined, pending
+
+
+def test_an_answer_leaves_out_items_with_nothing_to_cite(monkeypatch):
+    junk = _items_with_nothing_to_cite()
+    wanted = _item("wanted", "會議錄音工具", "本機語音轉錄，不上傳雲端")
+    monkeypatch.setattr(brain.httpx, "AsyncClient", _Chat)
+
+    res = asyncio.run(brain.ask_brain(QUESTION))
+
+    cited = [c["id"] for c in res["citations"]]
+    assert cited == [wanted]
+    assert not set(junk) & set(cited)
+
+
+def test_the_search_box_still_lists_them():
+    junk = _items_with_nothing_to_cite()
+    found = {row["id"] for row in get_items(query="語音轉錄", limit=50)}
+    assert set(junk) <= found
+    plain = asyncio.run(search_hybrid("語音轉錄", limit=10))
+    assert set(junk) <= {r["id"] for r in plain}
+
+
+def test_an_agent_is_not_given_them_either():
+    _items_with_nothing_to_cite()
+    _item("wanted", "會議錄音工具", "本機語音轉錄，不上傳雲端")
+    found = asyncio.run(mcp_server.hybrid_search_brain("語音轉錄"))
+    assert "會議錄音工具" in found
+    assert "無效內容" not in found and "ask.test/failed" not in found and "語音轉錄新聞" not in found
