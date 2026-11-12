@@ -108,8 +108,13 @@ async def hybrid_search_brain(
         if len(filtered) >= limit:
             break
 
+    # An agent must not read keyword-only results as "nothing related exists".
+    from app.brain import retrieval_report
+    notice = retrieval_report(raw_results)["notice"]
+    notice_line = f"\n\n注意：{notice}" if notice else ""
+
     if not filtered:
-        return f"在 OmniKeep 大腦中未找到與「{query}」相關的語意情報項目。"
+        return f"在 OmniKeep 大腦中未找到與「{query}」相關的語意情報項目。{notice_line}"
 
     results = []
     for item in filtered:
@@ -137,7 +142,8 @@ async def hybrid_search_brain(
             f"- **白話核心**: {item.get('summary_l1')}"
         )
 
-    output = f"【混合檢索 (FTS5 + 向量)】找到 {len(results)} 筆相關情報：\n\n" + "\n\n".join(results)
+    heading = "【關鍵字檢索】" if notice else "【混合檢索 (FTS5 + 向量)】"
+    output = f"{heading}找到 {len(results)} 筆相關情報：\n\n" + "\n\n".join(results) + notice_line
     output += "\n\n---\n💡 提示：使用 `get_item_architecture(item_id)` 取得 L2 架構規格；使用 `read_sql_query(...)` 進行結構化唯讀查詢。"
     return output
 

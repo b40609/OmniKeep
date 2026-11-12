@@ -32,6 +32,29 @@ MAX_HISTORY_TURNS = 4
 MAX_HISTORY_CHARS = 2000  # per turn, so a long earlier answer cannot crowd out the citations
 
 
+# Shown with the answer when the vector side took no part in finding the citations.
+SEMANTIC_OFF_NOTICES = {
+    "embedding_unreachable": "語意搜尋目前沒有運作（向量模型沒有回應），這次只用關鍵字找收藏，用詞不同的相關內容可能找不到。"
+                             "請到「設定 › AI 服務商」確認向量模型的連線。",
+    "model_mismatch": "語意搜尋目前沒有運作（大部分收藏的語意索引是用另一個向量模型建立的），這次只用關鍵字找收藏。"
+                      "重建語意索引後就會恢復。",
+}
+
+
+def retrieval_report(items: Any) -> Dict[str, Any]:
+    """How the citations were found, for the answer's `retrieval` field: `semantic` is
+    "ok", "partial", "empty" or "unavailable" (app.vector.semantic_state), and `notice`
+    is the sentence to show the person when the semantic side was left out."""
+    semantic = getattr(items, "semantic", None) or {}
+    state = semantic.get("state", "ok")
+    report = {"semantic": state, "reason": semantic.get("reason", ""),
+              "query_model": semantic.get("query_model", ""), "index_model": semantic.get("index_model", ""),
+              "not_indexed": semantic.get("not_indexed", 0), "notice": ""}
+    if state == "unavailable":
+        report["notice"] = SEMANTIC_OFF_NOTICES.get(report["reason"], SEMANTIC_OFF_NOTICES["embedding_unreachable"])
+    return report
+
+
 def _with_history(turns: List[Dict[str, str]], user_payload: str) -> str:
     """The cloud fallback takes a single prompt, so earlier turns go in as text."""
     if not turns:
@@ -86,12 +109,15 @@ async def ask_brain(
             "citations": [],
             "model": "none",
             "provider": "none",
+            "retrieval": retrieval_report(None),
+            "notice": "",
         }
 
     limit = max(1, min(int(limit or 1), settings.BRAIN_MAX_CITATIONS))
 
     # 1. Hybrid Search over knowledge base
     retrieved_items = await search_hybrid(clean_q, limit=limit, vector_weight=0.55)
+    retrieval = retrieval_report(retrieved_items)
 
     citations = []
     for idx, item in enumerate(retrieved_items, start=1):
@@ -177,6 +203,10 @@ async def ask_brain(
         "citations": citations,
         "model": model_used,
         "provider": provider_used,
+        # How the citations were found. `notice` is non-empty when the person has to be
+        # told that semantic search took no part (the same text as retrieval["notice"]).
+        "retrieval": retrieval,
+        "notice": retrieval["notice"],
     }
 
 

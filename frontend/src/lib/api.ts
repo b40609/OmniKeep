@@ -1175,12 +1175,25 @@ export interface BrainCitation {
   similarity: number
 }
 
+/** How the citations were found; `semantic` is "unavailable" when only keywords were used. */
+export interface BrainRetrieval {
+  semantic: 'ok' | 'partial' | 'empty' | 'unavailable'
+  reason: string
+  query_model: string
+  index_model: string
+  not_indexed: number
+  notice: string
+}
+
 export interface AskBrainResponse {
   question: string
   answer: string
   citations: BrainCitation[]
   model: string
   provider: string
+  retrieval?: BrainRetrieval
+  /** Non-empty when semantic search took no part in this answer; shown with it. */
+  notice?: string
 }
 
 export interface BrainStatusResponse {

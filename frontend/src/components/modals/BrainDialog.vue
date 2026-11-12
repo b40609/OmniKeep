@@ -3,7 +3,7 @@ import { computed, ref, watch, nextTick } from 'vue'
 import {
   Send, BookOpen, ExternalLink,
   Bot, User, Loader2,
-  RotateCcw
+  RotateCcw, TriangleAlert
 } from 'lucide-vue-next'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import Badge from '@/components/ui/badge/Badge.vue'
@@ -17,6 +17,8 @@ interface ChatEntry {
   citations?: BrainCitation[]
   model?: string
   provider?: string
+  /** Set when semantic search took no part in finding the citations. */
+  notice?: string
 }
 
 const ui = useUiStore()
@@ -100,6 +102,7 @@ async function sendQuery(text?: string) {
       citations: res.citations || [],
       model: res.model,
       provider: res.provider,
+      notice: res.notice || '',
     })
   } catch (err) {
     console.error('Ask brain failed', err)
@@ -201,6 +204,15 @@ function handleKeydown(e: KeyboardEvent) {
 
             <!-- Assistant Markdown & Grounded Citations -->
             <div v-else class="space-y-3">
+              <!-- Semantic search was left out: said before the answer, which rests on keywords only -->
+              <div
+                v-if="msg.notice"
+                role="status"
+                class="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs leading-relaxed text-foreground"
+              >
+                <TriangleAlert class="mt-0.5 size-4 shrink-0 text-warning" />
+                <span>{{ msg.notice }}</span>
+              </div>
               <div
                 class="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed"
                 v-html="renderGroundedAnswer(msg.content)"
