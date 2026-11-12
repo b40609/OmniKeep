@@ -34,7 +34,7 @@ class _Client:
 def stub_search(monkeypatch):
     seen = {}
 
-    async def fake_search(query, limit=10, vector_weight=0.5):
+    async def fake_search(query, limit=10, vector_weight=0.5, usable_only=False):
         seen["limit"] = limit
         return [{"id": "a", "title_l1": "文獻", "summary_l1": "摘要", "content_raw": "內容"}]
 
