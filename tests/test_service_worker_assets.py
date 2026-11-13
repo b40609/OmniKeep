@@ -59,3 +59,18 @@ def test_current_build_serves_every_file_its_worker_precaches():
     with _serve(REPO_STATIC) as client:
         for url in sorted(urls):
             assert client.get(f"/static/dist/{url}").status_code == 200, url
+
+
+def test_chunks_the_entry_imports_later_are_served(isolated_runtime):
+    # Vite splits mermaid (deep analysis flowcharts) into chunks the entry loads with import().
+    root = isolated_runtime / "static"
+    (root / "dist/assets").mkdir(parents=True)
+    (root / "dist/index.html").write_text('<script type="module" src="/static/dist/assets/index-AbCd1234.js"></script>')
+    (root / "dist/assets/index-AbCd1234.js").write_text('const m=()=>import("./mermaid.core-Xy_z9876.js")')
+    (root / "dist/assets/mermaid.core-Xy_z9876.js").write_text('import{a}from"./chunk-Q1RSTUVW-Ab3dE-9x.js"')
+    (root / "dist/assets/chunk-Q1RSTUVW-Ab3dE-9x.js").write_text("export const a=1")
+    (root / "dist/assets/old-Zz999999.js").write_text("// left by an older build")
+    with _serve(root) as client:
+        assert client.get("/static/dist/assets/mermaid.core-Xy_z9876.js").status_code == 200
+        assert client.get("/static/dist/assets/chunk-Q1RSTUVW-Ab3dE-9x.js").status_code == 200
+        assert client.get("/static/dist/assets/old-Zz999999.js").status_code == 404

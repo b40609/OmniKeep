@@ -67,6 +67,11 @@ function highlightCode(code: string, rawLang: string): string {
 
 /* Code blocks get a language label, syntax highlighting + copy button */
 function codeRenderer(code: string, lang: string): string {
+  if (lang.toLowerCase() === 'mermaid') {
+    // Drawn later by renderMermaidIn (lib/mermaid.ts); the source waits hidden in the block.
+    const src = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    return `<div class="mermaid-block"><pre class="mermaid-src">${src}</pre></div>`
+  }
   const highlighted = highlightCode(code, lang)
   const escaped = code
     .replace(/&/g, '&amp;')
@@ -109,7 +114,10 @@ marked.use({
 export function renderMarkdown(text: string | null | undefined): string {
   if (!text) return ''
   try {
-    const html = marked.parse(text, { async: false }) as string
+    const html = (marked.parse(text, { async: false }) as string)
+      // Wide tables scroll sideways inside their own box instead of squeezing on a phone.
+      .replace(/<table>/g, '<div class="table-scroll"><table>')
+      .replace(/<\/table>/g, '</table></div>')
     return DOMPurify.sanitize(html, {
       ADD_ATTR: ['target', 'rel', 'id'],
       FORBID_TAGS: ['style', 'iframe', 'form', 'input'],

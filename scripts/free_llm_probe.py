@@ -41,11 +41,11 @@ RL_HEADERS = re.compile(r"ratelimit|retry-after|x-quota|x-remaining", re.I)
 def analysis_prompt() -> str:
     """The analysis system prompt with neutral placeholders (no owner background or hardware)."""
     src = PIPELINE.read_text(encoding="utf-8")
-    tpl = re.search(r'_ANALYSIS_PROMPT_TEMPLATE = """(.*?)"""', src, re.S).group(1)
+    tpl = re.search(r'_ANALYSIS_PROMPT_TEMPLATE = r?"""(.*?)"""', src, re.S).group(1)
     parts = {
         "BACKGROUND_ANCHOR": "",
         "BACKGROUND_ADVICE": "給出 1-2 點具體技術借鏡或落地改進建議。",
-        "HARDWARE_HEADING": "### 🖥️ 硬體需求與快速上手評估",
+        "HARDWARE_LABEL": "硬體需求",
         "HARDWARE_VERDICT": "分別標註 8 GB、16 GB、24 GB 顯存的運行結論。",
     }
     return re.sub(r"<<([A-Z_]+)>>", lambda m: parts[m.group(1)], tpl)

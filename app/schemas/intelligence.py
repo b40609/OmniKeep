@@ -29,6 +29,26 @@ def full_width_punctuation(text: str) -> str:
     return "".join(p if i % 2 else _full_width(p) for i, p in enumerate(parts))
 
 
+_DETAILS_TAG = re.compile(r"[ \t]*(<details>|</details>|<summary>.*?</summary>)[ \t]*")
+
+
+def _space_details(text: str) -> str:
+    text = _DETAILS_TAG.sub(lambda m: f"\n\n{m.group(1)}\n\n", text)
+    text = re.sub(r"<details>\s*<summary>", "<details>\n<summary>", text)
+    return text
+
+
+def details_spacing(text: str) -> str:
+    """Blank lines around the <details>, <summary> and </details> of the deep analysis (prompt
+    v2.4). Without them marked keeps the section's Markdown as raw text; the prompt asks for them
+    but models drop them now and then. Code fences are left as they are."""
+    if "<details>" not in (text or ""):
+        return text or ""
+    parts = _CODE.split(text)
+    out = "".join(p if i % 2 else _space_details(p) for i, p in enumerate(parts))
+    return re.sub(r"\n{3,}", "\n\n", out).strip()
+
+
 def _bigrams(text: str) -> set:
     text = re.sub(r"[\s，。：:,、「」（）()！!？?.\-/]", "", text.lower())
     out = set(re.findall(r"[a-z0-9.+#_]{2,}", text))
@@ -107,7 +127,7 @@ class AnalysisOutputSchema(BaseModel):
     title_l1: str = Field(default="", description="白話標題：名稱：最吸引人的具體事實或用途（25 字內，英文單字算 1 字）")
     summary_l1: str = Field(default="", description="2 到 3 句、70 到 120 字，不重複標題")
     tech_tags: List[str] = Field(default_factory=list, description="技術標籤清單")
-    deep_analysis: str = Field(default="", description="Markdown：## 重點、## 我可以怎麼用、## 限制，或 ## 原話、## 重點")
+    deep_analysis: str = Field(default="", description="Markdown：> 引言、## 最重要的 3 件事，其餘放 <details> 收合區")
     is_composite: bool = Field(default=False, description="是否為多專案/多工具集合盤點")
     sub_entities: List[SubEntitySchema] = Field(default_factory=list, description="提及的子實體或開源工具清單")
 
@@ -128,7 +148,7 @@ class AnalysisOutputSchema(BaseModel):
     @field_validator("deep_analysis", mode="before")
     @classmethod
     def clean_deep_analysis(cls, v: Any) -> str:
-        return full_width_punctuation(str(v or ""))
+        return details_spacing(full_width_punctuation(str(v or "")))
 
     @field_validator("category", mode="before")
     @classmethod

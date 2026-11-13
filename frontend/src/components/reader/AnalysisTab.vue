@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { toast } from 'vue-sonner'
 import { Link2, Package, ChevronRight, Camera, Sparkles, Network, ExternalLink, ArrowRight, List, Hash, FileText, CornerUpLeft, Loader2 } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
@@ -9,6 +9,7 @@ import { isNotAnalysed, plainSummary } from '@/lib/wall'
 import { useItemsStore } from '@/stores/items'
 import { cleanHost, formatRelativeTime, estimateReadTime, sourceMeta } from '@/lib/format'
 import { renderMarkdown, useCodeCopy, extractToc } from '@/lib/markdown'
+import { renderMermaidIn } from '@/lib/mermaid'
 import { useUiStore } from '@/stores/ui'
 import { useMutations } from '@/composables/useMutations'
 
@@ -58,8 +59,9 @@ watch(
     detachCodeCopy?.()
     detachCodeCopy = null
     if (!ui.activeItem?.deep_analysis) return
-    await Promise.resolve()
+    await nextTick()
     detachCodeCopy = useCodeCopy(contentRef.value)
+    void renderMermaidIn(contentRef.value)
   },
   { immediate: true },
 )

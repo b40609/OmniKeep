@@ -114,15 +114,15 @@ SPECS: Tuple[Spec, ...] = (
 
     Spec("USER_BACKGROUND", "profile", "使用者背景", "text",
          help="給 AI 分析參考的身分、專長與手上的專案，例如「資料工程師，在做個人記帳 App」。"
-              "工程與工具類內容的「我可以怎麼用」會貼合這個背景；留空就只寫一般用法。"),
+              "深度分析開頭那句「對你有什麼用」會貼合這個背景；留空就寫它最適合誰。"),
     Spec("LOCAL_HARDWARE", "profile", "本機硬體", "text",
          help="例如「Ryzen 7 / RTX 4070 12GB / 32GB RAM」。分析 AI 模型時會評估能否在這台機器上跑；"
               "留空就只寫 8、16、24 GB 顯存各能不能跑。"),
     Spec("ANALYSIS_DEPTH", "profile", "分析深度", "choice",
          choices=(("standard", "標準"),
-                  ("concise", "重點摘要：深度分析只留 3 到 5 個重點"),
+                  ("concise", "重點摘要：深度分析只留開頭一句與 3 件最重要的事"),
                   ("technical", "技術細節：完整列出架構、規格與限制"),
-                  ("actionable", "含落地建議：「我可以怎麼用」寫 3 條，附做法與確認方式")),
+                  ("actionable", "含落地建議：多一區「怎麼開始」，寫 3 條做法與確認方式")),
          help="只影響之後的新分析；已分析過的內容不會重跑。"),
 
     Spec("TELEGRAM_BOT_TOKEN", "telegram", "機器人權杖", "secret", hook="telegram",

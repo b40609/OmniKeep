@@ -726,6 +726,97 @@ input, textarea { caret-color: var(--primary); }
   border-radius: var(--radius-lg);
 }
 
+/* Deep analysis, second layer (prompt v2.4): each <details> is a section whose <summary> already
+   states its point, so a closed section still reads as a line of content. */
+.prose-reader details {
+  border-top: 1px solid var(--hairline);
+  margin: 0;
+}
+.prose-reader details:last-of-type {
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 1em;
+}
+.prose-reader h2 + ul + details,
+.prose-reader ul + details {
+  margin-top: 1.4em;
+}
+.prose-reader summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  padding: 0.75em 0.1em;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 500;
+  color: var(--foreground);
+  border-radius: var(--radius-sm, 6px);
+}
+.prose-reader summary::-webkit-details-marker {
+  display: none;
+}
+.prose-reader summary::before {
+  content: "";
+  flex: none;
+  width: 0.45em;
+  height: 0.45em;
+  border-right: 1.5px solid var(--muted-foreground);
+  border-bottom: 1.5px solid var(--muted-foreground);
+  transform: translateY(-0.15em) rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.prose-reader details[open] > summary::before {
+  transform: translateY(-0.3em) rotate(45deg);
+}
+.prose-reader summary:hover {
+  color: var(--primary);
+}
+.prose-reader summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.prose-reader details > :not(summary) {
+  margin-left: 1.05em;
+}
+.prose-reader details[open] {
+  padding-bottom: 0.6em;
+}
+
+/* Wide tables scroll inside their own box (lib/markdown.ts wraps them). */
+.prose-reader .table-scroll {
+  overflow-x: auto;
+  margin-bottom: 1em;
+  -webkit-overflow-scrolling: touch;
+}
+.prose-reader .table-scroll table {
+  margin-bottom: 0;
+  min-width: 28em;
+}
+.prose-reader td {
+  vertical-align: top;
+}
+
+/* Mermaid flowcharts (lib/mermaid.ts): the source stays hidden until drawn; a diagram that cannot
+   be drawn shows its steps as a numbered list instead. */
+.prose-reader .mermaid-src {
+  display: none;
+}
+.prose-reader .mermaid-block {
+  margin: 0.4em 0 1em;
+  overflow-x: auto;
+}
+.prose-reader .mermaid-block:not([data-done]) {
+  min-height: 4em;
+}
+.prose-reader .mermaid-block svg {
+  display: block;
+  max-width: none;
+  height: auto;
+  margin: 0 auto;
+}
+.prose-reader .mermaid-fallback {
+  margin: 0;
+}
+
 
 /* ============================================================
    Prism.js Syntax Highlighting Tokens

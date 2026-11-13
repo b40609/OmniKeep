@@ -246,6 +246,50 @@ def build_proposal_card_html(prop: Dict[str, Any]) -> str:
         f"🎯 影響 {prop.get('impact', '?')} · 🔍 信心 {prop.get('confidence', '?')} · 🏗️ 成本 {prop.get('effort', '?')}"
     )
 
+def mermaid_steps(code: str) -> list:
+    """A mermaid diagram's steps as text: the node labels in the order they first appear, or the
+    messages of a sequence diagram. Mirrors mermaidSteps in frontend/src/lib/mermaid.ts."""
+    lines = [l.strip() for l in code.splitlines() if l.strip()]
+    if lines and lines[0].startswith("sequenceDiagram"):
+        out = []
+        for l in lines[1:]:
+            m = re.match(r'^([^-:]+?)\s*-{1,2}>{1,2}[+-]?\s*([^:]+?)\s*:\s*(.+)$', l)
+            if m:
+                out.append(f"{m.group(1).strip()} → {m.group(2).strip()}：{m.group(3).strip()}")
+        return out
+    steps, seen = [], set()
+    for m in re.finditer(r'\b([A-Za-z]\w*)\s*[\[({]+"?([^"\])}]+)"?[\])}]+', code):
+        if m.group(1) not in seen:
+            seen.add(m.group(1))
+            steps.append(m.group(2).strip())
+    return steps
+
+
+def _flatten_deep_layout(text: str) -> str:
+    """The deep analysis is written for the reading page: <details> sections, Markdown tables and
+    mermaid flowcharts. Telegram shows none of these, so each becomes plain lines: a section's
+    <summary> a heading, a table row cells joined by ｜, a flowchart its steps joined by →."""
+    text = re.sub(r'```mermaid\s*\n(.*?)```',
+                  lambda m: " → ".join(mermaid_steps(m.group(1))) + "\n", text, flags=re.DOTALL)
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if s in ("<details>", "</details>"):
+            continue
+        m = re.fullmatch(r'<summary>(.*)</summary>', s)
+        if m:
+            out.append(f"### {m.group(1).strip()}")
+            continue
+        if s.startswith("|") and s.endswith("|"):
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            if all(re.fullmatch(r':?-{2,}:?', c) for c in cells):
+                continue
+            out.append("｜".join(cells))
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def markdown_to_telegram_html(text: str) -> str:
     """
     Robust Markdown to Telegram HTML converter.
@@ -254,6 +298,7 @@ def markdown_to_telegram_html(text: str) -> str:
     if not text:
         return ""
 
+    text = _flatten_deep_layout(text)
     code_blocks = []
     def save_code_block(match):
         code = match.group(2)

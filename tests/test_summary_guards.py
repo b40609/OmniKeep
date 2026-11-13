@@ -65,8 +65,19 @@ def test_validated_analysis_fixes_punctuation_in_every_text_field():
     assert (out.title_l1, out.summary_l1, out.deep_analysis) == ("工具：用途", "支援 GPU，速度快", "## 重點\n- 授權：MIT")
 
 
-def test_prompt_is_v2_3():
+def test_prompt_is_v2_4():
     prompt = pipeline.analysis_system_prompt()
-    for part in ("## 重點", "## 我可以怎麼用", "## 限制", "summary_l1：2 到 3 句", "送出前逐項檢查", "title_l1：25 字以內", "英文單字或數字一組算 1 字"):
+    for part in ("## 最重要的 3 件事", "<details>", "比較表：", "流程圖：", "```mermaid", "原文未提及",
+                 "summary_l1：2 到 3 句", "送出前逐項檢查", "title_l1：25 字以內", "英文單字或數字一組算 1 字"):
         assert part in prompt
-    assert "\\n## 我可以怎麼用" in prompt  # the example's line breaks reach the model as JSON escapes
+    assert "\\n\\n## 最重要的 3 件事" in prompt  # the example's line breaks reach the model as JSON escapes
+
+
+def test_details_sections_get_the_blank_lines_marked_needs():
+    from app.schemas.intelligence import details_spacing
+    tight = "## 最重要的 3 件事\n- **一**：二\n<details><summary>更多重點 1 條：授權 MIT</summary>\n- **授權**：MIT\n</details>"
+    assert details_spacing(tight) == ("## 最重要的 3 件事\n- **一**：二\n\n<details>\n<summary>更多重點 1 條：授權 MIT</summary>"
+                                      "\n\n- **授權**：MIT\n\n</details>")
+    fenced = "<details>\n<summary>流程圖：2 步</summary>\n```mermaid\nflowchart LR\n  A[\"<details>\"] --> B\n```\n</details>"
+    assert "A[\"<details>\"] --> B\n```\n\n</details>" in details_spacing(fenced)
+    assert details_spacing("## 重點\n- 一") == "## 重點\n- 一"
