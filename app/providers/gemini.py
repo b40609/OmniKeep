@@ -134,7 +134,7 @@ class GeminiProvider(BaseLLMProvider):
                 response_mime_type="application/json"
             )
         )
-        return json.loads(self._answer_text(response))
+        return json.loads(self._answer_text(response), strict=False)
 
     def _answer_text(self, response) -> str:
         """The answer's text. An empty answer (a blocked prompt, or thinking that used up the
@@ -195,9 +195,9 @@ class GeminiProvider(BaseLLMProvider):
         )
         raw = self._answer_text(response)
         try:
-            return json.loads(raw)
+            return json.loads(raw, strict=False)
         except Exception:
             match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
             if match:
                 raw = match.group(1)
-            return json.loads(raw.strip())
+            return json.loads(raw.strip(), strict=False)

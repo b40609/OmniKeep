@@ -139,3 +139,9 @@ def test_a_title_with_a_step_count_is_a_fault():
     from app.schemas.intelligence import card_faults
     assert any("目錄資訊" in f for f in card_faults("加密交易復盤：AI 工具鏈與 13 步事件分析法", CLEAN))
     assert not any("目錄資訊" in f for f in card_faults("sparqlite：AI 自主 12 小時生出 SQLite 擴充", CLEAN))
+
+
+def test_a_raw_newline_inside_a_json_string_is_accepted():
+    import json
+    raw = '{"deep_analysis": "<details>\n<summary>更多重點 2 條</summary>\n\n- a\n- b\n\n</details>"}'
+    assert json.loads(raw, strict=False)["deep_analysis"].startswith("<details>\n")

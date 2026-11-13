@@ -184,7 +184,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     temperature=0.2,
                     response_format={"type": "json_object"}
                 )
-                return json.loads(self._answer_text(response))
+                return json.loads(self._answer_text(response), strict=False)
             except RateLimitError:
                 raise
             except ProviderUnavailableError:
@@ -215,7 +215,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
         if match:
             raw = match.group(1)
-        return json.loads(raw.strip())
+        return json.loads(raw.strip(), strict=False)
 
     def _answer_text(self, response: Any) -> str:
         """The answer's text for generate_json. An empty answer is a failure: it used to
