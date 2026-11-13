@@ -123,3 +123,19 @@ def test_taiwan_tidy_fixes_terms_numbers_and_spacing():
     assert taiwan_tidy("十分好用，一個工具") == "十分好用，一個工具"  # not counts
     assert taiwan_tidy("執行 `pip install x軟件` 或看 [說明](https://a.io/信息x)") == "執行 `pip install x軟件` 或看 [說明](https://a.io/信息x)"
     assert taiwan_tidy("<summary>更多重點2條</summary>") == "<summary>更多重點 2 條</summary>"
+
+
+def test_a_section_with_one_point_is_unfolded_into_a_line():
+    from app.schemas.intelligence import unfold_single_item_sections
+    one = "## 最重要的 3 件事\n- **一**：二\n\n<details>\n<summary>限制 1 條：沒有權限管理</summary>\n\n- **單人使用**：只描述單人情境。\n\n</details>"
+    assert unfold_single_item_sections(one) == "## 最重要的 3 件事\n- **一**：二\n\n**限制**：只描述單人情境。"
+    two = "<details>\n<summary>更多重點 2 條：甲、乙</summary>\n\n- **甲**：一。\n- **乙**：二。\n\n</details>"
+    assert unfold_single_item_sections(two) == two
+    flow = "<details>\n<summary>流程圖：4 步</summary>\n\n```mermaid\nflowchart TD\n  A[\"a\"] --> B[\"b\"]\n```\n\n</details>"
+    assert unfold_single_item_sections(flow) == flow
+
+
+def test_a_title_with_a_step_count_is_a_fault():
+    from app.schemas.intelligence import card_faults
+    assert any("目錄資訊" in f for f in card_faults("加密交易復盤：AI 工具鏈與 13 步事件分析法", CLEAN))
+    assert not any("目錄資訊" in f for f in card_faults("sparqlite：AI 自主 12 小時生出 SQLite 擴充", CLEAN))

@@ -75,6 +75,18 @@ def _space_details(text: str) -> str:
     return text
 
 
+_ONE_ITEM_SECTION = re.compile(
+    r"<details>\s*<summary>([^<\n]*?)(?:\s*\d+\s*條)?(?:[：:][^<\n]*)?</summary>\s*"
+    r"-\s*(?:\*\*[^*\n]+\*\*[：:]\s*)?([^\n]+?)\s*</details>")
+
+
+def unfold_single_item_sections(text: str) -> str:
+    """A <details> section holding one bullet becomes one plain line, 「**限制**：…」. The
+    owner's 2026-11-14 blind review marked opening a section to find a single point as odd.
+    Sections with a table or a flowchart never match (their body is not one bullet)."""
+    return _ONE_ITEM_SECTION.sub(lambda m: f"**{m.group(1).strip()}**：{m.group(2).strip()}", text or "")
+
+
 def details_spacing(text: str) -> str:
     """Blank lines around the <details>, <summary> and </details> of the deep analysis (prompt
     v2.4). Without them marked keeps the section's Markdown as raw text; the prompt asks for them
@@ -140,6 +152,9 @@ def card_faults(title: str, summary: str) -> List[str]:
                       "不要再出現標題裡的名稱，也不要用「某某是一個」的句型。")
     if display_width(title) > TITLE_MAX_WIDTH:
         faults.append(f"標題「{title}」太長，卡片放不下：刪掉修飾語，中文字加英文單字合計 25 字以內。")
+    count = re.search(r"\d+\s*(步|條|章|招|節|課|個方法|種方法)", title or "")
+    if count:
+        faults.append(f"標題「{title}」寫了「{count.group(0)}」這類目錄資訊：標題改寫讀者為什麼要在意，步驟數、條數留給摘要。")
     sentences = [s for s in re.split(r"[。！？]", summary or "") if s.strip()]
     if summary and (display_width(summary) > SUMMARY_MAX_WIDTH or len(sentences) > 3):
         faults.append("摘要太長：寫成 2 到 3 句、合計 120 字以內。")
@@ -222,7 +237,7 @@ class AnalysisOutputSchema(BaseModel):
     @field_validator("deep_analysis", mode="before")
     @classmethod
     def clean_deep_analysis(cls, v: Any) -> str:
-        return details_spacing(taiwan_tidy(full_width_punctuation(str(v or ""))))
+        return unfold_single_item_sections(details_spacing(taiwan_tidy(full_width_punctuation(str(v or "")))))
 
     @field_validator("category", mode="before")
     @classmethod
