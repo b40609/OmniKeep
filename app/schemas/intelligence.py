@@ -104,7 +104,7 @@ class AnalysisOutputSchema(BaseModel):
     category: str = Field(default="Inbox", description="所屬分類名稱")
     # Empty when the model gave none: app.pipeline then falls back to the page/video
     # title, the bookmarklet's hints or its own placeholder.
-    title_l1: str = Field(default="", description="白話標題：名稱：最吸引人的具體事實或用途（20字內）")
+    title_l1: str = Field(default="", description="白話標題：名稱：最吸引人的具體事實或用途（25 字內，英文單字算 1 字）")
     summary_l1: str = Field(default="", description="2 到 3 句、70 到 120 字，不重複標題")
     tech_tags: List[str] = Field(default_factory=list, description="技術標籤清單")
     deep_analysis: str = Field(default="", description="Markdown：## 重點、## 我可以怎麼用、## 限制，或 ## 原話、## 重點")
