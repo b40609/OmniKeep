@@ -114,3 +114,12 @@ async def test_a_rewrite_with_more_faults_keeps_the_first_answer():
     provider = _provider(_answer("本工具旨在簡化部署。支援 Docker。"), _answer(ECHO.replace("。", "，旨在省事。")))
     result = await generate_structured_intelligence(provider, "prompt", "system")
     assert result["summary_l1"] == "本工具旨在簡化部署。支援 Docker。"
+
+
+def test_taiwan_tidy_fixes_terms_numbers_and_spacing():
+    from app.schemas.intelligence import taiwan_tidy
+    assert taiwan_tidy("用AI工具鏈提煉出十三步決策鏈，涵蓋信息核驗") == "用 AI 工具鏈提煉出 13 步決策鏈，涵蓋資訊核驗"
+    assert taiwan_tidy("整理二十六章教學與一百二十個範例") == "整理 26 章教學與 120 個範例"
+    assert taiwan_tidy("十分好用，一個工具") == "十分好用，一個工具"  # not counts
+    assert taiwan_tidy("執行 `pip install x軟件` 或看 [說明](https://a.io/信息x)") == "執行 `pip install x軟件` 或看 [說明](https://a.io/信息x)"
+    assert taiwan_tidy("<summary>更多重點2條</summary>") == "<summary>更多重點 2 條</summary>"

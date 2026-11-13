@@ -29,6 +29,43 @@ def full_width_punctuation(text: str) -> str:
     return "".join(p if i % 2 else _full_width(p) for i, p in enumerate(parts))
 
 
+# Mainland terms that have one unambiguous Taiwan form. Kept short on purpose: words such as
+# 程序 or 質量 are also correct Taiwan usage in other senses and are left to the prompt.
+TAIWAN_TERMS = {"信息": "資訊", "軟件": "軟體", "默認": "預設", "視頻": "影片", "數據庫": "資料庫",
+                "服務器": "伺服器", "網絡": "網路", "鏈接": "連結", "文檔": "文件", "硬件": "硬體"}
+_CN_DIGIT = {"一": 1, "二": 2, "兩": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_CN_NUMBER = re.compile(r"([一二兩三四五六七八九]?十[一二三四五六七八九]?|[一二兩三四五六七八九]百(?:[一二三四五六七八九]?十)?[一二三四五六七八九]?)"
+                        r"(?=[步條章個種篇項倍年次款頁天人家])")
+_CJK_CHAR = r"[㐀-鿿]"
+
+
+def _cn_to_int(s: str) -> int:
+    total = 0
+    if "百" in s:
+        head, s = s.split("百", 1)
+        total += _CN_DIGIT[head] * 100
+    if "十" in s:
+        head, s = s.split("十", 1)
+        total += (_CN_DIGIT[head] if head else 1) * 10
+    return total + (_CN_DIGIT[s] if s else 0)
+
+
+def _tidy(text: str) -> str:
+    for cn, tw in TAIWAN_TERMS.items():
+        text = text.replace(cn, tw)
+    text = _CN_NUMBER.sub(lambda m: f"{_cn_to_int(m.group(1))} ", text)
+    text = re.sub(rf"({_CJK_CHAR})([A-Za-z0-9])", r"\1 \2", text)
+    return re.sub(rf"([A-Za-z0-9%])({_CJK_CHAR})", r"\1 \2", text)
+
+
+def taiwan_tidy(text: str) -> str:
+    """Taiwan terms, Arabic numerals for counts from 10 up (十三步 → 13 步) and a space between
+    Chinese and English or digits, as the rest of OmniKeep writes them. The prompt asks for all
+    three; the 2026-11-14 blind review still caught 信息 and 十三步. Code and HTML tags stay."""
+    parts = re.split(r"(```.*?```|`[^`\n]*`|<[^>\n]+>|\]\([^)\n]*\)|https?://\S+)", text or "", flags=re.S)
+    return "".join(p if i % 2 else _tidy(p) for i, p in enumerate(parts))
+
+
 _DETAILS_TAG = re.compile(r"[ \t]*(<details>|</details>|<summary>.*?</summary>)[ \t]*")
 
 
@@ -175,17 +212,17 @@ class AnalysisOutputSchema(BaseModel):
         if not clean or clean.lower() in ("null", "none", "undefined", "untitled"):
             return ""
         # Truncate if model exceeds limit
-        return single_title_colon(full_width_punctuation(clean[:100]))
+        return single_title_colon(taiwan_tidy(full_width_punctuation(clean[:100])))
 
     @field_validator("summary_l1", mode="before")
     @classmethod
     def clean_summary(cls, v: Any) -> str:
-        return full_width_punctuation(str(v or "").strip())
+        return taiwan_tidy(full_width_punctuation(str(v or "").strip()))
 
     @field_validator("deep_analysis", mode="before")
     @classmethod
     def clean_deep_analysis(cls, v: Any) -> str:
-        return details_spacing(full_width_punctuation(str(v or "")))
+        return details_spacing(taiwan_tidy(full_width_punctuation(str(v or ""))))
 
     @field_validator("category", mode="before")
     @classmethod
