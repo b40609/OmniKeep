@@ -127,7 +127,7 @@ class AnalysisOutputSchema(BaseModel):
     title_l1: str = Field(default="", description="白話標題：名稱：最吸引人的具體事實或用途（25 字內，英文單字算 1 字）")
     summary_l1: str = Field(default="", description="2 到 3 句、70 到 120 字，不重複標題")
     tech_tags: List[str] = Field(default_factory=list, description="技術標籤清單")
-    deep_analysis: str = Field(default="", description="Markdown：> 引言、## 最重要的 3 件事，其餘放 <details> 收合區")
+    deep_analysis: str = Field(default="", description="Markdown：> 引言、## 最重要的 3 件事、## 我可以怎麼用，其餘放 <details> 收合區")
     is_composite: bool = Field(default=False, description="是否為多專案/多工具集合盤點")
     sub_entities: List[SubEntitySchema] = Field(default_factory=list, description="提及的子實體或開源工具清單")
 

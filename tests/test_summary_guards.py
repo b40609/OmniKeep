@@ -67,7 +67,7 @@ def test_validated_analysis_fixes_punctuation_in_every_text_field():
 
 def test_prompt_is_v2_4():
     prompt = pipeline.analysis_system_prompt()
-    for part in ("## 最重要的 3 件事", "<details>", "比較表：", "流程圖：", "```mermaid", "原文未提及",
+    for part in ("## 最重要的 3 件事", "<details>", "比較表：", "流程圖：", "```mermaid", "原文未提及", "## 我可以怎麼用",
                  "summary_l1：2 到 3 句", "送出前逐項檢查", "title_l1：25 字以內", "英文單字或數字一組算 1 字"):
         assert part in prompt
     assert "\\n\\n## 最重要的 3 件事" in prompt  # the example's line breaks reach the model as JSON escapes
