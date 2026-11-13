@@ -81,3 +81,36 @@ def test_details_sections_get_the_blank_lines_marked_needs():
     fenced = "<details>\n<summary>流程圖：2 步</summary>\n```mermaid\nflowchart LR\n  A[\"<details>\"] --> B\n```\n</details>"
     assert "A[\"<details>\"] --> B\n```\n\n</details>" in details_spacing(fenced)
     assert details_spacing("## 重點\n- 一") == "## 重點\n- 一"
+
+
+# ── Prompt v2.5: card checks done by the program, not left to the model ──────────
+
+def test_title_keeps_only_its_first_colon():
+    from app.schemas.intelligence import single_title_colon
+    assert single_title_colon("sparqlite：AI 寫出 SQLite 擴充：12 小時") == "sparqlite：AI 寫出 SQLite 擴充，12 小時"
+    assert single_title_colon("Gemini 3 的限制條件要放在提示詞最後") == "Gemini 3 的限制條件要放在提示詞最後"
+    assert sanitize_and_validate_analysis({"title_l1": "工具: 用途:很快", "summary_l1": "一。二。"}).title_l1 == "工具：用途，很快"
+
+
+def test_card_faults_measure_display_width_and_empty_words():
+    from app.schemas.intelligence import card_faults, display_width
+    assert display_width("SQLite 擴充") == 11
+    assert card_faults(TITLE, CLEAN) == []
+    long_title = "Observability Kubernetes Prometheus Grafana：一次看懂雲端監控全套工具鏈"
+    assert any("標題" in f and "太長" in f for f in card_faults(long_title, CLEAN))
+    assert any("摘要太長" in f for f in card_faults(TITLE, "很長的一句話。" * 4))
+    assert any("旨在" in f for f in card_faults(TITLE, "本工具旨在簡化部署。支援 Docker。"))
+
+
+async def test_a_too_long_title_is_rewritten_once_and_the_shorter_kept():
+    long_title = "Observability Kubernetes Prometheus Grafana：一次看懂雲端監控全套工具鏈"
+    provider = _provider(_answer(CLEAN, title=long_title), _answer(CLEAN))
+    result = await generate_structured_intelligence(provider, "prompt", "system")
+    assert result["title_l1"] == TITLE
+    assert "太長" in provider.generate_json.await_args_list[1].args[0]
+
+
+async def test_a_rewrite_with_more_faults_keeps_the_first_answer():
+    provider = _provider(_answer("本工具旨在簡化部署。支援 Docker。"), _answer(ECHO.replace("。", "，旨在省事。")))
+    result = await generate_structured_intelligence(provider, "prompt", "system")
+    assert result["summary_l1"] == "本工具旨在簡化部署。支援 Docker。"

@@ -74,10 +74,47 @@ def summary_repeats_title(title: str, summary: str) -> bool:
     return title_overlap(title, summary) >= 0.4
 
 
-def repeat_feedback(title: str, summary: str) -> str:
-    return (f"\n\n=== 上一版的問題 ===\n摘要第一句重複了標題。標題：「{title}」；摘要：「{summary}」。\n"
-            "請重寫整個 JSON：摘要直接講它交付什麼、關鍵數字與適用對象，不要再出現標題裡的名稱，"
-            "也不要用「某某是一個」的句型。")
+# Card limits as display width: a Chinese or full-width character is 2, a half-width letter or
+# digit 1. Models cannot count their own characters (arXiv 2411.17679, 2508.13805), and a long
+# English word takes far more room on the card than "1 word" suggests. 50 is the 25 Chinese
+# characters the prompt allows; on the 438 items of 2026-11-12 it caught 6 titles.
+TITLE_MAX_WIDTH = 50
+SUMMARY_MAX_WIDTH = 260
+EMPTY_WORDS = ("旨在", "致力於", "本文", "是一款", "往往", "該專案", "聚焦於", "作者分享")
+
+
+def display_width(text: str) -> int:
+    import unicodedata
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text or "")
+
+
+def single_title_colon(title: str) -> str:
+    """The card splits the title at its first 「：」 into name and description; any later colon
+    would show inside the description, so it becomes a comma."""
+    head, sep, rest = (title or "").partition("：")
+    return head + sep + rest.replace("：", "，") if sep else title or ""
+
+
+def card_faults(title: str, summary: str) -> List[str]:
+    """What is wrong with the title and summary, each as a sentence the model can act on."""
+    faults = []
+    if summary_repeats_title(title, summary):
+        faults.append(f"摘要第一句重複了標題。標題：「{title}」；摘要：「{summary}」。摘要直接講它交付什麼、關鍵數字與適用對象，"
+                      "不要再出現標題裡的名稱，也不要用「某某是一個」的句型。")
+    if display_width(title) > TITLE_MAX_WIDTH:
+        faults.append(f"標題「{title}」太長，卡片放不下：刪掉修飾語，中文字加英文單字合計 25 字以內。")
+    sentences = [s for s in re.split(r"[。！？]", summary or "") if s.strip()]
+    if summary and (display_width(summary) > SUMMARY_MAX_WIDTH or len(sentences) > 3):
+        faults.append("摘要太長：寫成 2 到 3 句、合計 120 字以內。")
+    found = [w for w in EMPTY_WORDS if w in f"{title}\n{summary}"]
+    if found:
+        faults.append(f"標題或摘要用了空話「{'」「'.join(found)}」：刪掉，直接寫具體的事。")
+    return faults
+
+
+def faults_feedback(faults: List[str]) -> str:
+    return ("\n\n=== 上一版的問題 ===\n" + "\n".join(f"- {f}" for f in faults) +
+            "\n請重寫整個 JSON，修正上面的問題，其他規定照舊。")
 
 
 class SubEntitySchema(BaseModel):
@@ -138,7 +175,7 @@ class AnalysisOutputSchema(BaseModel):
         if not clean or clean.lower() in ("null", "none", "undefined", "untitled"):
             return ""
         # Truncate if model exceeds limit
-        return full_width_punctuation(clean[:100])
+        return single_title_colon(full_width_punctuation(clean[:100]))
 
     @field_validator("summary_l1", mode="before")
     @classmethod
@@ -335,22 +372,29 @@ def usable_analysis(raw_data: Any) -> Dict[str, Any]:
     return validated.model_dump()
 
 
-async def rewrite_if_summary_repeats_title(provider, prompt: str, system_prompt: str,
-                                           result: Dict[str, Any]) -> Dict[str, Any]:
-    """Asks once more, with the fault named, when the summary restates the title.
+async def rewrite_if_card_faulty(provider, prompt: str, system_prompt: str,
+                                 result: Dict[str, Any]) -> Dict[str, Any]:
+    """Asks once more, with the faults named, when the title or summary breaks a card rule
+    (card_faults: restates the title, too long, empty words). One extra call at most.
 
     The first answer is a usable analysis already, so the second call can only improve on it:
-    if it fails, does not validate or still repeats more, the first answer is kept.
+    if it fails, does not validate or has more faults, the first answer is kept. With as many
+    faults, the one whose summary repeats its title less wins (the rule since prompt v2.3).
     """
     title, summary = result.get("title_l1") or "", result.get("summary_l1") or ""
-    if not summary_repeats_title(title, summary):
+    faults = card_faults(title, summary)
+    if not faults:
         return result
     try:
-        second = usable_analysis(await provider.generate_json(prompt + repeat_feedback(title, summary), system_prompt))
+        second = usable_analysis(await provider.generate_json(prompt + faults_feedback(faults), system_prompt))
     except Exception as exc:
-        logger.info("[Guardrails] Rewrite of a summary that repeats its title failed (%s); keeping the first.", exc)
+        logger.info("[Guardrails] Rewrite of a faulty title or summary failed (%s); keeping the first.", exc)
         return result
-    if title_overlap(second["title_l1"] or title, second["summary_l1"]) <= title_overlap(title, summary):
+    title2 = second["title_l1"] or title
+    after = card_faults(title2, second["summary_l1"])
+    if len(after) < len(faults):
+        return second
+    if len(after) == len(faults) and title_overlap(title2, second["summary_l1"]) <= title_overlap(title, summary):
         return second
     return result
 
@@ -382,7 +426,7 @@ async def generate_structured_intelligence(
     for attempt in range(attempts):
         try:
             raw_json = await provider.generate_json(current_prompt, system_prompt)
-            return await rewrite_if_summary_repeats_title(provider, prompt, system_prompt, usable_analysis(raw_json))
+            return await rewrite_if_card_faulty(provider, prompt, system_prompt, usable_analysis(raw_json))
         except json.JSONDecodeError as e:  # the model answered with text that is not JSON
             problem = f"輸出不是合法的 JSON（{e.msg}）"
         except UnusableAnalysis as e:
