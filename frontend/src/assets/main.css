@@ -1017,3 +1017,36 @@ input, textarea { caret-color: var(--primary); }
 @keyframes fc-arrive { 0% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--fc-beam) 45%, transparent); } 100% { opacity: 0; box-shadow: 0 0 0 12px color-mix(in srgb, var(--fc-beam) 0%, transparent); } }
 .prose-reader .fc-beam { transition: opacity .2s linear; }
 .prose-reader .fc-edge { transition: stroke .45s cubic-bezier(.2, .7, .2, 1), opacity .3s ease; }
+/* 減量版：卡片只留圖示與標題，細節移到圖下方的說明列，跟著光束逐步講 */
+.prose-reader .fc-card { justify-content: center; padding: 10px 12px; }
+.prose-reader .fc-head { gap: 9px; }
+.prose-reader .fc-ico { width: 26px; height: 26px; }
+.prose-reader .fc-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* 形狀分辨類型：開始與完成是膠囊、檢查有左側色條、人工是虛線框、執行是一般卡片 */
+.prose-reader .fc-c-start, .prose-reader .fc-c-done { border-radius: 999px; padding-left: 8px; }
+.prose-reader .fc-c-start .fc-ico, .prose-reader .fc-c-done .fc-ico { border-radius: 999px; }
+.prose-reader .fc-c-check { outline: 1px solid color-mix(in srgb, var(--warning) 35%, transparent); outline-offset: -1px; }
+.prose-reader .fc-c-human { background: transparent; box-shadow: inset 0 0 0 1px var(--border); outline: 1px dashed var(--border); outline-offset: -1px; }
+.prose-reader .fc-c-work .fc-ico { background: transparent; }
+.prose-reader .fc-no { font-size: 11px; }
+/* 退回線更淡，主線清楚 */
+.prose-reader .fc-back { stroke: color-mix(in srgb, var(--border) 75%, transparent); stroke-dasharray: 3 5; }
+/* 條件標籤平常不顯示，光束經過或點選時才淡入 */
+.prose-reader .fc-elabel { opacity: 0; padding: 2px 7px; font-size: 11px; line-height: 15px; box-shadow: none; background: var(--surface-1); color: var(--foreground);
+  transition: opacity .35s ease; pointer-events: none; }
+.prose-reader .fc-elabel.fc-show, .prose-reader .fc-elabel.fc-on { opacity: 1; }
+.prose-reader .fc-dim .fc-elabel:not(.fc-on) { opacity: 0; }
+/* 說明列 */
+.prose-reader .fc-cap { min-height: 84px; margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: var(--surface-1); }
+.prose-reader .fc-cap-in { animation: fc-cap-in .4s cubic-bezier(.2, .7, .2, 1); }
+@keyframes fc-cap-in { from { opacity: .2; transform: translateY(3px); } }
+.prose-reader .fc-cap-head { display: flex; align-items: center; gap: 8px; color: var(--foreground); font-size: 14px; line-height: 20px; }
+.prose-reader .fc-cap-dot { flex: none; width: 8px; height: 8px; border-radius: 999px; background: var(--c); }
+.prose-reader .fc-cap-no { color: var(--subtle-foreground); font-size: 12px; font-variant-numeric: tabular-nums; }
+.prose-reader .fc-cap-tip { margin-left: auto; color: var(--subtle-foreground); font-size: 12px; }
+.prose-reader .fc-cap-desc { margin: 4px 0 0; color: var(--muted-foreground); font-size: 13px; line-height: 20px; }
+.prose-reader .fc-cap-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 8px; color: var(--subtle-foreground); font-size: 12px; line-height: 18px; }
+.prose-reader .fc-cap-gate { display: inline-flex; align-items: center; gap: 5px; }
+.prose-reader .fc-cap-gate svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.prose-reader .fc-cap-next b { color: var(--muted-foreground); font-weight: 600; }
+.prose-reader .fc-cap-back::before { content: "↩ "; }

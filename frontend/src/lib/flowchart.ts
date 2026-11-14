@@ -130,6 +130,8 @@ type Box = { x: number; y: number; w: number; h: number }
 
 class FlowView {
   private stage: HTMLElement
+  private cap: HTMLElement
+  private capId: string | null | undefined = undefined
   private cards: Record<string, HTMLElement> = {}
   private edges: EdgeView[] = []
   private sel: string | null = null
@@ -152,13 +154,15 @@ class FlowView {
     if (flow.gist) root.append(el('p', 'fc-gist', flow.gist))
     this.stage = el('div', 'fc-stage')
     root.append(this.stage)
-    root.append(el('p', 'fc-hint', '點步驟看完整說明，點空白處繼續播放。'))
+    this.cap = el('div', 'fc-cap')
+    root.append(this.cap)
     this.stage.addEventListener('click', () => { if (this.sel) this.select(null) })
     const ro = new ResizeObserver(() => { const w = this.stage.clientWidth; if (w && w !== this.width) { this.width = w; this.layout() } })
     ro.observe(this.stage)
     const io = new IntersectionObserver(([en]) => { this.visible = en.isIntersecting }, { threshold: 0.3 })
     io.observe(this.stage)
     this.observers.push(ro, io)
+    this.caption(flow.order[0])
     this.raf = requestAnimationFrame(this.frame)
   }
 
@@ -166,7 +170,7 @@ class FlowView {
 
   private cardFor(id: string, n: number): HTMLElement {
     const s = this.flow.steps[id]
-    const c = el('div', 'fc-card')
+    const c = el('div', `fc-card fc-c-${s.kind}`)
     c.setAttribute('role', 'button')
     c.tabIndex = 0
     const head = el('div', 'fc-head')
@@ -174,14 +178,38 @@ class FlowView {
     ico.append(icon(ICONS[s.kind]))
     head.append(ico, el('span', 'fc-title', s.label), el('span', 'fc-no', `${this.flow.order.indexOf(id) + 1}/${n}`))
     c.append(head)
-    if (s.desc) c.append(el('div', 'fc-desc', s.desc))
-    if (s.more) c.append(el('div', 'fc-more', s.more))
-    if (s.tags.length) { const f = el('div', 'fc-tags'); s.tags.forEach((t) => f.append(el('span', 'fc-tag', t))); c.append(f) }
-    if (s.gate) { const g = el('div', 'fc-gate'); g.append(icon(GATE_ICON), document.createTextNode(s.gate)); c.append(g) }
     const toggle = (ev: Event) => { ev.stopPropagation(); this.select(this.sel === id ? null : id) }
     c.addEventListener('click', toggle)
     c.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(ev) } })
     return c
+  }
+
+  /** The caption under the chart tells the step the beam is on (or the one picked): what it
+   *  does, its numbers, where it stops, and where it goes next and when. */
+  private caption(id: string | null) {
+    if (id === this.capId) return
+    this.capId = id
+    const cap = this.cap
+    cap.classList.remove('fc-cap-in'); void cap.offsetWidth; cap.classList.add('fc-cap-in')
+    if (!id) { cap.replaceChildren(); return }
+    const s = this.flow.steps[id], n = this.flow.order.length, picked = this.sel === id
+    const head = el('div', 'fc-cap-head')
+    head.append(el('span', `fc-cap-dot fc-k-${s.kind}`), el('span', 'fc-cap-no', `${this.flow.order.indexOf(id) + 1}/${n}`), el('b', '', s.label))
+    if (!picked) head.append(el('span', 'fc-cap-tip', '點步驟可停下來細看'))
+    const body: HTMLElement[] = [head]
+    const text = picked && s.more ? s.more : s.desc
+    if (text) body.push(el('p', 'fc-cap-desc', text))
+    const meta = el('div', 'fc-cap-meta')
+    s.tags.forEach((t) => meta.append(el('span', 'fc-tag', t)))
+    if (s.gate) { const g = el('span', 'fc-cap-gate'); g.append(icon(GATE_ICON), document.createTextNode(s.gate)); meta.append(g) }
+    for (const e of this.flow.edges) {
+      if (e.s !== id || !e.label) continue
+      const g = el('span', `fc-cap-next${e.back ? ' fc-cap-back' : ''}`)
+      g.append(document.createTextNode(`${e.label} → `), el('b', '', this.flow.steps[e.t].label))
+      meta.append(g)
+    }
+    if (meta.childNodes.length) body.push(meta)
+    cap.replaceChildren(...body)
   }
 
   /* Layout: rows read left to right and wrap, like text; a section starts a new row. On a phone a
@@ -194,12 +222,10 @@ class FlowView {
     this.cards = {}
     this.edges = []
     const W = stage.clientWidth, narrow = W < 480, P = narrow ? 14 : 20, order = flow.order, N = order.length
-    const ix = (id: string) => order.indexOf(id)
 
     // rows
-    // the gap between cards in a row is wide enough for its longest label on at most two lines
-    const hLabel = Math.max(0, ...flow.edges.filter((e) => !e.back && ix(e.t) === ix(e.s) + 1).map((e) => e.label.length))
-    const colGap = hLabel ? Math.min(124, Math.max(64, Math.ceil(hLabel / 2) * 11 + 24)) : 44
+    // conditions between neighbours in a row are told by the caption, so the gap stays narrow
+    const colGap = 40
     const backCount = flow.edges.filter((e) => e.back).length
     const rg = backCount ? 18 + backCount * 8 : 0
     let k = 1
@@ -241,13 +267,13 @@ class FlowView {
     // cards, equal height within a row
     for (const id of order) { const c = this.cardFor(id, N); c.style.width = `${cw}px`; stage.append(c); this.cards[id] = c }
     const rowH = rows.map((r) => Math.max(...r.ids.map((id) => this.cards[id].offsetHeight)))
-    const laneH = (e: FlowEdge) => (e.label ? 30 : 14)
+    const laneH = (e: FlowEdge) => (e.label ? 26 : 16)
     const LABEL = 26
     const labelIn = (g: number) => (g < R && rows[g].label ? LABEL : 0)
     const gapH = lanes.map((ls, g) => {
       const inner = ls.reduce((a, e) => a + laneH(e), 0)
       const min = g === 0 || g === R ? 0 : 40
-      return labelIn(g) + Math.max(min, ls.length ? inner + 20 : 0)
+      return labelIn(g) + Math.max(min, ls.length ? inner + 36 : 0)
     })
     const gapTop: number[] = [], rowY: number[] = []
     let y = P
@@ -279,8 +305,11 @@ class FlowView {
     const LY = (g: number, e: FlowEdge) => laneY.get(key(g, e))!
 
     // ports: each edge end gets its own spot on the card's top or bottom
+    // a card's top and the bottom of the card above it face the same gap, so their ends share one
+    // list and get distinct spots; an edge straight down that column keeps one spot and stays straight
     const ports = new Map<string, FlowEdge[]>()
-    const addPort = (id: string, side: 'top' | 'bot', e: FlowEdge) => { const k2 = `${id}:${side}`; if (!ports.has(k2)) ports.set(k2, []); ports.get(k2)!.push(e) }
+    const pkey = (id: string, side: 'top' | 'bot') => `${side === 'top' ? rowOf[id] : rowOf[id] + 1}:${colOf[id]}`
+    const addPort = (id: string, side: 'top' | 'bot', e: FlowEdge) => { const k2 = pkey(id, side); if (!ports.has(k2)) ports.set(k2, []); const l = ports.get(k2)!; if (!l.includes(e)) l.push(e) }
     for (const e of flow.edges) {
       const kd = kind(e)
       if (kd === 'h') continue
@@ -290,14 +319,15 @@ class FlowView {
       else { addPort(e.s, 'bot', e); addPort(e.t, 'bot', e) }
     }
     const portX = (id: string, side: 'top' | 'bot', e: FlowEdge) => {
-      const list = ports.get(`${id}:${side}`)!
+      const k2 = pkey(id, side), list = ports.get(k2)!
       // order the ends along the card by where the other end lies; when that is the same column,
       // branches back to the row above go left, the main line sits in the middle, and lines that
       // leave by the right-hand gutter go right, so the lines in the gap do not cross
       const weight = (x: FlowEdge) => { const kd = kind(x); return kd === 'up' || kd === 'under' ? 1 : kd === 'back1' ? -1 : kd === 'far' ? -2 : 0 }
-      const other = (x: FlowEdge) => { const o = x.s === id ? x.t : x.s; return pos[o].x + weight(x) * 0.25 * cw }
+      const near = (o: string) => pkey(o, 'top') === k2 || pkey(o, 'bot') === k2
+      const other = (x: FlowEdge) => { const o = near(x.s) && !near(x.t) ? x.t : near(x.t) && !near(x.s) ? x.s : x.t; return pos[o].x + weight(x) * 0.25 * cw }
       const sorted = [...list].sort((p1, p2) => other(p1) - other(p2))
-      const n = sorted.length, step = Math.min(30, cw / (n + 1))
+      const n = sorted.length, step = Math.min(40, cw / (n + 1))
       return pos[id].x + cw / 2 + (sorted.indexOf(e) - (n - 1) / 2) * step
     }
 
@@ -341,14 +371,17 @@ class FlowView {
         pts = [[sx, a.y + a.h], [sx, l1], [gx, l1], [gx, l2], [tx, l2], [tx, b.y + b.h + 2]]
         lab = Math.abs(gx - tx) > 140 ? [(gx + tx) / 2, l2, 'center'] : [tx, l2, 'right']
       }
-      const d = rounded(pts)
-      const p = svgEl('path', { class: `fc-edge${e.back ? ' fc-back' : ''}`, d }, svg)
+      // the line stops at the arrowhead's base, so it never pokes past the tip
       const [ex, ey] = pts[pts.length - 1], [px, py] = pts[pts.length - 2]
-      const ah = svgEl('path', { class: 'fc-ah', d: 'M0 0 L-7 -4 L-7 4 Z', transform: `translate(${ex},${ey}) rotate(${Math.atan2(ey - py, ex - px) * 180 / Math.PI})` }, svg)
+      const ang = Math.atan2(ey - py, ex - px), cut = Math.min(6, Math.hypot(ex - px, ey - py) / 2)
+      const d = rounded([...pts.slice(0, -1), [ex - Math.cos(ang) * cut, ey - Math.sin(ang) * cut]])
+      const p = svgEl('path', { class: `fc-edge${e.back ? ' fc-back' : ''}`, d }, svg)
+      const ah = svgEl('path', { class: 'fc-ah', d: 'M0 0 L-8 -4.5 L-8 4.5 Z', transform: `translate(${ex},${ey}) rotate(${ang * 180 / Math.PI})` }, svg)
       let lb: HTMLElement | null = null
-      if (e.label) {
-        lb = el('div', `fc-elabel${kd === 'h' ? ' fc-elabel-h' : ''}`, e.label)
-        if (kd === 'h') lb.style.maxWidth = `${colGap - 10}px`
+      // a condition shows only while the beam runs its edge or its step is picked; the ones between
+      // neighbours in a row are told by the caption instead
+      if (e.label && kd !== 'h') {
+        lb = el('div', 'fc-elabel', e.label)
         lb.style.left = `${lab[0]}px`; lb.style.top = `${lab[1]}px`
         lb.style.transform = lab[2] === 'center' ? 'translate(-50%,-50%)' : lab[2] === 'above' ? 'translate(-50%,calc(-100% - 6px))' : 'translate(8px,-50%)'
         stage.append(lb)
@@ -392,6 +425,7 @@ class FlowView {
     b.marks.forEach((m, i) => {
       const v = this.edges.find((x) => x.e === m.e)!
       v.p.classList.toggle('fc-lit', h >= m.from - 10 && h <= m.to + 50)
+      v.lb?.classList.toggle('fc-show', h >= m.from - 30 && h <= m.to + 160)
       v.ah.classList.toggle('fc-lit', h >= m.to - 6 && h <= m.to + 70)
       const next = b.marks[i + 1]
       if (h >= m.to - 4 && (next ? h <= next.from + 20 : h <= m.to + 240)) lit = m.e.t
@@ -401,6 +435,7 @@ class FlowView {
       for (const [id, c] of Object.entries(this.cards)) c.classList.toggle('fc-live', id === lit)
       if (lit) { const c = this.cards[lit]; c.classList.remove('fc-arrive'); void c.offsetWidth; c.classList.add('fc-arrive') }
       this.litId = lit
+      if (!this.sel && lit) this.caption(lit)
     }
   }
 
@@ -431,11 +466,13 @@ class FlowView {
     Object.values(this.cards).forEach((c) => c.classList.remove('fc-sel', 'fc-on'))
     this.edges.forEach((v) => { v.p.classList.remove('fc-on'); v.ah.classList.remove('fc-on'); v.lb?.classList.remove('fc-on') })
     this.sel = id
-    if (!id) { this.paused = false; this.head = -40; this.rest = 0; return }
+    if (!id) { this.paused = false; this.head = -40; this.rest = 0; this.capId = undefined; this.caption(this.litId ?? this.flow.order[0]); return }
     this.paused = true
     this.setHead(-400)
     stage.classList.add('fc-dim')
     this.cards[id].classList.add('fc-sel', 'fc-on')
+    this.capId = undefined
+    this.caption(id)
     for (const v of this.edges) {
       if (v.e.s !== id && v.e.t !== id) continue
       v.p.classList.add('fc-on'); v.ah.classList.add('fc-on'); v.lb?.classList.add('fc-on')
