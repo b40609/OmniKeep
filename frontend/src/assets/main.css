@@ -952,3 +952,9 @@ input, textarea { caret-color: var(--primary); }
 .animate-shimmer {
   animation: shimmer 1.8s infinite;
 }
+
+/* 流程圖暫停顯示（2026-11-14）：外觀重新設計前，收合區裡有流程圖的整段不顯示。 */
+.prose-reader details:has(.mermaid-src),
+.prose-reader details:has(.mermaid-block) {
+  display: none;
+}
