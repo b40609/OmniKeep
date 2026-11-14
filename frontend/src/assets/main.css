@@ -807,11 +807,67 @@ input, textarea { caret-color: var(--primary); }
 .prose-reader .mermaid-block:not([data-done]) {
   min-height: 4em;
 }
+.prose-reader .mermaid-block.mermaid-ok {
+  background: var(--surface-1);
+  border-radius: var(--radius-lg);
+  padding: 24px 16px;
+}
 .prose-reader .mermaid-block svg {
   display: block;
   max-width: none;
   height: auto;
   margin: 0 auto;
+}
+/* mermaid writes its own colours into an id-scoped <style>; these rules (hence !important) take
+   them from the theme tokens instead, so the chart matches the page in every theme and follows a
+   theme switch without being drawn again. */
+.prose-reader .mermaid-block svg .node rect,
+.prose-reader .mermaid-block svg .node polygon,
+.prose-reader .mermaid-block svg .node circle,
+.prose-reader .mermaid-block svg .node path,
+.prose-reader .mermaid-block svg .actor {
+  fill: var(--surface-2) !important;
+  stroke: var(--hairline) !important;
+  stroke-width: 1px !important;
+}
+.prose-reader .mermaid-block svg .node rect {
+  rx: 8px;
+  ry: 8px;
+}
+.prose-reader .mermaid-block svg .nodeLabel,
+.prose-reader .mermaid-block svg .node text,
+.prose-reader .mermaid-block svg .label text,
+.prose-reader .mermaid-block svg text.actor,
+.prose-reader .mermaid-block svg .actor-box text,
+.prose-reader .mermaid-block svg .messageText {
+  fill: var(--foreground) !important;
+  font-size: 14px !important;
+  font-weight: 400;
+}
+.prose-reader .mermaid-block svg .flowchart-link,
+.prose-reader .mermaid-block svg .messageLine0,
+.prose-reader .mermaid-block svg .messageLine1,
+.prose-reader .mermaid-block svg .actor-line {
+  stroke: var(--subtle-foreground) !important;
+  stroke-width: 1.25px !important;
+}
+.prose-reader .mermaid-block svg marker path,
+.prose-reader .mermaid-block svg .arrowheadPath,
+.prose-reader .mermaid-block svg .arrowMarkerPath {
+  fill: var(--subtle-foreground) !important;
+  stroke: var(--subtle-foreground) !important;
+}
+.prose-reader .mermaid-block svg .edgeLabel,
+.prose-reader .mermaid-block svg .edgeLabel rect,
+.prose-reader .mermaid-block svg .labelBkg {
+  fill: var(--surface-1) !important;
+  background-color: var(--surface-1) !important;
+  opacity: 1 !important;
+}
+.prose-reader .mermaid-block svg .edgeLabel text,
+.prose-reader .mermaid-block svg .edgeLabel tspan {
+  fill: var(--muted-foreground) !important;
+  font-size: 12px !important;
 }
 .prose-reader .mermaid-fallback {
   margin: 0;

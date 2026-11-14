@@ -31,7 +31,9 @@ async function load(): Promise<Mermaid> {
       // mermaid 11 reads the top-level key; the flowchart one is the older spelling.
       htmlLabels: false,
       // Natural size: a long chart scrolls sideways (.mermaid-block) instead of shrinking its text.
-      flowchart: { htmlLabels: false, useMaxWidth: false },
+      // Colours come from the theme tokens in main.css (.mermaid-block); these only set geometry.
+      themeVariables: { fontSize: '14px' },
+      flowchart: { htmlLabels: false, useMaxWidth: false, curve: 'basis', nodeSpacing: 32, rankSpacing: 36, padding: 12 },
       sequence: { useMaxWidth: false },
     })
     initialisedDark = dark
