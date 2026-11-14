@@ -1010,3 +1010,10 @@ input, textarea { caret-color: var(--primary); }
 .prose-reader .fc-tag { padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--foreground) 7%, transparent); color: var(--muted-foreground); font-size: 12px; line-height: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .prose-reader .fc-gate { display: flex; align-items: center; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--border); color: var(--subtle-foreground); font-size: 12px; line-height: 16px; }
 .prose-reader .fc-gate svg { flex: none; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.prose-reader .fc-elabel-h { white-space: normal; text-align: center; border-radius: 8px; padding: 3px 6px; font-size: 11px; line-height: 14px; width: max-content; }
+.prose-reader .fc-card { transition-timing-function: cubic-bezier(.2, .7, .2, 1); transition-duration: .45s; }
+.prose-reader .fc-card::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; box-shadow: 0 0 0 0 color-mix(in srgb, var(--fc-beam) 45%, transparent); }
+.prose-reader .fc-card.fc-arrive::after { animation: fc-arrive .9s cubic-bezier(.2, .7, .2, 1); }
+@keyframes fc-arrive { 0% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--fc-beam) 45%, transparent); } 100% { opacity: 0; box-shadow: 0 0 0 12px color-mix(in srgb, var(--fc-beam) 0%, transparent); } }
+.prose-reader .fc-beam { transition: opacity .2s linear; }
+.prose-reader .fc-edge { transition: stroke .45s cubic-bezier(.2, .7, .2, 1), opacity .3s ease; }

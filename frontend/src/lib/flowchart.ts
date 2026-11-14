@@ -133,8 +133,9 @@ class FlowView {
   private cards: Record<string, HTMLElement> = {}
   private edges: EdgeView[] = []
   private sel: string | null = null
-  private beam: { total: number; paths: SVGPathElement[]; lens: number[]; marks: { e: FlowEdge; from: number; to: number }[] } | null = null
+  private beam: { total: number; g: SVGGElement; paths: SVGPathElement[]; lens: number[]; marks: { e: FlowEdge; from: number; to: number }[] } | null = null
   private head = 0
+  private litId: string | null = null
   private rest = 0
   private paused = false
   private visible = false
@@ -183,120 +184,179 @@ class FlowView {
     return c
   }
 
+  /* Layout: rows read left to right and wrap, like text; a section starts a new row. On a phone a
+     row holds one card, so the same rules give a single column. Every edge that is not a plain
+     step to the right runs in the gap between rows, each on a lane of its own, and every edge end
+     gets its own port on the card, so no two lines or arrowheads share a spot. */
   private layout() {
     const { flow, stage } = this
     stage.replaceChildren()
     this.cards = {}
     this.edges = []
-    const W = stage.clientWidth, P = W < 480 ? 16 : 24, order = flow.order, N = order.length, G = flow.groups.length
-    const main = flow.edges.filter((e) => !e.back), backs = flow.edges.filter((e) => e.back)
-    const groupOf: Record<string, number> = {}
-    flow.groups.forEach((g, gi) => g.ids.forEach((id) => { groupOf[id] = gi }))
+    const W = stage.clientWidth, narrow = W < 480, P = narrow ? 14 : 20, order = flow.order, N = order.length
     const ix = (id: string) => order.indexOf(id)
-    const isSkip = (e: FlowEdge) => !e.back && ix(e.t) > ix(e.s) + 1 && (G === 1 || groupOf[e.s] === groupOf[e.t])
-    const skips = main.filter(isSkip)
-    const narrow = W < 480
-    const gutter = backs.length ? (narrow ? 30 : 48) + backs.length * 8 : 0, lgutter = skips.length ? (narrow ? 26 : 40) + skips.length * 6 : 0
-    let mode: 'stack' | 'row' | 'cols' = 'stack', cw = 0
-    const colW = (W - P * 2 - (G - 1) * 40) / G
-    const gaps = order.slice(0, -1).map((id, k) => { const e = main.find((x) => x.s === id && x.t === order[k + 1]); return e?.label ? Math.max(56, e.label.length * 12 + 28) : 56 })
-    const gapSum = gaps.reduce((a, b) => a + b, 0)
-    if (G > 1 && colW >= 160) { mode = 'cols'; cw = Math.min(260, colW) }
-    else if (G === 1 && N <= 6 && (W - P * 2 - gapSum) / N >= 170) { mode = 'row'; cw = Math.min(220, (W - P * 2 - gapSum) / N) }
-    else cw = Math.min(W - P * 2 - gutter - lgutter, 400)
 
-    for (const id of order) { const c = this.cardFor(id, N); c.style.width = `${cw}px`; stage.append(c); this.cards[id] = c }
-    const pos: Record<string, Box> = {}
-    const H = (id: string) => this.cards[id].offsetHeight
-    const labels: { text: string; n: number; x: number; y: number; band?: boolean }[] = []
-    let stageH = 0
-    if (mode === 'stack') {
-      const x = (W - cw - gutter - lgutter) / 2 + lgutter
-      let y = P
-      flow.groups.forEach((g, gi) => {
-        if (g.label) { labels.push({ text: g.label, n: g.ids.length, x, y }); y += 28 }
-        g.ids.forEach((id, k) => { pos[id] = { x, y, w: cw, h: H(id) }; y += H(id) + (k < g.ids.length - 1 ? 52 : 0) })
-        if (gi < G - 1) y += 56
-      })
-      stageH = y + P
-    } else if (mode === 'row') {
-      let x = (W - N * cw - gapSum) / 2
-      const top = P + (skips.length ? 40 : 0)
-      order.forEach((id, k) => { pos[id] = { x, y: top, w: cw, h: H(id) }; x += cw + (gaps[k] || 0) })
-      stageH = top + Math.max(...order.map(H)) + (backs.length ? 44 : 0) + P
-    } else {
-      let x = (W - G * cw - (G - 1) * 40) / 2, maxY = 0
-      flow.groups.forEach((g) => {
-        let y = P
-        labels.push({ text: g.label, n: g.ids.length, x, y, band: true }); if (g.label) y += 28
-        g.ids.forEach((id) => { pos[id] = { x, y, w: cw, h: H(id) }; y += H(id) + 44 })
-        maxY = Math.max(maxY, y - 44)
-        x += cw + 40
-      })
-      stageH = maxY + P
+    // rows
+    // the gap between cards in a row is wide enough for its longest label on at most two lines
+    const hLabel = Math.max(0, ...flow.edges.filter((e) => !e.back && ix(e.t) === ix(e.s) + 1).map((e) => e.label.length))
+    const colGap = hLabel ? Math.min(124, Math.max(64, Math.ceil(hLabel / 2) * 11 + 24)) : 44
+    const backCount = flow.edges.filter((e) => e.back).length
+    const rg = backCount ? 18 + backCount * 8 : 0
+    let k = 1
+    if (!narrow) for (let n = 4; n >= 2; n--) if ((W - P * 2 - rg - (n - 1) * colGap) / n >= 160) { k = n; break }
+    const rows: { label: string; group: number; ids: string[] }[] = []
+    flow.groups.forEach((g, gi) => { for (let i = 0; i < g.ids.length; i += k) rows.push({ label: i === 0 ? g.label : '', group: gi, ids: g.ids.slice(i, i + k) }) })
+    const R = rows.length
+    const rowOf: Record<string, number> = {}, colOf: Record<string, number> = {}
+    rows.forEach((r, ri) => r.ids.forEach((id, ci) => { rowOf[id] = ri; colOf[id] = ci }))
+
+    // edge kinds, and the gaps (0 = above the first row, R = below the last) each one runs through
+    type Kind = 'h' | 'over' | 'down' | 'far' | 'under' | 'back1' | 'up'
+    const kind = (e: FlowEdge): Kind => {
+      const rs = rowOf[e.s], rt = rowOf[e.t]
+      if (!e.back) {
+        if (rt === rs) return colOf[e.t] === colOf[e.s] + 1 ? 'h' : 'over'
+        return rt === rs + 1 ? 'down' : 'far'
+      }
+      return rt === rs ? 'under' : rt === rs - 1 ? 'back1' : 'up'
     }
+    const lanes: FlowEdge[][] = Array.from({ length: R + 1 }, () => [])
+    const second = new Map<FlowEdge, number>()
+    const slot = new Map<FlowEdge, number>()
+    let leftSlots = 0, rightSlots = 0
+    for (const e of flow.edges) {
+      const rs = rowOf[e.s], rt = rowOf[e.t], kd = kind(e)
+      if (kd === 'h') continue
+      if (kd === 'over') lanes[rs].push(e)
+      else if (kd === 'down' || kd === 'under') lanes[rs + 1].push(e)
+      else if (kd === 'back1') lanes[rs].push(e)
+      else if (kd === 'far') { lanes[rs + 1].push(e); lanes[rt].push(e); second.set(e, rt); slot.set(e, leftSlots++) }
+      else { lanes[rs + 1].push(e); lanes[rt + 1].push(e); second.set(e, rt + 1); slot.set(e, rightSlots++) }
+    }
+    const lg = leftSlots ? 18 + leftSlots * 8 : 0
+    const cw = Math.min(narrow ? 420 : 240, (W - P * 2 - rg - lg - (k - 1) * colGap) / k)
+    const gridW = k * cw + (k - 1) * colGap
+    const x0 = lg + (W - lg - rg - gridW) / 2
+
+    // cards, equal height within a row
+    for (const id of order) { const c = this.cardFor(id, N); c.style.width = `${cw}px`; stage.append(c); this.cards[id] = c }
+    const rowH = rows.map((r) => Math.max(...r.ids.map((id) => this.cards[id].offsetHeight)))
+    const laneH = (e: FlowEdge) => (e.label ? 30 : 14)
+    const LABEL = 26
+    const labelIn = (g: number) => (g < R && rows[g].label ? LABEL : 0)
+    const gapH = lanes.map((ls, g) => {
+      const inner = ls.reduce((a, e) => a + laneH(e), 0)
+      const min = g === 0 || g === R ? 0 : 40
+      return labelIn(g) + Math.max(min, ls.length ? inner + 20 : 0)
+    })
+    const gapTop: number[] = [], rowY: number[] = []
+    let y = P
+    for (let g = 0; g <= R; g++) { gapTop[g] = y; y += gapH[g]; if (g < R) { rowY[g] = y; y += rowH[g] } }
+    const stageH = y + P
     stage.style.height = `${stageH}px`
-    order.forEach((id, i) => { const p = pos[id], c = this.cards[id]; c.style.left = `${p.x}px`; c.style.top = `${p.y}px`; c.style.setProperty('--d', `${i * 70}ms`) })
-    for (const l of labels) {
-      if (l.band) { const b = el('div', 'fc-band'); b.style.cssText = `left:${l.x - 10}px;top:${l.y - 8}px;width:${cw + 20}px;height:${stageH - l.y - P + 16}px`; stage.prepend(b) }
-      if (!l.text) continue
-      const g = el('div', 'fc-group', l.text)
-      g.append(el('i', '', `${l.n} 步`))
-      g.style.left = `${l.x}px`; g.style.top = `${l.y}px`
+    const pos: Record<string, Box> = {}
+    order.forEach((id, i) => {
+      const r = rowOf[id], c = this.cards[id]
+      pos[id] = { x: x0 + colOf[id] * (cw + colGap), y: rowY[r], w: cw, h: rowH[r] }
+      c.style.left = `${pos[id].x}px`; c.style.top = `${pos[id].y}px`; c.style.height = `${rowH[r]}px`
+      c.style.setProperty('--d', `${i * 60}ms`)
+    })
+    // a section label sits at the bottom of the gap above its row; lanes use the rest of the gap
+    rows.forEach((r, ri) => {
+      if (!r.label) return
+      const g = el('div', 'fc-group', r.label)
+      g.append(el('i', '', `${flow.groups[r.group].ids.length} 步`))
+      g.style.left = `${x0}px`; g.style.top = `${rowY[ri] - LABEL}px`
       stage.append(g)
+    })
+    const laneY = new Map<string, number>()
+    const key = (g: number, e: FlowEdge) => `${g}:${flow.edges.indexOf(e)}`
+    lanes.forEach((ls, g) => {
+      const inner = ls.reduce((a, e) => a + laneH(e), 0)
+      let yy = gapTop[g] + (gapH[g] - labelIn(g) - inner) / 2
+      for (const e of ls) { laneY.set(key(g, e), yy + laneH(e) / 2); yy += laneH(e) }
+    })
+    const LY = (g: number, e: FlowEdge) => laneY.get(key(g, e))!
+
+    // ports: each edge end gets its own spot on the card's top or bottom
+    const ports = new Map<string, FlowEdge[]>()
+    const addPort = (id: string, side: 'top' | 'bot', e: FlowEdge) => { const k2 = `${id}:${side}`; if (!ports.has(k2)) ports.set(k2, []); ports.get(k2)!.push(e) }
+    for (const e of flow.edges) {
+      const kd = kind(e)
+      if (kd === 'h') continue
+      if (kd === 'over') { addPort(e.s, 'top', e); addPort(e.t, 'top', e) }
+      else if (kd === 'down' || kd === 'far') { addPort(e.s, 'bot', e); addPort(e.t, 'top', e) }
+      else if (kd === 'back1') { addPort(e.s, 'top', e); addPort(e.t, 'bot', e) }
+      else { addPort(e.s, 'bot', e); addPort(e.t, 'bot', e) }
+    }
+    const portX = (id: string, side: 'top' | 'bot', e: FlowEdge) => {
+      const list = ports.get(`${id}:${side}`)!
+      // order the ends along the card by where the other end lies; when that is the same column,
+      // branches back to the row above go left, the main line sits in the middle, and lines that
+      // leave by the right-hand gutter go right, so the lines in the gap do not cross
+      const weight = (x: FlowEdge) => { const kd = kind(x); return kd === 'up' || kd === 'under' ? 1 : kd === 'back1' ? -1 : kd === 'far' ? -2 : 0 }
+      const other = (x: FlowEdge) => { const o = x.s === id ? x.t : x.s; return pos[o].x + weight(x) * 0.25 * cw }
+      const sorted = [...list].sort((p1, p2) => other(p1) - other(p2))
+      const n = sorted.length, step = Math.min(30, cw / (n + 1))
+      return pos[id].x + cw / 2 + (sorted.indexOf(e) - (n - 1) / 2) * step
     }
 
     const svg = svgEl('svg', { width: W, height: stageH, 'aria-hidden': 'true' })
     stage.prepend(svg)
-    const add = (e: FlowEdge, pts: [number, number][], at: [number, number], alignRight = false) => {
+    const gridL = x0, gridR = x0 + gridW
+    type How = 'center' | 'above' | 'right'
+    for (const e of flow.edges) {
+      const a = pos[e.s], b = pos[e.t], kd = kind(e)
+      let pts: [number, number][]
+      let lab: [number, number, How]
+      if (kd === 'h') {
+        const yy = a.y + Math.min(26, a.h / 2)
+        pts = [[a.x + a.w, yy], [b.x - 2, yy]]
+        lab = [(a.x + a.w + b.x) / 2, yy, 'above']
+      } else if (kd === 'over') {
+        const sx = portX(e.s, 'top', e), tx = portX(e.t, 'top', e), ly = LY(rowOf[e.s], e)
+        pts = [[sx, a.y], [sx, ly], [tx, ly], [tx, b.y - 2]]
+        lab = [(sx + tx) / 2, ly, 'center']
+      } else if (kd === 'down') {
+        const sx = portX(e.s, 'bot', e), tx = portX(e.t, 'top', e), ly = LY(rowOf[e.s] + 1, e)
+        pts = Math.abs(sx - tx) < 1 ? [[sx, a.y + a.h], [tx, b.y - 2]] : [[sx, a.y + a.h], [sx, ly], [tx, ly], [tx, b.y - 2]]
+        lab = Math.abs(sx - tx) > 140 ? [(sx + tx) / 2, ly, 'center'] : [Math.max(sx, tx), ly, 'right']
+      } else if (kd === 'far') {
+        const sx = portX(e.s, 'bot', e), tx = portX(e.t, 'top', e), l1 = LY(rowOf[e.s] + 1, e), l2 = LY(second.get(e)!, e)
+        const gx = gridL - 14 - slot.get(e)! * 8
+        pts = [[sx, a.y + a.h], [sx, l1], [gx, l1], [gx, l2], [tx, l2], [tx, b.y - 2]]
+        lab = [(gx + tx) / 2, l2, 'center']
+      } else if (kd === 'back1') {
+        // back to the row just above: straight up through the gap between the two rows
+        const sx = portX(e.s, 'top', e), tx = portX(e.t, 'bot', e), ly = LY(rowOf[e.s], e)
+        pts = [[sx, a.y], [sx, ly], [tx, ly], [tx, b.y + b.h + 2]]
+        lab = Math.abs(sx - tx) > 140 ? [(sx + tx) / 2, ly, 'center'] : [Math.max(sx, tx), ly, 'right']
+      } else if (kd === 'under') {
+        const sx = portX(e.s, 'bot', e), tx = portX(e.t, 'bot', e), ly = LY(rowOf[e.s] + 1, e)
+        pts = [[sx, a.y + a.h], [sx, ly], [tx, ly], [tx, b.y + b.h + 2]]
+        lab = [(sx + tx) / 2, ly, 'center']
+      } else {
+        const sx = portX(e.s, 'bot', e), tx = portX(e.t, 'bot', e), l1 = LY(rowOf[e.s] + 1, e), l2 = LY(second.get(e)!, e)
+        const gx = gridR + 14 + slot.get(e)! * 8
+        pts = [[sx, a.y + a.h], [sx, l1], [gx, l1], [gx, l2], [tx, l2], [tx, b.y + b.h + 2]]
+        lab = Math.abs(gx - tx) > 140 ? [(gx + tx) / 2, l2, 'center'] : [tx, l2, 'right']
+      }
       const d = rounded(pts)
       const p = svgEl('path', { class: `fc-edge${e.back ? ' fc-back' : ''}`, d }, svg)
       const [ex, ey] = pts[pts.length - 1], [px, py] = pts[pts.length - 2]
       const ah = svgEl('path', { class: 'fc-ah', d: 'M0 0 L-7 -4 L-7 4 Z', transform: `translate(${ex},${ey}) rotate(${Math.atan2(ey - py, ex - px) * 180 / Math.PI})` }, svg)
       let lb: HTMLElement | null = null
       if (e.label) {
-        lb = el('div', 'fc-elabel', e.label)
-        lb.style.left = `${at[0]}px`; lb.style.top = `${at[1]}px`
-        if (alignRight) lb.style.transform = 'translate(-100%,-50%)'
+        lb = el('div', `fc-elabel${kd === 'h' ? ' fc-elabel-h' : ''}`, e.label)
+        if (kd === 'h') lb.style.maxWidth = `${colGap - 10}px`
+        lb.style.left = `${lab[0]}px`; lb.style.top = `${lab[1]}px`
+        lb.style.transform = lab[2] === 'center' ? 'translate(-50%,-50%)' : lab[2] === 'above' ? 'translate(-50%,calc(-100% - 6px))' : 'translate(8px,-50%)'
         stage.append(lb)
       }
       this.edges.push({ e, p, ah, lb })
     }
-    for (const e of main) {
-      const a = pos[e.s], b = pos[e.t]
-      if (isSkip(e)) {
-        // a forward jump past other steps goes round them: above the row, or down the left side
-        if (mode === 'row') { const yt = a.y - 22; add(e, [[a.x + a.w / 2, a.y], [a.x + a.w / 2, yt], [b.x + b.w / 2, yt], [b.x + b.w / 2, b.y - 2]], [(a.x + a.w / 2 + b.x + b.w / 2) / 2 - 40, yt]) }
-        else {
-          // label in the gap just above the target, so it never shares a gap with the edge out of `a`
-          const lx = Math.min(a.x, b.x) - (narrow ? 14 : 22) - skips.indexOf(e) * 6, prev = pos[order[ix(e.t) - 1]]
-          add(e, [[a.x, a.y + a.h - 18], [lx, a.y + a.h - 18], [lx, b.y + 18], [b.x - 2, b.y + 18]], [lx + 8, (prev.y + prev.h + b.y) / 2])
-        }
-        continue
-      }
-      if (mode === 'row') add(e, [[a.x + a.w, a.y + 26], [b.x - 2, b.y + 26]], [a.x + a.w + 8, a.y + 10])
-      else if (mode === 'stack' || groupOf[e.s] === groupOf[e.t]) {
-        if (b.y > a.y) add(e, [[a.x + a.w / 2, a.y + a.h], [b.x + b.w / 2, b.y - 2]], [a.x + a.w / 2 + 10, (a.y + a.h + b.y) / 2])
-        else { const gx = Math.max(a.x + a.w, b.x + b.w) + 28; add(e, [[a.x + a.w, a.y + 26], [gx, a.y + 26], [gx, b.y + 26], [b.x + b.w + 2, b.y + 26]], [gx + 10, b.y + b.h + 12], true) }
-      } else {
-        const mx = a.x + a.w + 20, ya = a.y + a.h / 2, yb = b.y + 26
-        add(e, [[a.x + a.w, ya], [mx, ya], [mx, yb], [b.x - 2, yb]], [mx, (ya + yb) / 2])
-        const lb = this.edges[this.edges.length - 1].lb
-        if (lb) lb.style.transform = 'translate(-50%,-50%)'
-      }
-    }
-    backs.forEach((e, k) => {
-      const a = pos[e.s], b = pos[e.t]
-      if (mode === 'row') {
-        const yb = Math.max(a.y + a.h, b.y + b.h) + 30
-        add(e, [[a.x + a.w / 2, a.y + a.h], [a.x + a.w / 2, yb], [b.x + b.w / 2, yb], [b.x + b.w / 2, b.y + b.h + 2]], [(a.x + a.w / 2 + b.x + b.w / 2) / 2 - 48, yb])
-      } else {
-        const gx = Math.max(a.x + a.w, b.x + b.w) + (narrow ? 16 : 24) + k * 8, top = a.y > b.y ? b : a, bot = a.y > b.y ? a : b
-        add(e, [[a.x + a.w, a.y + 26 + k * 6], [gx, a.y + 26 + k * 6], [gx, b.y + 20 + k * 6], [b.x + b.w + 2, b.y + 20 + k * 6]], [gx + 10, (top.y + top.h + bot.y) / 2], true)
-      }
-    })
     this.buildBeam(svg)
-    this.head = 0; this.rest = 0
+    this.head = 0; this.rest = 0; this.litId = null
     if (this.sel) this.select(this.sel)
   }
 
@@ -318,23 +378,40 @@ class FlowView {
     const g = svgEl('g', { class: 'fc-beam' }, svg)
     const layers = [{ len: 120, w: 2, op: 0.16 }, { len: 70, w: 2, op: 0.38 }, { len: 28, w: 2.5, op: 1 }]
     const paths = layers.map((l) => svgEl('path', { d: ds.join(' '), 'stroke-width': l.w, 'stroke-opacity': l.op, 'stroke-dasharray': `${l.len} ${total + 400}`, 'stroke-dashoffset': l.len + 200 }, g))
-    this.beam = { total, paths, lens: layers.map((l) => l.len), marks }
+    this.beam = { total, g, paths, lens: layers.map((l) => l.len), marks }
   }
 
   private setHead(h: number) {
     const b = this.beam
     if (!b) return
     b.paths.forEach((p, i) => p.setAttribute('stroke-dashoffset', String(b.lens[i] - h)))
+    // fade in at the start and out at the end instead of popping on and off
+    const fade = Math.max(0, Math.min(1, (h + 10) / 50, (b.total + 120 - h) / 90))
+    b.g.style.opacity = String(fade)
     let lit: string | null = null
     b.marks.forEach((m, i) => {
       const v = this.edges.find((x) => x.e === m.e)!
-      v.p.classList.toggle('fc-lit', h >= m.from && h <= m.to + 40)
-      v.ah.classList.toggle('fc-lit', h >= m.to - 6 && h <= m.to + 60)
+      v.p.classList.toggle('fc-lit', h >= m.from - 10 && h <= m.to + 50)
+      v.ah.classList.toggle('fc-lit', h >= m.to - 6 && h <= m.to + 70)
       const next = b.marks[i + 1]
-      if (h >= m.to - 8 && (next ? h <= next.from + 24 : h <= m.to + 260)) lit = m.e.t
-      if (i === 0 && h >= 0 && h < m.from + 30) lit = m.e.s
+      if (h >= m.to - 4 && (next ? h <= next.from + 20 : h <= m.to + 240)) lit = m.e.t
+      if (i === 0 && h >= -40 && h < m.from + 24) lit = m.e.s
     })
-    for (const [id, c] of Object.entries(this.cards)) c.classList.toggle('fc-live', id === lit)
+    if (lit !== this.litId) {
+      for (const [id, c] of Object.entries(this.cards)) c.classList.toggle('fc-live', id === lit)
+      if (lit) { const c = this.cards[lit]; c.classList.remove('fc-arrive'); void c.offsetWidth; c.classList.add('fc-arrive') }
+      this.litId = lit
+    }
+  }
+
+  /** Speed along the route: full speed on open line, easing down as the beam nears a card and
+   *  picking up again as it leaves, by distance rather than by edge, so every edge feels alike. */
+  private speedAt(h: number): number {
+    const b = this.beam!
+    let d = Infinity
+    for (const m of b.marks) d = Math.min(d, Math.abs(h - m.from), Math.abs(h - m.to))
+    const t = Math.min(1, d / 80), smooth = t * t * (3 - 2 * t)
+    return 70 + 150 * smooth // px per second, 70 at a card and 220 in between
   }
 
   private frame = (now: number) => {
@@ -342,9 +419,9 @@ class FlowView {
     const dt = this.last ? Math.min(now - this.last, 50) : 0
     this.last = now
     if (this.paused || !this.visible || !this.beam) return
-    if (this.rest > 0) { this.rest -= dt; if (this.rest <= 0) this.head = 0; return }
-    this.head += 170 * dt / 1000 // steady speed, px per second
-    if (this.head > this.beam.total + 140) { this.rest = 1100; this.setHead(-400); return }
+    if (this.rest > 0) { this.rest -= dt; if (this.rest <= 0) this.head = -40; return }
+    this.head += this.speedAt(this.head) * dt / 1000
+    if (this.head > this.beam.total + 130) { this.rest = 1200; this.setHead(-400); return }
     this.setHead(this.head)
   }
 
@@ -354,7 +431,7 @@ class FlowView {
     Object.values(this.cards).forEach((c) => c.classList.remove('fc-sel', 'fc-on'))
     this.edges.forEach((v) => { v.p.classList.remove('fc-on'); v.ah.classList.remove('fc-on'); v.lb?.classList.remove('fc-on') })
     this.sel = id
-    if (!id) { this.paused = false; this.head = 0; this.rest = 0; return }
+    if (!id) { this.paused = false; this.head = -40; this.rest = 0; return }
     this.paused = true
     this.setHead(-400)
     stage.classList.add('fc-dim')
