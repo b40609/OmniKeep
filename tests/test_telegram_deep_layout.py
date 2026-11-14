@@ -1,6 +1,6 @@
 """The deep analysis (prompt v2.4) has <details> sections, tables and mermaid flowcharts; Telegram
 shows none of them, so the bot turns each into plain lines."""
-from app.bot.telegram_bot import markdown_to_telegram_html, mermaid_steps
+from app.bot.telegram_bot import flow_steps, markdown_to_telegram_html, mermaid_steps
 
 DEEP = """> 值得先裝。
 
@@ -41,3 +41,24 @@ def test_details_tables_and_flowcharts_become_plain_lines():
 def test_mermaid_steps_reads_sequence_diagrams():
     code = "sequenceDiagram\n  User->>Bot: 丟連結\n  Bot-->>User: 回傳摘要"
     assert mermaid_steps(code) == ["User → Bot：丟連結", "Bot → User：回傳摘要"]
+
+
+FLOW = """總結：收到連結先抓原文，正文太少就退回重抓。
+段：準備
+A｜開始｜收到連結｜從 Telegram 丟進來｜｜｜
+B｜執行｜抓取原文｜下載網頁內容｜逾時 30 秒｜｜
+C｜檢查｜抽出正文｜｜｜｜正文太少就中止
+A -> B
+B -> C
+C -> B｜正文太少，重抓"""
+
+
+def test_flow_steps_reads_step_lines_only():
+    assert flow_steps(FLOW) == ["收到連結", "抓取原文", "抽出正文"]
+
+
+def test_flow_blocks_become_one_line_of_steps():
+    md = "<details>\n<summary>流程圖：3 步</summary>\n\n```flow\n" + FLOW + "\n```\n\n</details>"
+    out = markdown_to_telegram_html(md)
+    assert "收到連結 → 抓取原文 → 抽出正文" in out
+    assert "｜" not in out and "->" not in out and "總結" not in out

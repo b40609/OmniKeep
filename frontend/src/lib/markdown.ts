@@ -67,6 +67,11 @@ function highlightCode(code: string, rawLang: string): string {
 
 /* Code blocks get a language label, syntax highlighting + copy button */
 function codeRenderer(code: string, lang: string): string {
+  if (lang.toLowerCase() === 'flow') {
+    // Drawn later by renderFlowsIn (lib/flowchart.ts); the source waits hidden in the block.
+    const src = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    return `<div class="flow-block"><pre class="flow-src">${src}</pre></div>`
+  }
   if (lang.toLowerCase() === 'mermaid') {
     // Drawn later by renderMermaidIn (lib/mermaid.ts); the source waits hidden in the block.
     const src = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

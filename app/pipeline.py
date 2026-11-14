@@ -37,7 +37,7 @@ logger = logging.getLogger("omnikeep.pipeline")
 # owner): dense written Chinese, a title that says why the reader should care, a summary that never
 # restates the title. The deep analysis is layout A, which won the 2026-11-13 blind review (4.8 against
 # 3.2 for v2.3): a one-line verdict and 3 key points always shown, the rest in <details> sections, plus
-# a comparison table or a mermaid flowchart only when the content has one. Raw string: the line breaks in the
+# a comparison table or a flowchart (a ```flow block, drawn by frontend/src/lib/flowchart.ts) only when the content has one. Raw string: the line breaks in the
 # example must reach the model as the escape it would write in JSON.
 _ANALYSIS_PROMPT_TEMPLATE = r"""你幫使用者整理他自己收藏的內容。他看標題和摘要的 10 秒內要能決定值不值得細看；點開分析後，要拿到完整的重點，並知道這東西能怎麼用在自己身上。
 <<BACKGROUND_ANCHOR>>
@@ -80,7 +80,12 @@ deep_analysis：Markdown，分兩層。讀者點開後要在 5 秒內知道值�
 第二層，用 HTML 收合區，依下面的順序，每一區的標題要直接帶出裡面的重點，讓人不點開也知道有什麼：
 - 更多重點：其餘重點 2 到 6 條，格式同上；原文是清單、步驟或規格時全部列出。
 - 比較表：原文比較 2 個以上的對象，例如工具、模型、方案、版本，而且有共通的比較維度時才加。標題寫一句比較結論，例如「比較表：Qwen3 顯存最省，Llama 4 最快」。裡面放 Markdown 表格，第一欄是對象，共 3 到 5 欄、2 到 8 列，每格 15 字以內，數字照原文寫，不自己換算或加總；原文沒提到的格子填「原文未提及」，不推測。只有 1 個對象或沒有共通維度時不要做表格。
-- 流程圖：只有原文明確描述 5 步以上、前一步的結果交給下一步的流程（操作步驟、資料流、模組之間的呼叫順序）時才加；讀者照著圖能重做一遍或看懂系統怎麼運作，才值得畫。標題寫「流程圖：N 步，從起點到終點」。裡面放一個 mermaid 程式碼區塊：用 flowchart TD 由上往下排，時序互動用 sequenceDiagram；5 到 12 個節點；節點 ID 用英文字母，標籤寫成 A[標籤]，不加引號，12 字以內，標籤裡不放括號、冒號、引號；不用 subgraph、style、classDef、click。觀點文章、評測、新聞、教學裡的並列技巧或重點清單、4 步以內的流程、沒有明確因果先後的概念都不要畫；拿不準就不畫。
+- 流程圖：只有原文明確描述 5 步以上、前一步的結果交給下一步的流程（操作步驟、資料流、模組之間的呼叫順序）時才加；讀者照著圖能重做一遍或看懂系統怎麼運作，才值得畫。標題寫「流程圖：N 步，從起點到終點」。裡面放一個 flow 程式碼區塊，每行一筆，欄位用全形直線「｜」分隔，不用引號：
+  - 第一行寫「總結：」加一句 40 字以內的白話，說這個流程在做什麼，有分岔、退回或關卡就一起講。
+  - 步驟一行一個：「ID｜類型｜名稱｜一行說明｜小標籤｜完整說明｜關卡」。ID 用 A、B、C 依序排；類型只能填 開始、執行、檢查、人工、完成 其中一個；名稱 10 字以內；一行說明 20 字以內；小標籤 0 到 2 個、各 8 字以內，用頓號分隔，優先放原文的數字；完整說明 60 字以內，寫一行說明放不下的細節；關卡寫這一步在什麼情況會擋下或中止流程，沒有就留空。原文沒寫到的欄位一律留空，不要自己補；名稱以外的欄位都可以留空。
+  - 5 到 12 個步驟。超過 8 步時，用「段：名稱」把步驟分成 2 到 4 段，每段步數盡量平均，名稱 4 字以內，寫在該段第一個步驟前面。
+  - 連線一行一條：「A -> B」；有條件時在後面加「｜條件」，例如「C -> D｜檢查通過」；退回、重做也照寫，例如「C -> B｜發現缺陷，退回」。主線依步驟順序連起來；不要連回同一步，同一步自己重做就寫在關卡欄。
+  - 觀點文章、評測、新聞、教學裡的並列技巧或重點清單、4 步以內的流程、沒有明確因果先後的概念都不要畫；拿不準就不畫。
 - 限制：只寫原文明確提到的門檻、缺點、還沒做好的地方，0 到 3 條；原文沒提就不要這一區。
 - 如果內容是可以在本機跑的 AI 模型，再加一區「<<HARDWARE_LABEL>>」：顯存需求一行、<<HARDWARE_VERDICT>>、一行可以直接複製執行的安裝或啟動指令。
 - 內容講的是中國或歐美特有的制度、政策、環境時，加一區「台灣的情況」1 到 2 條。
@@ -97,9 +102,18 @@ deep_analysis：Markdown，分兩層。讀者點開後要在 5 秒內知道值�
 <details>
 <summary>流程圖：5 步，從收到連結到存進資料庫</summary>
 
-```mermaid
-flowchart TD
-  A[收到連結] --> B[抓取原文] --> C[抽出正文] --> D[AI 分析] --> E[存進資料庫]
+```flow
+總結：收到連結先抓原文，正文太少就退回重抓，最後由 AI 分析存檔。
+A｜開始｜收到連結｜從 Telegram 丟進來｜｜｜
+B｜執行｜抓取原文｜下載網頁內容｜逾時 30 秒｜｜
+C｜檢查｜抽出正文｜去掉廣告與選單｜少於 200 字重抓｜重抓 2 次仍不足就只存標題｜重抓 2 次仍失敗就中止
+D｜執行｜AI 分析｜寫標題、摘要與重點｜｜｜
+E｜完成｜存進資料庫｜之後搜尋找得到｜｜｜
+A -> B
+B -> C
+C -> D｜正文足夠
+C -> B｜正文太少，重抓
+D -> E
 ```
 
 </details>

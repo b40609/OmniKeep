@@ -958,3 +958,55 @@ input, textarea { caret-color: var(--primary); }
 .prose-reader details:has(.mermaid-block) {
   display: none;
 }
+
+/* Flowcharts (lib/flowchart.ts): floorplan-style cards on a quiet stage, a steady neutral beam
+   running the flow. Colours are the theme tokens, so a theme switch needs no redraw. */
+.prose-reader .flow-src { display: none; }
+.prose-reader .flow-block { --fc-beam: var(--foreground); margin: 0.4em 0 1em; }
+.prose-reader .fc-gist { margin: 0 0 12px; color: var(--muted-foreground); font-size: 15px; line-height: 1.6; }
+.prose-reader .fc-hint { margin: 8px 0 0; color: var(--subtle-foreground); font-size: 12px; line-height: 16px; }
+.prose-reader .fc-stage { position: relative; overflow: hidden; border-radius: 12px; background: var(--surface-1); }
+.prose-reader .fc-stage > svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.prose-reader .fc-edge { fill: none; stroke: var(--border); stroke-width: 1.5; stroke-linecap: round; transition: stroke .25s ease, opacity .3s ease; }
+.prose-reader .fc-back { stroke-dasharray: 4 5; }
+.prose-reader .fc-edge.fc-lit { stroke: color-mix(in srgb, var(--fc-beam) 45%, transparent); }
+.prose-reader .fc-edge.fc-on { stroke: color-mix(in srgb, var(--fc-beam) 70%, transparent); }
+.prose-reader .fc-ah { fill: var(--subtle-foreground); transition: fill .25s ease, opacity .3s ease; }
+.prose-reader .fc-ah.fc-lit, .prose-reader .fc-ah.fc-on { fill: var(--fc-beam); }
+.prose-reader .fc-beam path { fill: none; stroke: var(--fc-beam); stroke-linecap: round; }
+.prose-reader .fc-dim .fc-edge:not(.fc-on), .prose-reader .fc-dim .fc-ah:not(.fc-on) { opacity: .18; }
+.prose-reader .fc-group { position: absolute; display: flex; align-items: center; gap: 8px; color: var(--subtle-foreground); font-size: 12px; font-weight: 600; line-height: 20px; }
+.prose-reader .fc-group i { font-style: normal; font-weight: 400; font-variant-numeric: tabular-nums; }
+.prose-reader .fc-band { position: absolute; border-radius: 12px; background: color-mix(in srgb, var(--foreground) 2.5%, transparent); }
+.prose-reader .fc-elabel { position: absolute; z-index: 2; transform: translateY(-50%); padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  color: var(--subtle-foreground); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); font-size: 12px; line-height: 16px; transition: color .2s, box-shadow .2s, opacity .3s; }
+.prose-reader .fc-elabel.fc-on { color: var(--foreground); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fc-beam) 60%, transparent); }
+.prose-reader .fc-dim .fc-elabel:not(.fc-on) { opacity: .25; }
+.prose-reader .fc-card { position: absolute; z-index: 1; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; cursor: pointer;
+  background: var(--card); box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent) inset, 0 4px 16px rgba(0, 0, 0, .18);
+  transition: background .35s ease, box-shadow .35s ease, transform .3s ease, opacity .3s ease; animation: fc-in .55s cubic-bezier(.2, .7, .2, 1) both; animation-delay: var(--d, 0ms); }
+@keyframes fc-in { from { opacity: 0; transform: translateY(8px) scale(.985); } }
+.prose-reader .fc-card:hover { transform: translateY(-2px); background: color-mix(in srgb, var(--foreground) 3%, var(--card)); }
+.prose-reader .fc-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.prose-reader .fc-card.fc-live { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--fc-beam) 65%, transparent), 0 0 0 5px color-mix(in srgb, var(--fc-beam) 12%, transparent); }
+.prose-reader .fc-card.fc-sel { z-index: 3; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--fc-beam) 75%, transparent), 0 0 0 6px color-mix(in srgb, var(--fc-beam) 10%, transparent), 0 10px 32px rgba(0, 0, 0, .3); }
+.prose-reader .fc-dim .fc-card:not(.fc-on) { opacity: .35; box-shadow: none; }
+.prose-reader .fc-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.prose-reader .fc-ico { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); transition: transform .3s ease; }
+.prose-reader .fc-card.fc-live .fc-ico { transform: scale(1.1); }
+.prose-reader .fc-ico svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.prose-reader .fc-k-start { --c: var(--info); }
+.prose-reader .fc-k-work { --c: var(--purple); }
+.prose-reader .fc-k-check { --c: var(--warning); }
+.prose-reader .fc-k-human { --c: var(--muted-foreground); }
+.prose-reader .fc-k-done { --c: var(--success); }
+.prose-reader .fc-title { flex: 1; min-width: 0; color: var(--foreground); font-size: 14px; font-weight: 600; line-height: 20px; }
+.prose-reader .fc-no { flex: none; color: var(--subtle-foreground); font-size: 12px; font-variant-numeric: tabular-nums; }
+.prose-reader .fc-desc { overflow: hidden; color: var(--muted-foreground); font-size: 13px; line-height: 19px; white-space: nowrap; text-overflow: ellipsis; }
+.prose-reader .fc-more { display: none; color: var(--muted-foreground); font-size: 13px; line-height: 20px; }
+.prose-reader .fc-card.fc-sel .fc-desc { display: none; }
+.prose-reader .fc-card.fc-sel .fc-more { display: block; }
+.prose-reader .fc-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.prose-reader .fc-tag { padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--foreground) 7%, transparent); color: var(--muted-foreground); font-size: 12px; line-height: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.prose-reader .fc-gate { display: flex; align-items: center; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--border); color: var(--subtle-foreground); font-size: 12px; line-height: 16px; }
+.prose-reader .fc-gate svg { flex: none; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

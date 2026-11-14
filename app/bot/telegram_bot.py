@@ -265,10 +265,23 @@ def mermaid_steps(code: str) -> list:
     return steps
 
 
+def flow_steps(code: str) -> list:
+    """A flow block's step names in order (the third ｜ field of each step line). Mirrors
+    parseFlow in frontend/src/lib/flowchart.ts."""
+    steps = []
+    for line in code.splitlines():
+        f = [x.strip() for x in re.split(r'[｜|]', line.strip())]
+        if len(f) >= 3 and re.fullmatch(r'[A-Za-z]\w{0,2}', f[0]) and f[2]:
+            steps.append(f[2])
+    return steps
+
+
 def _flatten_deep_layout(text: str) -> str:
     """The deep analysis is written for the reading page: <details> sections, Markdown tables and
     mermaid flowcharts. Telegram shows none of these, so each becomes plain lines: a section's
-    <summary> a heading, a table row cells joined by ｜, a flowchart its steps joined by →."""
+    <summary> a heading, a table row cells joined by ｜, a flowchart (flow or mermaid) its steps joined by →."""
+    text = re.sub(r'```flow\s*\n(.*?)```',
+                  lambda m: " → ".join(flow_steps(m.group(1))) + "\n", text, flags=re.DOTALL)
     text = re.sub(r'```mermaid\s*\n(.*?)```',
                   lambda m: " → ".join(mermaid_steps(m.group(1))) + "\n", text, flags=re.DOTALL)
     out = []

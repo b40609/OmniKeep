@@ -10,6 +10,7 @@ import { useItemsStore } from '@/stores/items'
 import { cleanHost, formatRelativeTime, estimateReadTime, sourceMeta } from '@/lib/format'
 import { renderMarkdown, useCodeCopy, extractToc } from '@/lib/markdown'
 import { renderMermaidIn } from '@/lib/mermaid'
+import { renderFlowsIn, disposeFlowsIn } from '@/lib/flowchart'
 import { useUiStore } from '@/stores/ui'
 import { useMutations } from '@/composables/useMutations'
 
@@ -58,14 +59,16 @@ watch(
   async () => {
     detachCodeCopy?.()
     detachCodeCopy = null
+    disposeFlowsIn(contentRef.value)
     if (!ui.activeItem?.deep_analysis) return
     await nextTick()
     detachCodeCopy = useCodeCopy(contentRef.value)
     void renderMermaidIn(contentRef.value)
+    renderFlowsIn(contentRef.value)
   },
   { immediate: true },
 )
-onBeforeUnmount(() => detachCodeCopy?.())
+onBeforeUnmount(() => { detachCodeCopy?.(); disposeFlowsIn(contentRef.value) })
 
 const tocItems = computed(() => extractToc(ui.activeItem?.deep_analysis))
 function scrollToHeading(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
