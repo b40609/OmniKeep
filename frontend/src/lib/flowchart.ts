@@ -129,6 +129,7 @@ interface EdgeView { e: FlowEdge; p: SVGPathElement; ah: SVGPathElement; lb: HTM
 type Box = { x: number; y: number; w: number; h: number }
 
 class FlowView {
+  private root: HTMLElement
   private stage: HTMLElement
   private cap: HTMLElement
   private capId: string | null | undefined = undefined
@@ -150,20 +151,49 @@ class FlowView {
 
   constructor(root: HTMLElement, flow: Flow) {
     this.flow = flow
+    this.root = root
     root.replaceChildren()
     if (flow.gist) root.append(el('p', 'fc-gist', flow.gist))
     this.stage = el('div', 'fc-stage')
     root.append(this.stage)
     this.cap = el('div', 'fc-cap')
-    root.append(this.cap)
+    // a flow whose steps carry nothing beyond the card has no caption to show
+    const extra = flow.order.some((id) => { const s = flow.steps[id]; return s.more || s.gate || s.tags.length }) || flow.edges.some((e) => e.label)
+    if (extra) root.append(this.cap)
     this.stage.addEventListener('click', () => { if (this.sel) this.select(null) })
-    const ro = new ResizeObserver(() => { const w = this.stage.clientWidth; if (w && w !== this.width) { this.width = w; this.layout() } })
+    const ro = new ResizeObserver(() => { this.fit(); const w = this.stage.clientWidth; if (w && w !== this.width) { this.width = w; this.layout() } })
     ro.observe(this.stage)
     const io = new IntersectionObserver(([en]) => { this.visible = en.isIntersecting }, { threshold: 0.3 })
     io.observe(this.stage)
     this.observers.push(ro, io)
+    // on a wide screen the chart steps out of the reading column, up to 1120px, but never past the
+    // nearest scrolling panel, so a reader shown in a side panel keeps it inside
+    const bound = this.bound()
+    if (bound) { const fo = new ResizeObserver(() => this.fit()); fo.observe(bound); this.observers.push(fo) }
+    this.fit()
     this.caption(flow.order[0])
     this.raf = requestAnimationFrame(this.frame)
+  }
+
+  private bound(): HTMLElement | null {
+    for (let e = this.root.parentElement; e; e = e.parentElement) {
+      if (e === document.body) return e
+      const st = getComputedStyle(e)
+      if (st.overflowX !== 'visible' || st.overflowY !== 'visible') return e
+    }
+    return null
+  }
+
+  private fit() {
+    const root = this.root, bound = this.bound()
+    root.style.marginLeft = ''; root.style.width = ''
+    if (!bound) return
+    const a = bound.getBoundingClientRect(), c = root.getBoundingClientRect()
+    if (!c.width) return // inside a closed section; fitted again when it opens
+    const W = Math.min(1120, a.width - 48)
+    if (W <= c.width + 40) return
+    const left = Math.max(a.left + 24, Math.min(c.left + c.width / 2 - W / 2, a.right - 24 - W))
+    root.style.marginLeft = `${left - c.left}px`; root.style.width = `${W}px`
   }
 
   destroy() { cancelAnimationFrame(this.raf); this.observers.forEach((o) => o.disconnect()) }
@@ -178,6 +208,7 @@ class FlowView {
     ico.append(icon(ICONS[s.kind]))
     head.append(ico, el('span', 'fc-title', s.label), el('span', 'fc-no', `${this.flow.order.indexOf(id) + 1}/${n}`))
     c.append(head)
+    if (s.desc) c.append(el('div', 'fc-desc', s.desc))
     const toggle = (ev: Event) => { ev.stopPropagation(); this.select(this.sel === id ? null : id) }
     c.addEventListener('click', toggle)
     c.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(ev) } })
@@ -197,8 +228,8 @@ class FlowView {
     head.append(el('span', `fc-cap-dot fc-k-${s.kind}`), el('span', 'fc-cap-no', `${this.flow.order.indexOf(id) + 1}/${n}`), el('b', '', s.label))
     if (!picked) head.append(el('span', 'fc-cap-tip', '點步驟可停下來細看'))
     const body: HTMLElement[] = [head]
-    const text = picked && s.more ? s.more : s.desc
-    if (text) body.push(el('p', 'fc-cap-desc', text))
+    // the card already shows the one-line note; the caption adds the full one
+    if (s.more || (picked && s.desc)) body.push(el('p', 'fc-cap-desc', s.more || s.desc))
     const meta = el('div', 'fc-cap-meta')
     s.tags.forEach((t) => meta.append(el('span', 'fc-tag', t)))
     if (s.gate) { const g = el('span', 'fc-cap-gate'); g.append(icon(GATE_ICON), document.createTextNode(s.gate)); meta.append(g) }
@@ -229,9 +260,13 @@ class FlowView {
     const backCount = flow.edges.filter((e) => e.back).length
     const rg = backCount ? 18 + backCount * 8 : 0
     let k = 1
-    if (!narrow) for (let n = 4; n >= 2; n--) if ((W - P * 2 - rg - (n - 1) * colGap) / n >= 160) { k = n; break }
+    if (!narrow) for (let n = 4; n >= 2; n--) if ((W - P * 2 - rg - (n - 1) * colGap) / n >= 200) { k = n; break }
     const rows: { label: string; group: number; ids: string[] }[] = []
-    flow.groups.forEach((g, gi) => { for (let i = 0; i < g.ids.length; i += k) rows.push({ label: i === 0 ? g.label : '', group: gi, ids: g.ids.slice(i, i + k) }) })
+    // rows of a section are filled evenly (5 steps on 4 columns give 3 + 2, not 4 + 1)
+    flow.groups.forEach((g, gi) => {
+      const per = Math.ceil(g.ids.length / Math.ceil(g.ids.length / k))
+      for (let i = 0; i < g.ids.length; i += per) rows.push({ label: i === 0 ? g.label : '', group: gi, ids: g.ids.slice(i, i + per) })
+    })
     const R = rows.length
     const rowOf: Record<string, number> = {}, colOf: Record<string, number> = {}
     rows.forEach((r, ri) => r.ids.forEach((id, ci) => { rowOf[id] = ri; colOf[id] = ci }))
@@ -260,8 +295,9 @@ class FlowView {
       else { lanes[rs + 1].push(e); lanes[rt + 1].push(e); second.set(e, rt + 1); slot.set(e, rightSlots++) }
     }
     const lg = leftSlots ? 18 + leftSlots * 8 : 0
-    const cw = Math.min(narrow ? 420 : 240, (W - P * 2 - rg - lg - (k - 1) * colGap) / k)
-    const gridW = k * cw + (k - 1) * colGap
+    const kc = Math.max(...rows.map((r) => r.ids.length)) // columns actually used
+    const cw = Math.min(narrow ? 420 : 300, (W - P * 2 - rg - lg - (kc - 1) * colGap) / kc)
+    const gridW = kc * cw + (kc - 1) * colGap
     const x0 = lg + (W - lg - rg - gridW) / 2
 
     // cards, equal height within a row
@@ -397,11 +433,13 @@ class FlowView {
     const route = flowRoute(this.flow)
     const probe = svgEl('path', {}, svg)
     const ds: string[] = [], marks: { e: FlowEdge; from: number; to: number }[] = []
-    route.forEach((e, i) => {
+    route.forEach((e) => {
       const v = this.edges.find((x) => x.e === e)
       if (!v) return
       const d = v.p.getAttribute('d') || ''
-      ds.push(i === 0 ? d : d.replace(/^M/, 'L'))
+      // each edge stays its own subpath: joining them with a line would cut straight across the
+      // card between two edges; the dash runs on across subpaths, so the beam hops the card
+      ds.push(d)
       probe.setAttribute('d', ds.join(' '))
       const end = probe.getTotalLength()
       marks.push({ e, from: end - v.p.getTotalLength(), to: end })
