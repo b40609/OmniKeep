@@ -161,3 +161,13 @@ def test_run_bat_only_hands_over_to_the_installer():
     text = (REPO / "run.bat").read_text(encoding="utf-8")
     assert "scripts\\install.ps1" in text
     assert ".env.example" not in text and "venv" not in text and "run.py" not in text
+
+
+def test_watchdog_brings_a_stopped_ollama_back_without_killing_anything():
+    text = (REPO / "scripts/watchdog.ps1").read_text(encoding="utf-8-sig")
+    assert "function Ensure-Ollama" in text and "Find-OllamaExe" in text
+    assert "if (-not $ollamaExe) { return }" in text  # machines without Ollama are left alone
+    assert "'serve'" in text and "ollama-$stamp" in text  # its output is kept for the next stop
+    assert "Stop-Process" not in text  # recovery only starts processes
+    # Checked before the OmniKeep health check, whose early returns would otherwise skip it.
+    assert text.index("Ensure-Ollama\n") < text.index("Invoke-RestMethod -Uri $healthUrl")

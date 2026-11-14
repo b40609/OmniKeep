@@ -36,6 +36,53 @@ function Write-WatchdogEvent([string]$message) {
     Add-Content -Path (Join-Path $logDir 'watchdog.log') -Value $line -Encoding UTF8
 }
 
+# Ollama serves the embeddings and Ask Brain. Its Windows tray app starts the server only at logon,
+# and when that server stops (it did several times in 2026-11, leaving no crash report) nothing
+# brings it back: search went without vectors for a day. On a machine where Ollama is installed,
+# a stopped server is started again here, with its output kept so the next stop can be explained.
+function Find-OllamaExe {
+    $cmd = Get-Command ollama.exe -ErrorAction SilentlyContinue
+    if ($cmd -and (Test-Path $cmd.Source -PathType Leaf)) { return $cmd.Source }
+    $default = Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'
+    if (Test-Path $default -PathType Leaf) { return $default }
+    return $null
+}
+
+function Ensure-Ollama {
+    $ollamaExe = Find-OllamaExe
+    if (-not $ollamaExe) { return }   # not installed here: nothing to look after
+    try {
+        Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/version' -TimeoutSec 4 | Out-Null
+        return
+    } catch {
+        # Not answering: start it only if nothing holds the port (a busy server is left alone).
+    }
+    $listening = @(Get-NetTCPConnection -LocalPort 11434 -State Listen -ErrorAction SilentlyContinue)
+    if ($listening.Count -gt 0) {
+        Write-WatchdogEvent "Ollama not answering; port 11434 is held (PID $($listening[0].OwningProcess)). Left alone."
+        return
+    }
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmssfff'
+    $out = Join-Path $logDir "ollama-$stamp.stdout.log"
+    $err = Join-Path $logDir "ollama-$stamp.stderr.log"
+    $proc = Start-Process -FilePath $ollamaExe -ArgumentList 'serve' -WindowStyle Hidden `
+        -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+    Write-WatchdogEvent "Ollama was down; started 'ollama serve' (PID $($proc.Id)); logs: ollama-$stamp.*.log"
+    for ($attempt = 0; $attempt -lt 15; $attempt++) {
+        Start-Sleep -Seconds 2
+        if ($proc.HasExited) {
+            Write-WatchdogEvent "Ollama exited during startup (exit code $($proc.ExitCode))."
+            return
+        }
+        try {
+            Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/version' -TimeoutSec 2 | Out-Null
+            Write-WatchdogEvent "Ollama healthy (PID $($proc.Id))."
+            return
+        } catch { }
+    }
+    Write-WatchdogEvent "Ollama startup health check timed out (PID $($proc.Id))."
+}
+
 $mutex = [System.Threading.Mutex]::new($false, 'Local\OmniKeep-Service-Watchdog')
 $ownsMutex = $false
 try {
@@ -45,6 +92,12 @@ try {
         $ownsMutex = $true
     }
     if (-not $ownsMutex) { return }
+
+    try {
+        Ensure-Ollama
+    } catch {
+        Write-WatchdogEvent "Ollama check failed ($($_.Exception.GetType().Name))."
+    }
 
     try {
         $response = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 4
