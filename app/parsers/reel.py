@@ -348,7 +348,7 @@ async def analyze_storyboard_vision(tile_path: str) -> str:
     if not os.path.exists(tile_path) or os.path.getsize(tile_path) < 1024:
         return ""
 
-    prompt = """請仔細觀察這張短影音時間軸影格拼貼圖（Storyboard Tile）。
+    prompt = """辨識這張短影音時間軸影格拼貼圖（Storyboard Tile）的畫面文字與關鍵動作。
 畫面中展示了短影音不同時間點展示的開源專案、工具卡片、投影片或系統架構。
 請嚴格根據畫面內容，逐一完整條列出畫面上出現的所有專案/工具：
 1. 專案/工具序號與名稱（例如 No.01 Security Audit, No.06 AgentGuard 等）

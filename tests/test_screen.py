@@ -117,7 +117,8 @@ async def test_the_analysis_gets_the_screen_text_apart_from_a_long_transcript():
     assert item["content_raw"].endswith("\n\n" + notes)
     prompt = provider.generate_json.await_args.args[0]
     assert "- [07:50] 資料來源|Menlo Ventures" in prompt and "不是旁白" in prompt
-    spoken = prompt.split("=== 影片說明欄與逐字稿 ===\n", 1)[1].split("\n=== 內容結束 ===", 1)[0]
+    assert "<ocr_text>" in prompt and "</ocr_text>" in prompt
+    spoken = prompt.split("<transcript>\n", 1)[1].split("\n</transcript>", 1)[0]
     assert len(spoken) == 30000 and screen.SECTION_TITLE not in spoken
 
 
