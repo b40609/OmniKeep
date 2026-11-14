@@ -27,7 +27,8 @@ from app.vector import load_vec_extension
 
 apply_overrides()  # the Ollama address and model saved in the app win over .env
 
-DIM = int(settings.EMBEDDING_DIM)
+from app.embedding_profiles import model_dim  # noqa: E402
+DIM = model_dim(settings.EMBEDDING_MODEL)
 MODEL_NAME = settings.EMBEDDING_MODEL
 OLLAMA_URL = getattr(settings, "OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 BATCH_SIZE = 25

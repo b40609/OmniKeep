@@ -515,3 +515,19 @@ async def test_ai_order_is_previewed_and_applied_to_the_analysis_slot(service):
         setup_flow.preview(_first_answers(ai_order=[999]))
     with pytest.raises(setup_flow.SetupError):
         setup_flow.preview({"stage": "followup", "analysis_depth": "concise", "ai_order": [first.id]})
+
+
+def test_embedding_model_answer_is_previewed_as_a_setting():
+    plan = setup_flow.build_plan(setup_flow.SetupAnswers(embedding_model="qwen3-embedding:8b"))
+    change = next(c for c in plan["changes"] if c["key"] == "EMBEDDING_MODEL")
+    assert change["after"] == "qwen3-embedding:8b"
+    assert plan["_apply"]["settings"]["EMBEDDING_MODEL"] == "qwen3-embedding:8b"
+    with pytest.raises(ValueError):
+        setup_flow.SetupAnswers(stage="followup", analysis_depth="concise", embedding_model="bge-m3")
+
+
+def test_scan_advises_the_embedding_model_for_the_hardware():
+    advice = setup_flow._embedding_advice(
+        {"gpus": [{"name": "RTX", "vram_gb": 16.0}], "ram_gb": 64, "os": "Windows 11"},
+        {"ollama": {"running": True, "models": ["qwen3-embedding:8b"]}})
+    assert advice["recommended"] == "qwen3-embedding:8b" and advice["pulled"] is True and advice["dim"] == 1024

@@ -80,10 +80,14 @@ def test_ollama_vector_is_cut_normalised_and_labelled(monkeypatch):
 
     vec, model = asyncio.run(generate_embedding_with_model("FastAPI backend"))
     assert model == "embeddinggemma-2"
-    assert len(vec) == DIM
+    assert len(vec) == 768  # the model's full width (app.embedding_profiles)
     assert vec[0] == pytest.approx(1.0)
+    monkeypatch.setattr(vector.settings, "EMBEDDING_DIM", DIM)  # a fixed width cuts every model's vector
+    assert len(asyncio.run(generate_embedding_with_model("FastAPI backend"))[0]) == DIM
+    monkeypatch.setattr(vector.settings, "EMBEDDING_DIM", 0)
+    calls[1:] = []
     assert calls[0]["url"] == "http://127.0.0.1:11434/api/embed"
-    assert calls[0]["json"] == {"model": "embeddinggemma-2", "input": "FastAPI backend"}
+    assert calls[0]["json"] == {"model": "embeddinggemma-2", "input": "FastAPI backend", "keep_alive": "30m"}
 
     asyncio.run(generate_embedding_with_model("FastAPI backend", is_query=True))
     assert calls[1]["json"]["input"] == "task: search result | query: FastAPI backend"

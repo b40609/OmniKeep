@@ -21,6 +21,7 @@ import numpy as np
 from app import ai_status
 from app.config import settings
 from app.database import get_db_connection, get_item_by_id
+from app.embedding_profiles import DEFAULT_DIM, model_dim, query_text
 
 logger = logging.getLogger("omnikeep.vector")
 
@@ -37,6 +38,10 @@ OLLAMA_EMBED_TIMEOUT = 30.0
 # A repeated warning is logged again after this many seconds, not once per process:
 # "semantic search is off" has to stay visible in the log for as long as it is true.
 WARN_AGAIN_AFTER = 600.0
+# How long Ollama keeps the embedding model loaded after a request. Its default is 5 minutes,
+# and loading qwen3-embedding:8b again took 3.6 s on the GPU (6.6 s on CPU) against 0.13 s
+# for a query once loaded, so a search after a short pause waited for the load.
+OLLAMA_EMBED_KEEP_ALIVE = "30m"
 _last_warned: Dict[Any, float] = {}
 
 
@@ -89,9 +94,29 @@ def load_vec_extension(conn) -> bool:
         return False
 
 
+def embedding_dim() -> int:
+    """Dimensions of the vectors the index holds: those of the model queries embed with."""
+    model = target_embedding_model()
+    return DEFAULT_DIM if model == LOCAL_EMBEDDING_MODEL else model_dim(model)
+
+
+def _vec_table_dim(conn) -> Optional[int]:
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'vec_items'").fetchone()
+    m = re.search(r"float\[(\d+)\]", (row[0] if row else "") or "")
+    return int(m.group(1)) if m else None
+
+
 def init_vector_db():
-    """Initializes the virtual vector table (if sqlite-vec supported) and fallback table."""
-    dim = int(settings.EMBEDDING_DIM)
+    """Initializes the virtual vector table (if sqlite-vec supported) and fallback table.
+
+    vec_items has a fixed width. When the embedding model changes to one with another
+    width, the table is made again at the new width and refilled from item_embeddings
+    with the rows that already have it (the rest come back as they are re-embedded)."""
+    try:
+        dim = embedding_dim()
+    except Exception as e:  # the connection settings could not be read yet
+        logger.debug(f"[Vector] embedding_dim() failed, using {DEFAULT_DIM}: {e}")
+        dim = DEFAULT_DIM
     with closing(get_db_connection()) as conn, conn:
         # 1. Fallback table (standard SQLite, blob-based)
         conn.execute("""
@@ -107,12 +132,21 @@ def init_vector_db():
         # 2. sqlite-vec virtual table if available
         if load_vec_extension(conn):
             try:
+                current = _vec_table_dim(conn)
+                if current is not None and current != dim:
+                    logger.info("[Vector] vec_items holds %s-dim vectors, the model needs %s: rebuilding it",
+                                current, dim)
+                    conn.execute("DROP TABLE vec_items")
+                    current = None
                 conn.execute(f"""
                     CREATE VIRTUAL TABLE IF NOT EXISTS vec_items USING vec0(
                         item_id text primary key,
                         embedding float[{dim}]
                     )
                 """)
+                if current is None:
+                    conn.execute("""INSERT INTO vec_items (item_id, embedding)
+                                    SELECT item_id, embedding FROM item_embeddings WHERE dim = ?""", (dim,))
             except Exception as e:
                 logger.warning(f"[Vector] Could not create vec_items virtual table: {e}")
 
@@ -196,18 +230,18 @@ async def _ollama_embedding(clean_text: str, dim: int, is_query: bool, base_url:
 
     The runner is the operator's own loopback service, so it does not go
     through public_http_client (that one refuses local addresses by design).
-    embeddinggemma uses an asymmetric prompt: queries carry a task prefix,
-    documents are embedded as-is. The Matryoshka vector is cut to EMBEDDING_DIM
-    and re-normalised. Without arguments: OLLAMA_BASE_URL and EMBEDDING_MODEL.
+    Queries go in the model's own format (app.embedding_profiles), documents
+    as they are. The vector is cut to `dim` (the model's stored width) and re-normalised. Without arguments: OLLAMA_BASE_URL and EMBEDDING_MODEL.
     """
     base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
     model = model or settings.EMBEDDING_MODEL
-    prompt_input = f"task: search result | query: {clean_text}" if is_query else clean_text
+    prompt_input = query_text(model, clean_text) if is_query else clean_text
     url = f"{base_url}/api/embed"
     try:
         import httpx
         async with httpx.AsyncClient(timeout=OLLAMA_EMBED_TIMEOUT, trust_env=False) as client:
-            resp = await client.post(url, json={"model": model, "input": prompt_input})
+            resp = await client.post(url, json={"model": model, "input": prompt_input,
+                                                 "keep_alive": OLLAMA_EMBED_KEEP_ALIVE})
         if resp.status_code == 200:
             embs = resp.json().get("embeddings") or []
             if embs and len(embs[0]) >= dim:
@@ -297,19 +331,20 @@ async def generate_embedding_with_model(text: str, is_query: bool = False) -> Tu
     vector, so vectors from different spaces are never mistaken for each other.
     Indexing and querying both go through here; set is_query for search queries.
     """
-    dim = int(settings.EMBEDDING_DIM)
+    dim = DEFAULT_DIM  # the hashed fallback's width
     clean_text = clean_embedding_text(text)
     entries = embedding_slot()
     if entries:
         if not clean_text:
             usable = _usable_entries(entries)
-            return [0.0] * dim, (usable[0][1] if usable else LOCAL_EMBEDDING_MODEL)
+            first = usable[0][1] if usable else LOCAL_EMBEDDING_MODEL
+            return [0.0] * (dim if first == LOCAL_EMBEDDING_MODEL else model_dim(first)), first
         for conn, model in _usable_entries(entries):
             if conn.kind == "ollama":
-                vec = await _ollama_embedding(clean_text, dim, is_query, conn.base_url, model,
+                vec = await _ollama_embedding(clean_text, model_dim(model), is_query, conn.base_url, model,
                                               conn.status_key, conn.label)
             else:
-                vec = await _remote_embedding(clean_text, dim, f"{conn.base_url.rstrip('/')}/embeddings",
+                vec = await _remote_embedding(clean_text, model_dim(model), f"{conn.base_url.rstrip('/')}/embeddings",
                                               conn.key or "dummy-key", model, conn.status_key, conn.label)
             if vec is not None:
                 return vec, model
@@ -321,14 +356,14 @@ async def generate_embedding_with_model(text: str, is_query: bool = False) -> Tu
 
     # 1. Local runner (Ollama, embeddinggemma-2 by default)
     if ollama_embedding_enabled():
-        vec = await _ollama_embedding(clean_text, dim, is_query)
+        vec = await _ollama_embedding(clean_text, model_dim(settings.EMBEDDING_MODEL), is_query)
         if vec is not None:
             return vec, settings.EMBEDDING_MODEL
 
     # 2. OpenAI-compatible endpoint
     if api_key and not getattr(settings, "OMNIKEEP_TESTING", False):
         remote_model = remote_embedding_model()
-        vec = await _remote_embedding(clean_text, dim, embeddings_api_url(), api_key, remote_model)
+        vec = await _remote_embedding(clean_text, model_dim(remote_model), embeddings_api_url(), api_key, remote_model)
         if vec is not None:
             return vec, remote_model
 

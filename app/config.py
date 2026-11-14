@@ -97,7 +97,8 @@ class Settings(BaseSettings):
 
     # B-full: sqlite-vec, monolith snapshot & vector deduplication
     SNAPSHOT_DIR: str = str(BASE_DIR / "snapshots")
-    EMBEDDING_DIM: int = 256
+    # 0 = each model's full width (app.embedding_profiles); a number fixes it for every model.
+    EMBEDDING_DIM: int = 0
     EMBEDDING_MODEL: str = "embeddinggemma-2"
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
 

@@ -191,3 +191,15 @@ def test_pipeline_indexes_the_item_as_stored_after_rules(monkeypatch):
     assert "規則標籤" in stored["tech_tags"]
     assert np.allclose(get_item_embedding(item["id"]), _local(item["id"]), atol=1e-6)
     assert reindex.audit_embeddings()["actual"] == {LOCAL_EMBEDDING_MODEL: 1}
+
+
+def test_a_self_hosted_model_switch_reindexes_rows_of_the_old_model(index, monkeypatch):
+    """Setup picks the local model per machine; switching it must not leave the old vectors
+    to a manual rebuild. A cloud target keeps the old rule (re-embedding is paid per item)."""
+    monkeypatch.setattr(reindex, "target_model", lambda: "qwen3-embedding:8b")
+    monkeypatch.setattr(reindex, "target_is_self_hosted", lambda: True)
+    pending = reindex.pending_item_ids(limit=100)
+    assert index["remote"] in pending and index["unindexed"] in pending
+    assert index["stub"] not in pending
+    monkeypatch.setattr(reindex, "target_is_self_hosted", lambda: False)
+    assert index["remote"] not in reindex.pending_item_ids(limit=100)

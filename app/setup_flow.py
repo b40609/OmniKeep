@@ -277,6 +277,23 @@ async def _local_inference() -> Dict[str, Any]:
         return {"ollama": {"url": base, "running": False, "models": []}}
 
 
+def _embedding_advice(hardware: Dict[str, Any], local: Dict[str, Any]) -> Dict[str, Any]:
+    """The local embedding model picked for this machine's hardware, against what is in use."""
+    from app.embedding_profiles import recommend
+    from app.vector import target_embedding_model
+    pick = recommend(hardware)
+    pulled = local.get("ollama", {}).get("models") or []
+    name = str(pick["model"])
+    return {
+        "current": target_embedding_model(),
+        "recommended": name,
+        "why": pick["why"],
+        "dim": pick["dim"],
+        "download_gb": pick["size_gb"],
+        "pulled": any(m == name or m == f"{name}:latest" for m in pulled),
+    }
+
+
 def read_last_answers() -> Optional[Dict[str, Any]]:
     from contextlib import closing
     from app.database import get_db_connection
@@ -320,6 +337,7 @@ async def scan() -> Dict[str, Any]:
     radar = get_radar_settings()
     return {
         "hardware": hardware,
+        "embedding": _embedding_advice(hardware, local),
         "omnikeep": {
             "version": __version__,
             "service_running": running,
@@ -694,6 +712,9 @@ class SetupAnswers(BaseModel):
     # Question 3: AI connection ids for analysis, primary first, then fallbacks. Ask Brain
     # and the radar follow the analysis slot unless the user set them apart.
     ai_order: Optional[List[int]] = Field(default=None, max_length=8)
+    # The local embedding model for this machine (scan's embedding.recommended), already
+    # pulled into Ollama. Changing it re-indexes the saved items in the background.
+    embedding_model: Optional[str] = Field(default=None, min_length=1, max_length=200)
 
     @field_validator("topics")
     @classmethod
@@ -706,7 +727,7 @@ class SetupAnswers(BaseModel):
     @model_validator(mode="after")
     def _followup_scope(self):
         if self.stage == "followup":
-            extra = [name for name in ("about_you", "interest_profile", "radar", "ai_order")
+            extra = [name for name in ("about_you", "interest_profile", "radar", "ai_order", "embedding_model")
                      if getattr(self, name) is not None]
             extra += [name for name in ("topics", "seed_links", "sources") if getattr(self, name)]
             if extra:
@@ -788,6 +809,8 @@ def build_plan(answers: SetupAnswers) -> Dict[str, Any]:
             changes.append({"key": "interest_profile", "label": "興趣設定檔", "before": before, "after": after})
     if answers.analysis_depth is not None:
         setting("ANALYSIS_DEPTH", "分析深度", answers.analysis_depth)
+    if answers.embedding_model is not None:
+        setting("EMBEDDING_MODEL", "語意搜尋的向量模型（換了會在背景重建向量）", answers.embedding_model.strip())
 
     existing = {_url_key(s["source_type"], s["url"]): s for s in get_all_radar_sources()}
     add, reactivate, unchanged, seen = [], [], [], set()

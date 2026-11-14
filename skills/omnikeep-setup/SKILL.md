@@ -133,6 +133,16 @@ OmniKeep 的摘要、重點分析與提問要用 AI。先跟使用者說清楚�
 
 使用者略過 AI：不帶 `ai_order`。有起草「關於你」就只預覽那一項；沒有就不用預覽，直接到第 3 步。
 
+### 語意搜尋的向量模型（不用問，依硬體自動配）
+
+掃描的 `embedding` 是依這台的顯示卡與記憶體挑好的本機向量模型（`recommended`，附理由 `why` 與下載大小 `download_gb`）。Ollama 有在跑、而且 `current` 不是 `recommended` 時：
+
+1. `pulled` 是 false 就直接執行 `ollama pull <recommended>`（不用先問，下載完簡短回報大小）。
+2. 在答案帶 `embedding_model: "<recommended>"`，跟其他設定一起預覽與套用。換了之後 OmniKeep 會在背景自己重建既有收藏的向量，期間語意搜尋暫時只用關鍵字。
+3. 用一句話告訴使用者選了哪個模型、為什麼（照 `why`）。
+
+沒有 Ollama：照「本機推論」的說明處理，先不帶 `embedding_model`。
+
 ## 3. 題 2：接上 Telegram
 
 > 要接上 Telegram 嗎？接上之後，在 Telegram 把連結傳給你自己的機器人就會收藏。

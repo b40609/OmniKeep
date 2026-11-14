@@ -19,6 +19,7 @@ from app.database import get_db_connection, get_item_by_id
 from app.vector import (
     LOCAL_EMBEDDING_MODEL,
     delete_item_embeddings,
+    embedding_dim,
     generate_embedding_with_model,
     item_embedding_text,
     load_vec_extension,
@@ -36,6 +37,7 @@ MAX_FALLBACKS_IN_A_ROW = 3
 # The background backfill: how often it looks, and how many items it embeds per look.
 BACKFILL_TICK_SECONDS = 600
 BACKFILL_BATCH = 50
+SELF_HOSTED_BATCH = 100000
 
 
 def target_model() -> str:
@@ -52,7 +54,7 @@ def target_model() -> str:
 
 def audit_embeddings() -> Dict[str, Any]:
     """Read-only report of what the index holds and which rows are wrong for the target."""
-    dim = int(settings.EMBEDDING_DIM)
+    dim = embedding_dim()
     target = target_model()
     with closing(get_db_connection()) as conn:
         items = {r["id"]: dict(r) for r in conn.execute(
@@ -155,22 +157,37 @@ async def reembed(item_ids: List[str], progress=lambda done, total: None) -> Dic
     return result
 
 
+def target_is_self_hosted() -> bool:
+    """Whether the target model runs on the operator's own Ollama runner: re-embedding
+    with it costs nothing per item."""
+    from app.vector import embedding_slot, _usable_entries
+    entries = embedding_slot()
+    if entries:
+        usable = _usable_entries(entries)
+        return bool(usable) and usable[0][0].kind == "ollama"
+    return ollama_embedding_enabled()
+
+
 def pending_item_ids(limit: int = BACKFILL_BATCH) -> List[str]:
     """Analysed items the configured model has yet to embed, newest first: the ones saved
     without a vector while it was down (app.vector.store_item_embedding), and the ones that only
     hold the hashed stand-in from before that rule. Empty when the hashed vectors are the
-    configured choice. Rows made by another real model are left to
-    scripts/rebuild_embeddings.py: changing models is a decision, and with a cloud
-    endpoint re-embedding everything is paid for per item."""
-    if target_model() == LOCAL_EMBEDDING_MODEL:
+    configured choice. With a self-hosted model, rows made by another model count too, so
+    switching the local model (setup picks one per machine) re-indexes on its own. With a
+    cloud endpoint those are left to scripts/rebuild_embeddings.py: re-embedding everything
+    is paid for per item there."""
+    target = target_model()
+    if target == LOCAL_EMBEDDING_MODEL:
         return []
+    other_models = target_is_self_hosted()
     with closing(get_db_connection()) as conn:
         try:
             rows = conn.execute(
                 """SELECT i.id FROM items i LEFT JOIN item_embeddings e ON e.item_id = i.id
-                   WHERE COALESCE(i.analysis_status, '') != 'pending' AND (e.item_id IS NULL OR e.model = ?)
+                   WHERE COALESCE(i.analysis_status, '') != 'pending'
+                     AND (e.item_id IS NULL OR e.model = ? OR (? AND e.model != ?))
                    ORDER BY i.created_at DESC LIMIT ?""",
-                (LOCAL_EMBEDDING_MODEL, limit)).fetchall()
+                (LOCAL_EMBEDDING_MODEL, int(other_models), target, limit)).fetchall()
         except Exception:  # no item_embeddings table yet: nothing has been indexed here
             return []
     return [r["id"] for r in rows]
@@ -178,10 +195,16 @@ def pending_item_ids(limit: int = BACKFILL_BATCH) -> List[str]:
 
 async def backfill_pending(limit: int = BACKFILL_BATCH) -> Dict[str, Any]:
     """Embed up to `limit` pending items with the configured model. A vector is only
-    written when that model made it, so running this while it is still down changes nothing."""
+    written when that model made it, so running this while it is still down changes nothing.
+    A self-hosted model works through everything pending in one go (a model switch is a
+    few minutes of local work), after vec_items is made again at the new width."""
+    if target_is_self_hosted():
+        limit = max(limit, SELF_HOSTED_BATCH)
     item_ids = pending_item_ids(limit)
     if not item_ids:
         return {"pending": 0, "reembedded": 0, "fell_back": 0, "stopped": None}
+    from app.vector import init_vector_db
+    init_vector_db()
     return {"pending": len(item_ids), **(await reembed(item_ids))}
 
 

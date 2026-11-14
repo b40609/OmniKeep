@@ -14,6 +14,7 @@ from openai import APIConnectionError, APIStatusError, AsyncOpenAI
 from app import app_settings
 from app.ai_status import redact
 from app.config import settings
+from app.embedding_profiles import model_dim
 from app.error_translate import translate
 
 TIMEOUT = 20.0
@@ -244,7 +245,7 @@ async def check_connection(conn, model: Optional[str] = None, purpose: str = "ch
 
 
 async def _check_connection_embeddings(conn, model: str) -> Dict[str, Any]:
-    dim = int(settings.EMBEDDING_DIM)
+    dim = model_dim(model)
     base_url = conn.base_url.rstrip("/")
     if conn.kind == "ollama":
         try:
@@ -295,7 +296,7 @@ async def _check_embeddings(values: Dict[str, Any]) -> Dict[str, Any]:
     model = "text-embedding-3-small" if model == "embeddinggemma-2" else model
     if not key:
         return _fail(None, message="還沒有設定 API 金鑰；語意搜尋會改用本機向量")
-    dim = int(settings.EMBEDDING_DIM)
+    dim = model_dim(model)
     try:
         async with public_http_client(timeout=TIMEOUT) as client:
             resp = await client.post(
@@ -409,7 +410,7 @@ async def _check_ollama(values: Dict[str, Any]) -> Dict[str, Any]:
         size = len((resp.json().get("embeddings") or [[]])[0])
     except (ValueError, IndexError, TypeError, AttributeError):
         size = 0
-    dim = int(settings.EMBEDDING_DIM)
+    dim = model_dim(model)
     if size < dim:
         return _fail(200, resp.text[:300], message=f"{model} 回傳 {size} 維，少於需要的 {dim} 維")
     return _ok(f"Ollama 向量模型 {model} 可用（{size} 維，取前 {dim} 維）")

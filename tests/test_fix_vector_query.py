@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from app.config import settings
+from app.embedding_profiles import DEFAULT_DIM
 from app.database import init_db, save_item
 from app.vector import (
     LOCAL_EMBEDDING_MODEL,
@@ -68,13 +69,13 @@ def test_generate_embedding_posts_to_configured_endpoint(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://llm.example.test/v1")
     monkeypatch.setattr(settings, "EMBEDDING_MODEL", "test-embed-model")
     calls = []
-    client = _mock_embedding_client(int(settings.EMBEDDING_DIM), calls)
+    client = _mock_embedding_client(DEFAULT_DIM, calls)
 
     with patch("app.network.public_http_client", return_value=client):
         vec, model = asyncio.run(generate_embedding_with_model("FastAPI async backend"))
 
     assert model == "test-embed-model"
-    assert len(vec) == int(settings.EMBEDDING_DIM)
+    assert len(vec) == DEFAULT_DIM
     assert calls[0]["url"] == "https://llm.example.test/v1/embeddings"
     assert calls[0]["json"]["model"] == "test-embed-model"
     assert calls[0]["headers"]["Authorization"] == "Bearer sk-embed-test"
@@ -86,7 +87,7 @@ def test_generate_embedding_labels_local_fallback(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
     vec, model = asyncio.run(generate_embedding_with_model("hello world"))
     assert model == LOCAL_EMBEDDING_MODEL
-    assert vec == _deterministic_local_embedding("hello world", int(settings.EMBEDDING_DIM))
+    assert vec == _deterministic_local_embedding("hello world", DEFAULT_DIM)
 
     # Key set but endpoint failing -> still local, still labelled local.
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-embed-test")
@@ -102,7 +103,7 @@ def test_generate_embedding_labels_local_fallback(monkeypatch):
 def test_search_hybrid_query_uses_same_embedding_space_as_index(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-embed-test")
     monkeypatch.setattr(settings, "EMBEDDING_MODEL", "test-embed-model")
-    dim = int(settings.EMBEDDING_DIM)
+    dim = DEFAULT_DIM
     calls = []
     client = _mock_embedding_client(dim, calls)
 
