@@ -89,7 +89,7 @@ claude mcp add --transport http omnikeep --scope user https://<主機名>.<tailn
 
 ---
 
-## 工具清單（25 個）
+## 工具清單（26 個）
 
 以 `app/mcp_server.py` 裡的 `@mcp.tool()` 為準。工具名稱與參數是程式識別字，維持原文（例如 `search_brain`、`omnikeep_run_radar`）；名稱裡的 brain 指你的收藏，radar 指探索，proposal 指專案監看的建議。
 
@@ -113,6 +113,7 @@ claude mcp add --transport http omnikeep --scope user https://<主機名>.<tailn
 | `save_to_brain` | `content_or_url`、`category` | 存入網址、筆記或程式碼片段，照一般流程分析 |
 | `writeback_insight` | `title`、`summary`、`architecture_details`、`category`、`tech_tags`、`related_item_id` | 把和 agent 討論出的結論寫成一則新收藏；給 `related_item_id` 會建立引用關聯 |
 | `update_item_status` | `item_id`、`is_read`、`is_starred` | 封存（標記已讀）或加星 |
+| `attach_item_diagram` | `item_id`、`path` 或 `html` | 把 agent 用 Archify 畫好的架構圖 HTML 存進收藏，分析頁的「agent 架構圖」會在隔離框裡顯示（上限 8 MB） |
 
 ### 專案監看與建議（3 個，實驗功能）
 

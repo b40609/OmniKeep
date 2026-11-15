@@ -27,10 +27,11 @@ from app.parsers.transcript import TRANSCRIPT_MISSING, get_transcript
 from app.parsers.threads import is_threads_url, parse_threads_page
 from app.providers import get_primary_provider, get_gemini_provider, has_video_provider
 from app.providers.base import UnconfiguredProvider
-from app.arch_block import tidy_arch
+from app.arch_block import arch_body, check_arch, drop_arch, replace_arch, tidy_arch
 from app.config import settings
 from app.error_translate import mark_ai_failure
-from app.parsers.github_repo import TREE_HEADING, fetch_repo_files, files_in, files_section, repo_from_url
+from app.parsers.github_repo import (TREE_HEADING, excerpts_in, fetch_excerpts, fetch_repo, files_in, files_section,
+                                     repo_from_url)
 from app.schemas.intelligence import AnalysisFailedError, generate_structured_intelligence, usable_analysis
 
 logger = logging.getLogger("omnikeep.pipeline")
@@ -100,7 +101,7 @@ deep_analysis：Markdown，分兩層。讀者點開後要在 5 秒內知道值�
   - 區 1 到 3 個，依資料流先後：「區｜名稱｜一句說明｜進入這區的線上標籤」，名稱 6 字以內，一句說明 20 字以內，第一區的進入標籤留空。
   - 元件寫在所屬的區那一行後面，每區 2 到 5 個，照資料流順序：「元件｜ID｜圖示｜名稱｜一行說明｜小標籤｜類型｜完整說明｜重點｜檔案」。前一個元件的結果交給下一個，該區最後一個交給下一區的第一個。
   - 旁 0 到 2 個，是被某個元件呼叫、做完再回報的子程序或服務，接在呼叫它的元件；不能接在前面幾區的最後一個元件，每個元件最多接 1 個：「旁｜ID｜圖示｜名稱｜一行說明｜接在｜去程標籤｜回程標籤｜完整說明｜重點｜檔案」。
-  - ID 用英文小寫字母開頭，最多 8 個字元，不重複。名稱 8 字以內；一行說明 12 字以內；小標籤 1 個、10 字以內，優先放原文的數字；線上標籤 6 字以內；完整說明 80 字以內，寫它怎麼做、有什麼限制；重點 0 到 3 條，用「；」分隔，各 40 字以內；檔案 0 到 3 個，用頓號分隔，只能填專案檔案清單裡真的有的路徑，可以填資料夾。
+  - ID 用英文小寫字母開頭，最多 8 個字元，不重複。名稱 8 字以內；一行說明 12 字以內；小標籤 1 個、10 字以內，優先放原文的數字；線上標籤 6 字以內；完整說明 80 字以內，寫它怎麼做、有什麼限制；重點 0 到 3 條，用「；」分隔，各 40 字以內；檔案 0 到 3 個，用頓號分隔，只能填專案檔案清單裡真的有的路徑，可以填資料夾；做這件事的程式碼出現在「核心檔案摘錄」時，在路徑後面加冒號與行號範圍，例如 app/main.py:12-40，行號照摘錄每行開頭的數字，沒看到的行不要寫。
   - 類型填 一般、重點、關卡 其中一個：重點是這個專案和同類最不一樣的元件，關卡是要人工確認或會擋下流程的元件，兩者全圖各最多 1 個，其餘填一般。
   - 圖示只能填：user、bot、globe、chart、list、check、replay、coins、layers、stamp、cpu、shield、swap、db、box、file、code、search、cloud、key、bell、chat、image、play、gear、link、lock、mail、server、terminal、clock、folder、filter、send、download。
   - 網頁介面、API、MCP、命令列這類讓人或 AI 代理進來的介面，畫成入口，不要排成元件；元件依序排的是一次完整使用時，資料先後經過的處理步驟。
@@ -311,12 +312,14 @@ def _wrap_xml(tag: str, text: str) -> str:
 
 
 def keep_files_section(content: str, limit: int) -> str:
-    """content cut to limit characters, keeping a GitHub project's file list at its end whole."""
+    """content cut to limit characters, keeping a GitHub project's file list and core-file excerpts
+    at its end whole. The page itself keeps at least 8000 characters, so a long tail adds to the
+    limit rather than squeezing the README out."""
     at = content.find(f"\n\n{TREE_HEADING}")
     if at < 0 or len(content) <= limit:
         return content[:limit]
     files = content[at:]
-    return content[:max(0, limit - len(files))] + files
+    return content[:min(at, max(8000, limit - len(files)))] + files
 
 
 def saved_item_prompt(item: Dict[str, Any], categories: str) -> str:
@@ -429,6 +432,65 @@ async def _analyze_with_guardrails(provider, prompt: str, system_prompt: Optiona
             return {"deep_analysis": f"> {analysis_missing_note(exc.reason)}"}
         mark_ai_failure(exc)  # callers tell it from a failed fetch (app/error_translate.py)
         raise
+
+ARCH_REPAIR_PROMPT = """下面這個 arch 區塊是 GitHub 專案的系統架構圖，畫圖程式檢查出這些問題：
+{problems}
+
+請照原本的架構圖規則修正，只輸出修正後完整的 arch 程式碼區塊（以 ```arch 開頭、``` 結尾），不要其他文字。
+能修就修：合併相近的元件、改接到正確的元件、補上總結。內容本身不夠畫架構圖（元件不到 4 個）就只輸出：```arch
+不畫
+```
+
+架構圖規則：
+{rule}
+
+原本的區塊：
+```arch
+{body}```"""
+
+
+def _arch_rule() -> str:
+    text = analysis_system_prompt()
+    at = text.find("- 架構圖：")
+    end = text.find("- 限制：", at)
+    return text[at:end].strip() if at >= 0 and end > at else ""
+
+
+async def settle_arch(deep_analysis: str, url: str, content_raw: str) -> str:
+    """Check the architecture diagram the way Archify does before it delivers: paths are checked
+    against the repository, the block against the drawing's rules (app/arch_block.py). A block that
+    breaks them goes back to the model once with the problems named; if it still breaks them, or the
+    model cannot be reached, the diagram is left out rather than drawn wrong."""
+    repo = repo_from_url(url)
+    name = "/".join(repo) if repo else None
+    files = files_in(content_raw)
+    sha, seen = excerpts_in(content_raw)
+    tidy = lambda md: tidy_arch(md, name, files, sha=sha, seen=seen)  # noqa: E731
+    out = tidy(deep_analysis)
+    problems = check_arch(arch_body(out) or "")
+    if not problems:
+        return out
+    logger.info("[Pipeline] %s: architecture diagram breaks %d rule(s), asking for a fix", url, len(problems))
+    provider = get_primary_provider()
+    if isinstance(provider, UnconfiguredProvider):
+        return drop_arch(out)
+    body = arch_body(deep_analysis) or ""
+    try:
+        reply = await provider.generate_text(ARCH_REPAIR_PROMPT.format(
+            problems="\n".join(f"- {x}" for x in problems), rule=_arch_rule(), body=body))
+    except Exception as exc:
+        logger.info("[Pipeline] %s: architecture fix not reached (%s); diagram left out", url, exc)
+        return drop_arch(out)
+    fixed = arch_body(reply or "")
+    if fixed is None or fixed.strip() == "不畫":
+        return drop_arch(out)
+    again = tidy(replace_arch(deep_analysis, fixed))
+    left = check_arch(arch_body(again) or "")
+    if left:
+        logger.info("[Pipeline] %s: architecture diagram still breaks %s; left out", url, "; ".join(left))
+        return drop_arch(out)
+    return again
+
 
 def is_pure_url(text: str) -> bool:
     clean = text.strip()
@@ -555,9 +617,14 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
         repo = None if light else repo_from_url(url)
         if repo and parsed["content_raw"] and parsed.get("http_status") == 200:  # not for a 404 or an error page
             # the architecture diagram's cards link to real files (app/arch_block.py)
-            section = files_section(await fetch_repo_files(*repo))
+            info = await fetch_repo(*repo)
+            section = files_section(info["paths"])
             if section:
                 parsed["content_raw"] = f"{parsed['content_raw']}\n\n{section}"
+                # numbered first lines of the core files, so a card can cite the lines that do the work
+                excerpts = await fetch_excerpts(*repo, info)
+                if excerpts:
+                    parsed["content_raw"] = f"{parsed['content_raw']}\n\n{excerpts}"
     return parsed
 
 
@@ -914,8 +981,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
         deep_analysis = f"> {evidence_note}\n\n{deep_analysis}" if deep_analysis else f"> {evidence_note}"
 
     if deep_analysis and "```arch" in deep_analysis:
-        repo = repo_from_url(url or "")
-        deep_analysis = tidy_arch(deep_analysis, "/".join(repo) if repo else None, files_in(content_raw))
+        deep_analysis = await settle_arch(deep_analysis, url or "", content_raw)
 
     if user_note and not content_raw.startswith("## 使用者隨手筆記"):
         content_raw = f"## 使用者隨手筆記/備忘\n{user_note}\n\n" + content_raw

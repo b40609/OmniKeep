@@ -102,3 +102,99 @@ def test_file_list_fetch_failure_is_empty(monkeypatch):
 
     monkeypatch.setattr(github_repo, "public_http_client", lambda **kw: Boom())
     assert asyncio.run(github_repo.fetch_repo_files("owner", "repo")) == []
+
+
+# ── checks before delivery (Archify-style), line ranges and the commit ──────────
+
+from app.arch_block import arch_body, check_arch, drop_arch  # noqa: E402
+from app.parsers.github_repo import core_files, excerpts_in, excerpts_section  # noqa: E402
+
+GOOD = """總結：資料從網頁進來，處理後存起來。
+入口｜you｜user｜你｜網頁｜api｜請求｜｜｜
+區｜收｜先收｜
+元件｜api｜server｜API｜收請求｜｜一般｜｜｜
+元件｜parse｜file｜解析｜抽重點｜｜一般｜｜｜
+區｜存｜存起來｜結果
+元件｜db｜db｜資料庫｜存起來｜｜重點｜｜｜
+元件｜idx｜search｜索引｜找得到｜｜一般｜｜｜
+旁｜emb｜cpu｜向量｜算向量｜db｜文字｜向量｜｜｜
+"""
+
+
+def test_a_good_block_passes_the_checks():
+    assert check_arch(GOOD) == []
+
+
+def test_the_checks_name_what_the_drawing_would_drop():
+    bad = GOOD.replace("｜api｜請求", "｜db｜請求").replace("｜db｜文字", "｜parse｜文字")
+    problems = check_arch(bad.replace("總結：資料從網頁進來，處理後存起來。\n", ""))
+    text = "\n".join(problems)
+    assert "總結" in text and "第一區" in text and "最後一個元件" in text
+
+
+def test_too_few_cards_is_a_problem():
+    assert any("4 個以上" in p for p in check_arch("總結：x\n入口｜u｜user｜你｜｜a｜｜｜｜\n元件｜a｜box｜甲｜｜｜一般｜｜｜\n元件｜b｜box｜乙｜｜｜一般｜｜｜\n"))
+
+
+def test_drop_removes_the_whole_section_only():
+    md = "> 值得看。\n\n" + BLOCK + "\n\n## 限制\n- 只有英文"
+    out = drop_arch(md)
+    assert "```arch" not in out and "系統架構" not in out and "## 限制" in out and out.startswith("> 值得看。")
+
+
+SHA = "a" * 40
+
+
+def test_line_ranges_stay_only_for_lines_the_analysis_saw():
+    block = BLOCK.replace("app/main.py、app/nope.py、./app/routers", "app/main.py:10-40、app/db.py:5-9、app/routers")
+    out = tidy_arch(block, "owner/repo", FILES, sha=SHA, seen={"app/main.py": 120})
+    body = arch_body(out)
+    assert f"專案：owner/repo@{SHA}" in body
+    api = next(x for x in body.splitlines() if x.startswith("元件｜api"))
+    assert api.endswith("｜app/main.py:10-40、app/db.py、app/routers")  # db.py was not in the excerpts
+    out = tidy_arch(block.replace("10-40", "100-200"), "owner/repo", FILES, sha=SHA, seen={"app/main.py": 120})
+    assert "app/main.py:100" not in out and "app/main.py、" in out
+
+
+def test_core_files_pick_entry_points_not_tests():
+    paths = ["README.md", "app/main.py", "app/db.py", "tests/test_x.py", "docs/conf.py", "app/__init__.py", "setup.py"]
+    picks = core_files(paths, {"app/main.py": 3000, "app/db.py": 20000, "app/__init__.py": 10, "setup.py": 900})
+    assert picks[0] == "app/main.py" and "tests/test_x.py" not in picks and "setup.py" not in picks
+
+
+def test_excerpts_round_trip_with_line_numbers():
+    text = excerpts_section(SHA, [("app/main.py", "import os\n\nprint(1)\n")])
+    assert "1| import os" in text and "3| print(1)" in text
+    assert excerpts_in("README\n\n" + text) == (SHA, {"app/main.py": 3})
+    assert excerpts_section(SHA, []) == ""
+
+
+def test_the_prompt_cut_keeps_the_page_when_the_tail_is_long():
+    tail = files_section(FILES) + "\n\n" + excerpts_section(SHA, [("app/main.py", ("y" * 100 + "\n") * 2000)])
+    text = "R" * 20000 + "\n\n" + tail
+    cut = pipeline.keep_files_section(text, 12000)
+    assert cut.count("R") == 8000 and cut.endswith(tail)
+
+
+def _run_settle(monkeypatch, reply):
+    class P:
+        calls = 0
+
+        async def generate_text(self, prompt, system_prompt=None):
+            P.calls += 1
+            assert "第一行要寫「總結：」" in prompt
+            return reply
+
+    monkeypatch.setattr(pipeline, "get_primary_provider", lambda: P())
+    md = "<details open>\n<summary>系統架構：兩段</summary>\n\n```arch\n" + GOOD.split("\n", 1)[1] + "```\n\n</details>"
+    return asyncio.run(pipeline.settle_arch(md, "https://github.com/owner/repo", "")), P.calls
+
+
+def test_a_broken_diagram_is_sent_back_once_and_fixed(monkeypatch):
+    out, calls = _run_settle(monkeypatch, "```arch\n" + GOOD + "```")
+    assert calls == 1 and "總結：資料從網頁進來" in out and "專案：owner/repo" in out
+
+
+def test_a_diagram_still_broken_after_the_fix_is_left_out(monkeypatch):
+    out, calls = _run_settle(monkeypatch, "```arch\n" + GOOD.split("\n", 1)[1] + "```")
+    assert calls == 1 and "```arch" not in out

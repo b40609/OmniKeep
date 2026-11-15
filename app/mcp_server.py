@@ -442,6 +442,24 @@ async def update_item_status(
     return f"✅ 項目 [{item_id}] 狀態已更新為：{', '.join(status_str)}"
 
 
+# ── 8b. Attach an agent-drawn architecture diagram ──────────────
+
+@mcp.tool()
+async def attach_item_diagram(item_id: str, path: str = "", html: str = "") -> str:
+    """
+    Keep an architecture diagram you drew for an OmniKeep item (usually a GitHub project) with
+    the Archify skill: give the absolute path of the finished standalone HTML file on this
+    computer, or its content as html. OmniKeep shows it in the item's analysis, sandboxed and
+    offline. Replaces the item's earlier diagram. Limit 8 MB.
+    """
+    from app.deep_diagram import DiagramError, save_diagram, save_diagram_file
+    try:
+        info = save_diagram_file(item_id, path) if path else save_diagram(item_id, html)
+    except DiagramError as exc:
+        return f"錯誤：{exc}"
+    return f"✅ 已把架構圖存進收藏 [{item_id}]（{info['size_bytes'] // 1024} KB），在分析頁的「agent 架構圖」可以看。"
+
+
 # ── 9. Ask Brain Synthesis Tool (Cross-Article Report) ───────────
 
 @mcp.tool()

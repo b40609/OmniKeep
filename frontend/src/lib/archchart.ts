@@ -4,7 +4,7 @@
 
      總結：一句白話
      附註：右上角的補充
-     專案：owner/repo                                              (added by the server)
+     專案：owner/repo@commit                                       (added by the server)
      入口｜ID｜圖示｜名稱｜一行說明｜接到｜線上標籤｜完整說明｜重點；重點｜檔案、檔案
      區｜名稱｜一句說明｜進入這區的線上標籤
      元件｜ID｜圖示｜名稱｜一行說明｜小標籤｜一般/重點/關卡｜完整說明｜重點｜檔案
@@ -14,7 +14,9 @@
    區 a band of cards in data-flow order, snaking down from one band to the next, helpers hanging
    under the card that calls them. On a narrow column the same diagram stacks top to bottom at full
    size instead of shrinking. A beam walks the flow one line at a time and rests on each card; a
-   click opens the card's details beside it. Like lib/flowchart.ts it plays even under the system's
+   click opens the card's details beside it and, like Archify's Upstream/Downstream, lights
+   everything that leads to the card and everything it leads to. A file may carry a line range
+   (app/main.py:12-40); links open those lines on the commit the analysis read. Like lib/flowchart.ts it plays even under the system's
    reduce-motion setting: the owner's Windows has it on and asked for the motion. Everything is DOM text set with textContent; nothing
    from the model reaches innerHTML. */
 
@@ -27,7 +29,7 @@ export interface ArchInput extends ArchNode { to: string; label: string }
 export interface ArchSide extends ArchNode { parent: string; out: string; back: string }
 export interface ArchLane { title: string; note: string; label: string; ids: string[] }
 export interface Arch {
-  gist: string; note: string; repo: string
+  gist: string; note: string; repo: string; sha: string
   inputs: ArchInput[]; lanes: ArchLane[]; sides: ArchSide[]; nodes: Record<string, ArchNode>
 }
 
@@ -37,7 +39,7 @@ const list = (s: string | undefined, sep: RegExp) => (s || '').split(sep).map((x
 const MAX_INPUTS = 3, MAX_LANES = 3, MAX_PER_LANE = 5, MAX_SIDES = 2
 
 export function parseArch(code: string): Arch | null {
-  const a: Arch = { gist: '', note: '', repo: '', inputs: [], lanes: [], sides: [], nodes: {} }
+  const a: Arch = { gist: '', note: '', repo: '', sha: '', inputs: [], lanes: [], sides: [], nodes: {} }
   const ins: ArchInput[] = [], sides: ArchSide[] = []
   let lane: ArchLane | null = null
   const node = (f: string[], kind: ArchKind, at: { more: number; facts: number; files: number }): ArchNode | null => {
@@ -57,8 +59,8 @@ export function parseArch(code: string): Arch | null {
     if (m) { a.gist = m[1]; continue }
     m = line.match(/^附註[:：]\s*(.+)$/)
     if (m) { a.note = m[1]; continue }
-    m = line.match(/^專案[:：]\s*([\w.-]+\/[\w.-]+)\s*$/)
-    if (m) { a.repo = m[1]; continue }
+    m = line.match(/^專案[:：]\s*([\w.-]+\/[\w.-]+)(?:@([0-9a-f]{7,40}))?\s*$/)
+    if (m) { a.repo = m[1]; a.sha = m[2] || ''; continue }
     const f = line.split(SEP)
     if (f[0] === '入口') {
       const n = node(f, 'ext', { more: 7, facts: 8, files: 9 })
@@ -646,6 +648,7 @@ class ArchView {
     if (this.openId) this.cards[this.openId]?.classList.remove('ac-picked')
     this.openId = id
     c.classList.add('ac-picked'); this.stage.classList.add('ac-picking')
+    const reach = this.reach(id)
     const pop = this.pop
     pop.replaceChildren()
     const x = el('button', 'ac-x', '×')
@@ -664,17 +667,22 @@ class ArchView {
       const pr = el('div', 'ac-pr')
       if (ins.length) { const s = el('span', ''); s.append(el('i', '', '從'), document.createTextNode(ins.join('、'))); pr.append(s) }
       if (outs.length) { const s = el('span', ''); s.append(el('i', '', '到'), document.createTextNode(outs.join('、'))); pr.append(s) }
+      const far = [reach.up > ins.length ? `上游共 ${reach.up} 個` : '', reach.down > outs.length ? `下游共 ${reach.down} 個` : ''].filter(Boolean)
+      if (far.length) pr.append(el('span', 'ac-far', far.join('，')))
       pop.append(pr)
     }
     if (n.files.length) {
       const pp = el('div', 'ac-pp')
-      for (const f of n.files) {
-        if (this.a.repo && /^[\w./-]+$/.test(f)) {
-          const link = el('a', '', f) as HTMLAnchorElement
-          link.href = `https://github.com/${this.a.repo}/blob/HEAD/${f.split('/').map(encodeURIComponent).join('/')}`
+      for (const raw of n.files) {
+        const m = raw.match(/^([\w./-]+?)(?::(\d+)(?:-(\d+))?)?$/)
+        if (this.a.repo && m) {
+          const [, f, a, b] = m
+          const link = el('a', '', a ? `${f} 第 ${a}${b && b !== a ? `–${b}` : ''} 行` : f) as HTMLAnchorElement
+          const lines = a ? `#L${a}${b && b !== a ? `-L${b}` : ''}` : ''
+          link.href = `https://github.com/${this.a.repo}/blob/${this.a.sha || 'HEAD'}/${f.split('/').map(encodeURIComponent).join('/')}${lines}`
           link.target = '_blank'; link.rel = 'noopener noreferrer'
           pp.append(link)
-        } else pp.append(el('span', '', f))
+        } else pp.append(el('span', '', raw))
       }
       pop.append(pp)
     }
@@ -694,9 +702,34 @@ class ArchView {
     requestAnimationFrame(() => pop.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
   }
 
+  /** Light the cards and lines that lead to `id` (upstream) and that it leads to (downstream). */
+  private reach(id: string): { up: number; down: number } {
+    this.unreach()
+    const walk = (from: string, fwd: boolean) => {
+      const seen = new Set<string>(), todo = [from]
+      while (todo.length) {
+        const cur = todo.pop() as string
+        for (const e of this.edges) {
+          const [a, b] = fwd ? [e.spec.s, e.spec.t] : [e.spec.t, e.spec.s]
+          if (a !== cur) continue
+          e.p.classList.add(fwd ? 'ac-down' : 'ac-up'); e.ah.classList.add(fwd ? 'ac-down' : 'ac-up')
+          if (b !== from && !seen.has(b)) { seen.add(b); todo.push(b) }
+        }
+      }
+      seen.forEach((x) => this.cards[x]?.classList.add(fwd ? 'ac-down' : 'ac-up'))
+      return seen.size
+    }
+    return { up: walk(id, false), down: walk(id, true) }
+  }
+
+  private unreach() {
+    this.stage.querySelectorAll('.ac-up, .ac-down').forEach((x) => x.classList.remove('ac-up', 'ac-down'))
+  }
+
   private close() {
     if (!this.openId) return
     this.cards[this.openId]?.classList.remove('ac-picked')
+    this.unreach()
     this.pop.remove(); this.stage.classList.remove('ac-picking')
     this.openId = null; this.last = 0
     this.kick()

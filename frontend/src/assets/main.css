@@ -1134,7 +1134,12 @@ input, textarea { caret-color: var(--primary); }
 .prose-reader .ac-focus .ac-nd:not(.ac-on) { opacity: .32; }
 .prose-reader .ac-focus .ac-ed:not(.ac-on), .prose-reader .ac-focus .ac-ah:not(.ac-on) { opacity: .2; }
 .prose-reader .ac-focus .ac-ed.ac-on { stroke: color-mix(in srgb, var(--foreground) 70%, transparent); }
-.prose-reader .ac-picking .ac-nd:not(.ac-picked) { opacity: .45; }
+.prose-reader .ac-picking .ac-nd:not(.ac-picked):not(.ac-up):not(.ac-down) { opacity: .28; }
+.prose-reader .ac-picking .ac-ed:not(.ac-up):not(.ac-down), .prose-reader .ac-picking .ac-ah:not(.ac-up):not(.ac-down) { opacity: .18; }
+.prose-reader .ac-picking .ac-ed.ac-up, .prose-reader .ac-picking .ac-ed.ac-down { stroke: color-mix(in srgb, var(--foreground) 62%, transparent); }
+.prose-reader .ac-picking .ac-ed.ac-down { stroke-dasharray: 5 4; }
+.prose-reader .ac-picking .ac-nd.ac-up, .prose-reader .ac-picking .ac-nd.ac-down { opacity: .9; }
+.prose-reader .ac-pr .ac-far { color: var(--muted-foreground); }
 .prose-reader .ac-nd.ac-picked { z-index: 2; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--foreground) 70%, transparent), 0 10px 30px rgba(0, 0, 0, .25); }
 
 /* 點開的詳細資訊：出現在卡片旁邊 */

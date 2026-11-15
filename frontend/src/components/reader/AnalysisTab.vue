@@ -12,6 +12,7 @@ import { renderMarkdown, useCodeCopy, extractToc } from '@/lib/markdown'
 import { renderMermaidIn } from '@/lib/mermaid'
 import { renderFlowsIn, disposeFlowsIn } from '@/lib/flowchart'
 import { renderArchIn, disposeArchIn } from '@/lib/archchart'
+import DeepDiagram from '@/components/reader/DeepDiagram.vue'
 import { useUiStore } from '@/stores/ui'
 import { useMutations } from '@/composables/useMutations'
 
@@ -72,6 +73,9 @@ watch(
   { immediate: true },
 )
 onBeforeUnmount(() => { detachCodeCopy?.(); disposeFlowsIn(contentRef.value); disposeArchIn(contentRef.value) })
+
+// a github.com/owner/repo address: what the agent prompt clones
+const isGithubProject = computed(() => /^https?:\/\/(www\.)?github\.com\/[\w.-]+\/[\w.-]+\/?(?:[#?].*)?$/i.test(ui.activeItem?.url || ''))
 
 const tocItems = computed(() => extractToc(ui.activeItem?.deep_analysis))
 function scrollToHeading(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
@@ -304,6 +308,9 @@ function openItem(id: number | string) {
         這則收藏還沒有重點分析，可以改看「原文」。
       </div>
     </section>
+
+    <!-- A deeper diagram from the user's own agent (Archify), GitHub projects only -->
+    <DeepDiagram v-if="isGithubProject" :item-id="ui.activeItem.id" />
 
     <!-- Semantic Neighbors / Related Items (E4) -->
     <section

@@ -629,6 +629,29 @@ export async function fetchSnapshotHtml(itemId: number | string): Promise<string
   return res.text()
 }
 
+/* ---------------- Agent-drawn architecture diagram (app/deep_diagram.py) ---------------- */
+
+export interface DiagramStatus {
+  has_diagram: boolean
+  size_bytes: number
+  mtime?: number
+  /** What to paste into the user's coding agent. */
+  prompt: string
+}
+
+export function getDiagramStatus(itemId: number | string): Promise<DiagramStatus> {
+  return request<DiagramStatus>(`/api/items/${itemId}/diagram/status`)
+}
+
+/** The page as text, for a sandboxed frame only (scripts on, no same-origin, no network). */
+export async function fetchDiagramHtml(itemId: number | string): Promise<string> {
+  return request<string>(`/api/items/${itemId}/diagram`, undefined, (res) => res.text())
+}
+
+export function deleteDiagram(itemId: number | string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/api/items/${itemId}/diagram`, { method: 'DELETE' })
+}
+
 /* ---------------- Categories ---------------- */
 
 export function getCategories(): Promise<Category[]> {

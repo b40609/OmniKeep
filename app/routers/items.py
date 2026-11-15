@@ -169,6 +169,45 @@ async def get_snapshot_status(item_id: str):
     from app.snapshot import get_snapshot_info
     return get_snapshot_info(item_id)
 
+@router.get("/{item_id}/diagram")
+async def get_deep_diagram(item_id: str):
+    """The architecture diagram the user's agent drew (app/deep_diagram.py), sandboxed."""
+    from app.deep_diagram import DIAGRAM_HEADERS, load_diagram
+    html = load_diagram(item_id)
+    if html is None:
+        raise HTTPException(status_code=404, detail="這則收藏還沒有 agent 畫的架構圖")
+    return HTMLResponse(content=html, media_type="text/html; charset=utf-8", headers=DIAGRAM_HEADERS)
+
+
+@router.get("/{item_id}/diagram/status")
+async def get_deep_diagram_status(item_id: str, request: Request):
+    from app.deep_diagram import agent_prompt, diagram_info
+    item = get_item_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return {**diagram_info(item_id), "prompt": agent_prompt(item, str(request.base_url))}
+
+
+@router.put("/{item_id}/diagram")
+async def put_deep_diagram(item_id: str, request: Request):
+    from app.deep_diagram import MAX_BYTES, DiagramError, save_diagram
+    body = await request.body()
+    if len(body) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail="架構圖太大")
+    try:
+        return save_diagram(item_id, body.decode("utf-8", errors="replace"))
+    except DiagramError as exc:
+        raise HTTPException(status_code=404 if "找不到" in str(exc) else 400, detail=str(exc)) from exc
+
+
+@router.delete("/{item_id}/diagram")
+async def delete_deep_diagram(item_id: str):
+    from app.deep_diagram import delete_diagram
+    if not delete_diagram(item_id):
+        raise HTTPException(status_code=404, detail="這則收藏沒有 agent 畫的架構圖")
+    return {"success": True}
+
+
 @router.get("/{item_id}")
 async def get_item(item_id: str):
     item = get_item_by_id(item_id)
@@ -222,6 +261,8 @@ async def remove_item(item_id: str):
     ok = delete_item(item_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Item not found")
+    from app.deep_diagram import delete_diagram
+    delete_diagram(item_id)
     return {"success": True, "message": "Item deleted"}
 
 
