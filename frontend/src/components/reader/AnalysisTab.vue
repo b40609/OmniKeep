@@ -11,6 +11,7 @@ import { cleanHost, formatRelativeTime, estimateReadTime, sourceMeta } from '@/l
 import { renderMarkdown, useCodeCopy, extractToc } from '@/lib/markdown'
 import { renderMermaidIn } from '@/lib/mermaid'
 import { renderFlowsIn, disposeFlowsIn } from '@/lib/flowchart'
+import { renderArchIn, disposeArchIn } from '@/lib/archchart'
 import { useUiStore } from '@/stores/ui'
 import { useMutations } from '@/composables/useMutations'
 
@@ -60,15 +61,17 @@ watch(
     detachCodeCopy?.()
     detachCodeCopy = null
     disposeFlowsIn(contentRef.value)
+    disposeArchIn(contentRef.value)
     if (!ui.activeItem?.deep_analysis) return
     await nextTick()
     detachCodeCopy = useCodeCopy(contentRef.value)
     void renderMermaidIn(contentRef.value)
     renderFlowsIn(contentRef.value)
+    renderArchIn(contentRef.value)
   },
   { immediate: true },
 )
-onBeforeUnmount(() => { detachCodeCopy?.(); disposeFlowsIn(contentRef.value) })
+onBeforeUnmount(() => { detachCodeCopy?.(); disposeFlowsIn(contentRef.value); disposeArchIn(contentRef.value) })
 
 const tocItems = computed(() => extractToc(ui.activeItem?.deep_analysis))
 function scrollToHeading(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }

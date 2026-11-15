@@ -72,6 +72,11 @@ function codeRenderer(code: string, lang: string): string {
     const src = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     return `<div class="flow-block"><pre class="flow-src">${src}</pre></div>`
   }
+  if (lang.toLowerCase() === 'arch') {
+    // Drawn later by renderArchIn (lib/archchart.ts); the source waits hidden in the block.
+    const src = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    return `<div class="arch-block"><pre class="arch-src">${src}</pre></div>`
+  }
   if (lang.toLowerCase() === 'mermaid') {
     // Drawn later by renderMermaidIn (lib/mermaid.ts); the source waits hidden in the block.
     const src = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

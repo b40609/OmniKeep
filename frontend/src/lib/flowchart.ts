@@ -132,7 +132,6 @@ class FlowView {
   private root: HTMLElement
   private stage: HTMLElement
   private cap: HTMLElement
-  private capId: string | null | undefined = undefined
   private cards: Record<string, HTMLElement> = {}
   private edges: EdgeView[] = []
   private sel: string | null = null
@@ -156,10 +155,8 @@ class FlowView {
     if (flow.gist) root.append(el('p', 'fc-gist', flow.gist))
     this.stage = el('div', 'fc-stage')
     root.append(this.stage)
-    this.cap = el('div', 'fc-cap')
-    // a flow whose steps carry nothing beyond the card has no caption to show
-    const extra = flow.order.some((id) => { const s = flow.steps[id]; return s.more || s.gate || s.tags.length }) || flow.edges.some((e) => e.label)
-    if (extra) root.append(this.cap)
+    this.cap = el('div', 'fc-pop')
+    this.cap.addEventListener('click', (ev) => ev.stopPropagation())
     this.stage.addEventListener('click', () => { if (this.sel) this.select(null) })
     const ro = new ResizeObserver(() => { this.fit(); const w = this.stage.clientWidth; if (w && w !== this.width) { this.width = w; this.layout() } })
     ro.observe(this.stage)
@@ -171,7 +168,6 @@ class FlowView {
     const bound = this.bound()
     if (bound) { const fo = new ResizeObserver(() => this.fit()); fo.observe(bound); this.observers.push(fo) }
     this.fit()
-    this.caption(flow.order[0])
     this.raf = requestAnimationFrame(this.frame)
   }
 
@@ -209,27 +205,23 @@ class FlowView {
     head.append(ico, el('span', 'fc-title', s.label), el('span', 'fc-no', `${this.flow.order.indexOf(id) + 1}/${n}`))
     c.append(head)
     if (s.desc) c.append(el('div', 'fc-desc', s.desc))
+    // a small mark tells there is more to read on click
+    const extra = s.more || s.gate || s.tags.length || this.flow.edges.some((e) => e.s === id && e.label)
+    if (extra) c.classList.add('fc-has-more')
     const toggle = (ev: Event) => { ev.stopPropagation(); this.select(this.sel === id ? null : id) }
     c.addEventListener('click', toggle)
     c.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(ev) } })
     return c
   }
 
-  /** The caption under the chart tells the step the beam is on (or the one picked): what it
-   *  does, its numbers, where it stops, and where it goes next and when. */
+  /** The details of a picked step open right beside its card: the full note, its numbers, where it
+   *  stops, and where it goes next and when. */
   private caption(id: string | null) {
-    if (id === this.capId) return
-    this.capId = id
     const cap = this.cap
-    cap.classList.remove('fc-cap-in'); void cap.offsetWidth; cap.classList.add('fc-cap-in')
-    if (!id) { cap.replaceChildren(); return }
-    const s = this.flow.steps[id], n = this.flow.order.length, picked = this.sel === id
-    const head = el('div', 'fc-cap-head')
-    head.append(el('span', `fc-cap-dot fc-k-${s.kind}`), el('span', 'fc-cap-no', `${this.flow.order.indexOf(id) + 1}/${n}`), el('b', '', s.label))
-    if (!picked) head.append(el('span', 'fc-cap-tip', '點步驟可停下來細看'))
-    const body: HTMLElement[] = [head]
-    // the card already shows the one-line note; the caption adds the full one
-    if (s.more || (picked && s.desc)) body.push(el('p', 'fc-cap-desc', s.more || s.desc))
+    if (!id) { cap.remove(); return }
+    const s = this.flow.steps[id]
+    const body: HTMLElement[] = []
+    if (s.more) body.push(el('p', 'fc-cap-desc', s.more))
     const meta = el('div', 'fc-cap-meta')
     s.tags.forEach((t) => meta.append(el('span', 'fc-tag', t)))
     if (s.gate) { const g = el('span', 'fc-cap-gate'); g.append(icon(GATE_ICON), document.createTextNode(s.gate)); meta.append(g) }
@@ -240,7 +232,17 @@ class FlowView {
       meta.append(g)
     }
     if (meta.childNodes.length) body.push(meta)
+    if (!body.length) { cap.remove(); return }
     cap.replaceChildren(...body)
+    // under the card when there is room in the chart, otherwise above it; kept inside the chart
+    const c = this.cards[id], st = this.stage
+    const w = Math.min(st.clientWidth - 16, Math.max(c.offsetWidth, 300))
+    cap.style.width = `${w}px`
+    cap.style.left = `${Math.max(8, Math.min(c.offsetLeft, st.clientWidth - w - 8))}px`
+    st.append(cap)
+    const below = c.offsetTop + c.offsetHeight + 8
+    cap.style.top = below + cap.offsetHeight <= st.clientHeight - 4 ? `${below}px` : `${Math.max(4, c.offsetTop - cap.offsetHeight - 8)}px`
+    cap.classList.remove('fc-pop-in'); void cap.offsetWidth; cap.classList.add('fc-pop-in')
   }
 
   /* Layout: rows read left to right and wrap, like text; a section starts a new row. On a phone a
@@ -473,7 +475,6 @@ class FlowView {
       for (const [id, c] of Object.entries(this.cards)) c.classList.toggle('fc-live', id === lit)
       if (lit) { const c = this.cards[lit]; c.classList.remove('fc-arrive'); void c.offsetWidth; c.classList.add('fc-arrive') }
       this.litId = lit
-      if (!this.sel && lit) this.caption(lit)
     }
   }
 
@@ -504,12 +505,11 @@ class FlowView {
     Object.values(this.cards).forEach((c) => c.classList.remove('fc-sel', 'fc-on'))
     this.edges.forEach((v) => { v.p.classList.remove('fc-on'); v.ah.classList.remove('fc-on'); v.lb?.classList.remove('fc-on') })
     this.sel = id
-    if (!id) { this.paused = false; this.head = -40; this.rest = 0; this.capId = undefined; this.caption(this.litId ?? this.flow.order[0]); return }
+    if (!id) { this.paused = false; this.head = -40; this.rest = 0; this.caption(null); return }
     this.paused = true
     this.setHead(-400)
     stage.classList.add('fc-dim')
     this.cards[id].classList.add('fc-sel', 'fc-on')
-    this.capId = undefined
     this.caption(id)
     for (const v of this.edges) {
       if (v.e.s !== id && v.e.t !== id) continue

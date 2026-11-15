@@ -27,8 +27,10 @@ from app.parsers.transcript import TRANSCRIPT_MISSING, get_transcript
 from app.parsers.threads import is_threads_url, parse_threads_page
 from app.providers import get_primary_provider, get_gemini_provider, has_video_provider
 from app.providers.base import UnconfiguredProvider
+from app.arch_block import tidy_arch
 from app.config import settings
 from app.error_translate import mark_ai_failure
+from app.parsers.github_repo import TREE_HEADING, fetch_repo_files, files_in, files_section, repo_from_url
 from app.schemas.intelligence import AnalysisFailedError, generate_structured_intelligence, usable_analysis
 
 logger = logging.getLogger("omnikeep.pipeline")
@@ -56,6 +58,11 @@ _ANALYSIS_PROMPT_TEMPLATE = r"""你幫使用者整理他自己收藏的內容。
 - 數學符號和單位用純文字，例如「約 6 GB」「>= 85%」「0 到 100 A」。數字一律用阿拉伯數字，例如「3.5 倍」「12 小時」。
 - 標點用全形中文標點：，。：「」。
 
+## 先抓核心
+- 動筆前先找出兩件事：作者自己怎麼介紹它，也就是原文開頭那句話、副標或「給誰用、能做到什麼」；以及讀者用了它最後拿到什麼結果。
+- 標題、摘要第 1 句、引言、「最重要的 3 件事」第 1 條，都要講到這個核心。原文自己的關鍵說法要保留，例如原文寫「扣掉成本後還剩多少」「汰舊換新」，就照這個意思寫，不要換成「量化系統」「管理框架」這類泛稱。
+- 安全防護與實作細節是配角，例如只綁本機、禁用浮點數、雜湊核對、金鑰加密、測試數量、授權、支援平台：原文把它當主打才放進第一層，否則放「更多重點」。
+
 ## 各欄位
 title_l1：25 字以內，一般讀者一看就懂的白話，不要堆疊術語。
 - 專案、工具、模型：「名稱：最吸引人的具體事實或用途」，例如「sparqlite：AI 代理自主 12 小時生出 SQLite 擴充」「web-edit：用手機安全修改伺服器設定檔」。
@@ -67,7 +74,7 @@ summary_l1：2 到 3 句，合計 70 到 120 字，放在標題正下方。
 字數算法：中文字一個算 1 字，英文單字或數字一組算 1 字，例如「sparqlite」算 1 字、「12 小時」算 3 字。
 - 第 1 句：它是什麼、能幫讀者做到什麼、和一般做法差在哪。直接用名詞片語開頭，不寫「某某是一個」，也不再寫一次標題裡的名稱；標題已經講過的事，例如「正式發布」，摘要不再講。
 - 第 2 句：最關鍵的具體事實，依內容類型挑原文有的寫，原文沒有的就略過，不要湊：
-  - 專案、工具、模型：數字、規模、授權、部署方式、能不能在本機跑。
+  - 專案、工具、模型：撐起第 1 句的做法、規模或數字，以及能不能在本機跑；授權與支援平台放「更多重點」。
   - 研究、技術文章：方法、樣本或實驗條件，以及結論的限制。
   - 觀點、新聞、經驗談：關鍵數據、背景，或影響到誰。
 - 第 3 句，有必要才寫：適用對象或適用情境。
@@ -75,21 +82,34 @@ summary_l1：2 到 3 句，合計 70 到 120 字，放在標題正下方。
 deep_analysis：Markdown，分兩層。讀者點開後要在 5 秒內知道值不值得看、最重要的是什麼；其餘細節收合起來，需要才點開。
 第一層，一定顯示：
 - 第一行用「> 」開頭的引言，1 到 2 句、合計 60 字以內：直接回答這篇值不值得細看、最適合誰。不寫客套話。
-- 「## 最重要的 3 件事」：剛好 3 條，每條格式是「- **2 到 4 字關鍵詞**：一句話」，一句話 40 字以內，寫原文最關鍵的事實、數字或主張。
+- 「## 最重要的 3 件事」：剛好 3 條，每條格式是「- **2 到 4 字關鍵詞**：一句話」，一句話 40 字以內。依序寫：它幫讀者做到的核心結果、和一般做法最不一樣的地方、最能證明它有用的事實或數字。
 - 「## 我可以怎麼用」：技術類內容才寫，1 到 2 條，每條寫「什麼情境下用＋第一步做什麼」。<<BACKGROUND_ADVICE>>跟使用者的工作或興趣真的接得上才寫；接不上就只寫 1 條一般用法，不要硬套。
 第二層，用 HTML 收合區，依下面的順序，每一區的標題要直接帶出裡面的重點，讓人不點開也知道有什麼：
 - 更多重點：其餘重點 2 到 6 條，格式同上；原文是清單、步驟或規格時全部列出。
 - 比較表：原文比較 2 個以上的對象，例如工具、模型、方案、版本，而且有共通的比較維度時才加。標題寫一句比較結論，例如「比較表：Qwen3 顯存最省，Llama 4 最快」。裡面放 Markdown 表格，第一欄是對象，共 3 到 5 欄、2 到 8 列，每格 15 字以內，數字照原文寫，不自己換算或加總；原文沒提到的格子填「原文未提及」，不推測。只有 1 個對象或沒有共通維度時不要做表格。
-- 流程圖：只有原文明確描述 5 步以上、前一步的結果交給下一步的流程（操作步驟、資料流、模組之間的呼叫順序）時才加；讀者照著圖能重做一遍或看懂系統怎麼運作，才值得畫。標題寫「流程圖：N 步，從起點到終點」。裡面放一個 flow 程式碼區塊，每行一筆，欄位用全形直線「｜」分隔，不用引號：
+- 流程圖：只有原文明確描述 5 步以上、前一步的結果交給下一步的流程（操作步驟、資料流、模組之間的呼叫順序）時才加；讀者照著圖能重做一遍或看懂系統怎麼運作，才值得畫。有好幾條流程時，畫讀者使用它的主流程，也就是從投入到拿到結果；系統內部模組的呼叫順序，只有原文主題就是架構時才畫。原文說某條流程只用來驗證或示範，就不要畫那條。標題寫「流程圖：N 步，從起點到終點」。裡面放一個 flow 程式碼區塊，每行一筆，欄位用全形直線「｜」分隔，不用引號：
   - 第一行寫「總結：」加一句 40 字以內的白話，說這個流程在做什麼，有分岔、退回或關卡就一起講。
   - 步驟一行一個：「ID｜類型｜名稱｜一行說明｜小標籤｜完整說明｜關卡」。ID 用 A、B、C 依序排；類型只能填 開始、執行、檢查、人工、完成 其中一個；名稱 10 字以內；一行說明 20 字以內；小標籤 0 到 2 個、各 8 字以內，用頓號分隔，優先放原文的數字；完整說明 60 字以內，寫一行說明放不下的細節；關卡寫這一步在什麼情況會擋下或中止流程，沒有就留空。原文沒寫到的欄位一律留空，不要自己補；名稱以外的欄位都可以留空。
   - 5 到 12 個步驟。超過 8 步時，用「段：名稱」把步驟分成 2 到 4 段，每段步數盡量平均，名稱 4 字以內，寫在該段第一個步驟前面。
   - 連線一行一條：「A -> B」；有條件時在後面加「｜條件」，例如「C -> D｜檢查通過」；退回、重做也照寫，例如「C -> B｜發現缺陷，退回」。主線依步驟順序連起來；不要連回同一步，同一步自己重做就寫在關卡欄。
   - 觀點文章、評測、新聞、教學裡的並列技巧或重點清單、4 步以內的流程、沒有明確因果先後的概念都不要畫；拿不準就不畫。
+- 架構圖：只有 GitHub 專案，而且原文或專案檔案清單看得出它由 4 個以上的元件組成、元件之間有資料往來時才加；有架構圖就不畫流程圖。讀者要一眼看懂它由哪些部分組成、資料怎麼流、和同類專案哪裡不一樣，所以寫這個專案特有的元件與做法，不寫「前端」「後端」「資料庫」這類每個專案都有的泛稱，除非那正是它的重點。這一區預設打開，開頭寫 <details open>，標題寫「系統架構：」加 25 字以內的白話，講元件怎麼分工。裡面放一個 arch 程式碼區塊，每行一筆，欄位用全形直線「｜」分隔，不用引號：
+  - 第一行寫「總結：」加一句 40 字以內，講資料從哪來、經過哪幾段、最後到哪。
+  - 「附註：」一句 20 字以內，例如在哪裡跑、只開哪個埠；沒有就不寫這行。
+  - 入口 1 到 3 個，是使用者、外部服務或資料來源：「入口｜ID｜圖示｜名稱｜一行說明｜接到｜線上標籤｜完整說明｜重點｜檔案」。第一個入口寫使用者或最主要的用法，接到第一區的第一個元件；接到只能填第一區的元件 ID。
+  - 區 1 到 3 個，依資料流先後：「區｜名稱｜一句說明｜進入這區的線上標籤」，名稱 6 字以內，一句說明 20 字以內，第一區的進入標籤留空。
+  - 元件寫在所屬的區那一行後面，每區 2 到 5 個，照資料流順序：「元件｜ID｜圖示｜名稱｜一行說明｜小標籤｜類型｜完整說明｜重點｜檔案」。前一個元件的結果交給下一個，該區最後一個交給下一區的第一個。
+  - 旁 0 到 2 個，是被某個元件呼叫、做完再回報的子程序或服務，接在呼叫它的元件；不能接在前面幾區的最後一個元件，每個元件最多接 1 個：「旁｜ID｜圖示｜名稱｜一行說明｜接在｜去程標籤｜回程標籤｜完整說明｜重點｜檔案」。
+  - ID 用英文小寫字母開頭，最多 8 個字元，不重複。名稱 8 字以內；一行說明 12 字以內；小標籤 1 個、10 字以內，優先放原文的數字；線上標籤 6 字以內；完整說明 80 字以內，寫它怎麼做、有什麼限制；重點 0 到 3 條，用「；」分隔，各 40 字以內；檔案 0 到 3 個，用頓號分隔，只能填專案檔案清單裡真的有的路徑，可以填資料夾。
+  - 類型填 一般、重點、關卡 其中一個：重點是這個專案和同類最不一樣的元件，關卡是要人工確認或會擋下流程的元件，兩者全圖各最多 1 個，其餘填一般。
+  - 圖示只能填：user、bot、globe、chart、list、check、replay、coins、layers、stamp、cpu、shield、swap、db、box、file、code、search、cloud、key、bell、chat、image、play、gear、link、lock、mail、server、terminal、clock、folder、filter、send、download。
+  - 網頁介面、API、MCP、命令列這類讓人或 AI 代理進來的介面，畫成入口，不要排成元件；元件依序排的是一次完整使用時，資料先後經過的處理步驟。
+  - 原文有要人確認才往下走的步驟，例如核准、審查、手動上線，一定要畫成類型為關卡的元件。
+  - 元件與旁合計 4 到 14 個。原文沒寫到的欄位留空，不要自己補。
 - 限制：只寫原文明確提到的門檻、缺點、還沒做好的地方，0 到 3 條；原文沒提就不要這一區。
 - 如果內容是可以在本機跑的 AI 模型，再加一區「<<HARDWARE_LABEL>>」：顯存需求一行、<<HARDWARE_VERDICT>>、一行可以直接複製執行的安裝或啟動指令。
 - 內容講的是中國或歐美特有的制度、政策、環境時，加一區「台灣的情況」1 到 2 條。
-比較表與流程圖各最多 1 個，沒有符合條件的內容就不要加，大多數文章兩者都不需要。
+比較表、流程圖、架構圖各最多 1 個，沒有符合條件的內容就不要加，大多數文章都不需要。
 收合區至少要有 2 條才收；只有 1 條時不要收合，直接寫一行「**限制**：…」。條列不要巢狀子條列或次級縮排。
 收合區一律用下面的寫法，<summary> 那一行後面要空一行，</details> 前面也要空一行：
 <details>
@@ -114,6 +134,26 @@ B -> C
 C -> D｜正文足夠
 C -> B｜正文太少，重抓
 D -> E
+```
+
+</details>
+
+架構圖收合區的寫法：
+<details open>
+<summary>系統架構：收藏與分析兩段，Telegram 丟進來就存好</summary>
+
+```arch
+總結：連結從 Telegram 或網頁進來，先抓原文，再由 AI 分析後存進資料庫供搜尋。
+附註：自架在你的電腦，只開本機埠
+入口｜you｜user｜你｜在 Telegram 丟連結｜bot｜連結｜｜｜
+入口｜web｜globe｜任何網頁｜書籤小工具｜bot｜目前頁面｜｜｜
+區｜收藏｜先把原文抓下來｜
+元件｜bot｜chat｜收件機器人｜只收你的訊息｜白名單 1 人｜一般｜只回應設定好的帳號，其他人的訊息直接忽略。｜｜app/bot
+元件｜fetch｜download｜抓原文｜依網站換抓法｜6 種來源｜一般｜影片抓字幕、網頁抓正文，被擋就標記稍後重抓。｜擋爬頁不會被當成原文分析｜app/parsers
+區｜分析｜寫重點再存起來｜原文
+元件｜ai｜bot｜AI 分析｜寫標題與重點｜｜重點｜依內容類型套不同寫法，只根據原文，不推測。｜｜app/pipeline.py
+元件｜store｜db｜資料庫｜全文與向量搜尋｜SQLite｜一般｜｜｜app/database.py
+旁｜embed｜cpu｜向量模型｜在本機算向量｜store｜文字｜向量｜依顯示卡自動挑模型。｜｜app/vector.py
 ```
 
 </details>
@@ -145,9 +185,10 @@ D -> E
 2. 摘要第一句沒有重寫標題裡的名稱，也沒有「某某是一個」的句型。
 3. 沒有「旨在」「致力於」「本文」「該專案」「是一款」「聚焦於」「作者分享」「往往」這類空話，也沒有鋪陳情境的開場句。
 4. 沒有括號補充、沒有中英並列。
-5. 原文裡的清單、步驟、規格、數字、授權與部署方式，重要的都有寫進摘要或重點。
-6. 收合區的 <summary> 後面與 </details> 前面都有空行；比較表與流程圖只在符合條件時才出現。
-7. 標題和摘要每句最多 2 個工具名或術語，不熟這個領域的人也看得懂。"""
+5. 原文裡的清單、步驟、規格、數字、授權與部署方式，重要的都有寫進摘要或重點；授權與平台寫在「更多重點」即可。
+6. 收合區的 <summary> 後面與 </details> 前面都有空行；比較表、流程圖與架構圖只在符合條件時才出現。
+7. 標題和摘要每句最多 2 個工具名或術語，不熟這個領域的人也看得懂。
+8. 標題、摘要第 1 句與「最重要的 3 件事」第 1 條，都講到原文開頭作者自己說的用途，沒有被安全防護或實作細節搶走位置。"""
 
 
 # Extra rule appended to the analysis prompt per the ANALYSIS_DEPTH setting; "standard" leaves it unchanged.
@@ -269,6 +310,15 @@ def _wrap_xml(tag: str, text: str) -> str:
     return f"<{tag}>\n{safe}\n</{tag}>"
 
 
+def keep_files_section(content: str, limit: int) -> str:
+    """content cut to limit characters, keeping a GitHub project's file list at its end whole."""
+    at = content.find(f"\n\n{TREE_HEADING}")
+    if at < 0 or len(content) <= limit:
+        return content[:limit]
+    files = content[at:]
+    return content[:max(0, limit - len(files))] + files
+
+
 def saved_item_prompt(item: Dict[str, Any], categories: str) -> str:
     """The analysis prompt for an item's stored content (nothing is fetched again)."""
     source_type = item.get("source_type") or ""
@@ -280,7 +330,7 @@ def saved_item_prompt(item: Dict[str, Any], categories: str) -> str:
         f"作者／發布者：{item.get('author') or ''}",
     )
     content_tag = "user_note" if source_type == "snippet" else "external_content"
-    content_block = _wrap_xml(content_tag, (item.get("content_raw") or "")[:15000])
+    content_block = _wrap_xml(content_tag, keep_files_section(item.get("content_raw") or "", 15000))
     prompt = (
         f"從以下{kind}的外部資料萃取並輸出結構化摘要與分析 JSON：\n"
         f"{meta_block}\n\n"
@@ -502,6 +552,12 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
                       fallback_summary=page_description,
                       raw_html=page_data.get("raw_html") or (page_data.get("meta") or {}).get("raw_html") or "",
                       http_status=page_data.get("http_status"))
+        repo = None if light else repo_from_url(url)
+        if repo and parsed["content_raw"] and parsed.get("http_status") == 200:  # not for a 404 or an error page
+            # the architecture diagram's cards link to real files (app/arch_block.py)
+            section = files_section(await fetch_repo_files(*repo))
+            if section:
+                parsed["content_raw"] = f"{parsed['content_raw']}\n\n{section}"
     return parsed
 
 
@@ -782,7 +838,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                 "external_metadata",
                 f"網址：{url}\n原始標題：{parsed['original_title']}{browser_view}",
             )
-            content_block = _wrap_xml("external_content", content_raw[:12000])
+            content_block = _wrap_xml("external_content", keep_files_section(content_raw, 12000))
 
             primary = get_primary_provider()
             prompt = (
@@ -791,6 +847,8 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                 f"候選分類清單：[{cat_list_str}]\n\n"
                 f"{content_block}\n\n"
                 "請依據規範輸出結構化 JSON。"
+                + ("這是 GitHub 專案，<external_content> 最後附有專案檔案清單；元件看得出 4 個以上時，照「架構圖」規則畫系統架構圖，不畫流程圖。"
+                   if repo_from_url(url) else "")
             )
             prompt += interest_profile_block()
             ai_result = await _analyze_with_guardrails(primary, prompt,
@@ -854,6 +912,10 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     elif evidence_note:
         summary_l1 = f"{METADATA_ONLY_TAG}{summary_l1}"
         deep_analysis = f"> {evidence_note}\n\n{deep_analysis}" if deep_analysis else f"> {evidence_note}"
+
+    if deep_analysis and "```arch" in deep_analysis:
+        repo = repo_from_url(url or "")
+        deep_analysis = tidy_arch(deep_analysis, "/".join(repo) if repo else None, files_in(content_raw))
 
     if user_note and not content_raw.startswith("## 使用者隨手筆記"):
         content_raw = f"## 使用者隨手筆記/備忘\n{user_note}\n\n" + content_raw
