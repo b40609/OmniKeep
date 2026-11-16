@@ -36,6 +36,7 @@ export interface Arch {
 const SEP = /\s*[｜|]\s*/
 const ID = /^[A-Za-z][\w-]{0,15}$/
 const list = (s: string | undefined, sep: RegExp) => (s || '').split(sep).map((x) => x.trim()).filter(Boolean)
+const KINDS = new Set(['一般', '重點', '關卡'])
 const MAX_INPUTS = 3, MAX_LANES = 3, MAX_PER_LANE = 5, MAX_SIDES = 2
 
 export function parseArch(code: string): Arch | null {
@@ -69,6 +70,8 @@ export function parseArch(code: string): Arch | null {
       lane = { title: f[1] || '', note: f[2] || '', label: f[3] || '', ids: [] }
       a.lanes.push(lane)
     } else if (f[0] === '元件') {
+      // a line that skipped the 小標籤 column has the kind where the tag goes: put the column back
+      if (KINDS.has(f[5] || '')) { if (KINDS.has(f[6] || '')) f[5] = ''; else f.splice(5, 0, '') }
       const kind: ArchKind = f[6] === '重點' ? 'key' : f[6] === '關卡' ? 'gate' : 'plain'
       const n = node(f, kind, { more: 7, facts: 8, files: 9 })
       if (!n) continue
@@ -152,7 +155,7 @@ const iconFor = (name: string, kind: ArchKind) => ICONS[name] || (kind === 'ext'
 type Pt = [number, number]
 interface Place { x: number; y: number; w: number; h: number }
 interface EdgeSpec { s: string; t: string; pts: Pt[]; label: string; at?: Pt; inBand?: boolean; side?: 'l' | 'r' }
-interface BandSpec extends Place { title: string; note: string }
+interface BandSpec extends Place { title: string; note: string; lbLeft?: number }
 export interface ArchLayout {
   width: number; height: number; narrow: boolean
   places: Record<string, Place>; bands: BandSpec[]; edges: EdgeSpec[]
@@ -160,6 +163,13 @@ export interface ArchLayout {
 }
 
 const textW = (s: string, px: number) => [...s].reduce((w, c) => w + (c.charCodeAt(0) > 0x2e80 ? px : px * 0.56), 0)
+const lines = (s: string, px: number, room: number, max: number) => (s ? Math.min(max, Math.ceil(textW(s, px) / room)) : 0)
+/** A card is as tall as what it holds (padding, title, description lines, small tag), so no card carries an empty bottom. */
+function cardH(n: ArchNode, w: number, narrow: boolean): number {
+  const d = lines(n.desc, 12.5, w - 28, narrow ? 1 : 2), t = lines(n.title, 14, w - 28 - 24, 2)
+  return 24 + 20 * t + (d ? (narrow ? 4 : 6) + d * 18 : 0) + (n.tag ? (narrow ? 20 : 22) : 0) + 2
+}
+const bandLabelW = (b: { title: string; note: string }) => (b.title ? textW(b.title, 12.5) + 8 : 0) + textW(b.note, 12.5)
 
 export function layoutArch(a: Arch, width: number): ArchLayout {
   const wide = wideLayout(a, width)
@@ -185,22 +195,26 @@ function walk(a: Arch, edges: EdgeSpec[]): { route: { e: number; to: string }[];
 
 function wideLayout(a: Arch, width: number): ArchLayout | null {
   const n = Math.max(...a.lanes.map((l) => l.ids.length))
-  const IW = 148, IH = 60, GAP = 28, PAD = 12
+  const IH = 60, GAP = 28, PAD = 12
+  // an input card is wide enough for its name and one-line description, within 148 to 200
+  const IW = Math.round(Math.min(200, Math.max(148, ...a.inputs.map((i) => 24 + Math.max(textW(i.title, 14) + 24, textW(i.desc, 12.5)) + 8))))
   const straight = a.inputs.filter((i) => i.to === a.lanes[0].ids[0]).slice(0, 2)
   const viaGap = a.inputs.filter((i) => !straight.includes(i)).slice(0, a.lanes.length > 1 ? 1 : 2)
   const inputs = [...straight, ...viaGap]
   // the gap after the input column fits the longest label on a straight line
   const lead = inputs.length ? IW + Math.min(110, Math.max(36, ...straight.map((i) => i.label ? textW(i.label, 11.5) + 20 : 0))) : 0
   let inner = width - lead - PAD * 2
-  const W = Math.min(n <= 3 ? 196 : 176, Math.floor((inner - (n - 1) * GAP) / n))
+  const cards = a.lanes.flatMap((l) => l.ids.map((id) => a.nodes[id]))
+  // a long name (often English) may widen the cards up to 236 if the row has room
+  const longest = Math.max(...cards.map((c) => textW(c.title, 14) + 28 + 24 + 4))
+  const W = Math.min(Math.max(n <= 3 ? 196 : 176, Math.min(236, Math.ceil(longest))), Math.floor((inner - (n - 1) * GAP) / n))
   if (W < 136) return null
   const gap = n > 1 ? Math.min(56, (inner - n * W) / (n - 1)) : 0
   // a short flow keeps its cards together and the diagram narrower, centred in the frame
   inner = n * W + (n - 1) * gap
   width = Math.min(width, Math.ceil(lead + PAD * 2 + inner))
   const step = W + gap
-  const anyTag = a.lanes.some((l) => l.ids.some((id) => a.nodes[id].tag))
-  const H = anyTag ? 112 : 92
+  const H = Math.max(64, ...cards.map((c) => cardH(c, W, false)))
   const colX = (c: number) => lead + PAD + c * step
   const places: Record<string, Place> = {}, bands: BandSpec[] = [], edges: EdgeSpec[] = []
   const BAND_GAP = 60, TOP = 38
@@ -240,8 +254,17 @@ function wideLayout(a: Arch, width: number): ArchLayout | null {
     if (!next) return
     const sid = l.ids[l.ids.length - 1], tid = next.ids[0], s = P(sid), t = P(tid)
     const gy = bands[li].y + bands[li].h + BAND_GAP / 2
-    const pts: Pt[] = cx(s) === cx(t) ? [[cx(s), s.y + s.h], [cx(t), t.y]] : [[cx(s), s.y + s.h], [cx(s), gy], [cx(t), gy], [cx(t), t.y]]
-    edges.push({ s: sid, t: tid, label: next.label, pts, at: cx(s) === cx(t) ? [cx(s), gy] : [(cx(s) + cx(t)) / 2, gy] })
+    // the line never crosses the next band's name: it comes down right of the name if the card
+    // leaves room, otherwise near the card's left edge with the name starting just past it
+    const nb = bands[li + 1], lx0 = nb.x + 14, lx1 = lx0 + bandLabelW(nb)
+    let tx = cx(t)
+    if ((nb.title || nb.note) && tx > lx0 - 12 && tx < lx1 + 12) {
+      if (lx1 + 16 <= t.x + t.w - 28) tx = lx1 + 16
+      else { tx = t.x + 28; nb.lbLeft = tx - nb.x + 14 }
+    }
+    const sx = s.x === t.x ? tx : cx(s)
+    const pts: Pt[] = sx === tx ? [[sx, s.y + s.h], [tx, t.y]] : [[sx, s.y + s.h], [sx, gy], [tx, gy], [tx, t.y]]
+    edges.push({ s: sid, t: tid, label: next.label, pts, at: sx === tx ? [tx, gy] : [(sx + tx) / 2, gy] })
   })
   // helpers: out of the caller's bottom and back in, labels beside the two lines
   for (const s of a.sides) {
@@ -263,7 +286,7 @@ function wideLayout(a: Arch, width: number): ArchLayout | null {
     const t = P(i.to), b0 = bands[0]
     const gy = a.lanes.length > 1 ? b0.y + b0.h + BAND_GAP / 2 : b0.y + b0.h + 22 + k * 72
     const lastOfFirst = i.to === a.lanes[0].ids[a.lanes[0].ids.length - 1] && a.lanes.length > 1
-    const vx = cx(t) - (lastOfFirst ? 24 : 0)
+    const vx = lastOfFirst ? cx(t, 0.3) : cx(t)
     places[i.id] = { x: 0, y: gy - IH / 2, w: IW, h: IH }
     edges.push({ s: i.id, t: i.to, label: i.label, pts: [[IW, gy], [vx, gy], [vx, t.y + t.h]], at: [(IW + vx) / 2, gy] })
   })
@@ -281,16 +304,15 @@ function narrowLayout(a: Arch, width: number): ArchLayout {
   const order = [...railed, ...(direct ? [direct] : [])]
   const railW = railed.length ? 10 + railed.length * 10 : 0
   const hasSide = a.sides.length > 0
-  const left = hasSide ? 18 : 12, cardW = width - railW - left - 12
+  const left = hasSide ? 24 : 12, cardW = width - railW - left - 12
   let y = 0
   order.forEach((i) => { places[i.id] = { x: 0, y, w: width - railW, h: IH }; y += IH + 14 })
   if (order.length) y += direct?.label ? 26 : 10
-  const anyTag = a.lanes.some((l) => l.ids.some((id) => a.nodes[id].tag))
-  const H = anyTag ? 88 : 68
   a.lanes.forEach((l) => {
     const top = y
     let cy = top + TOP
     for (const id of l.ids) {
+      const H = Math.max(56, cardH(a.nodes[id], cardW, true))
       places[id] = { x: left, y: cy, w: cardW, h: H }
       cy += H + GAP
       const s = a.sides.find((x) => x.parent === id)
@@ -313,7 +335,7 @@ function narrowLayout(a: Arch, width: number): ArchLayout {
     const gap = lane ? (s.y + s.h + t.y) / 2 : 0
     if (a.sides.some((x) => x.parent === id)) {
       // around the helper hanging under this card, along the left edge
-      edges.push({ s: id, t: nid, label: lane?.label || '', pts: [[s.x, s.y + s.h / 2], [6, s.y + s.h / 2], [6, t.y + t.h / 2], [t.x, t.y + t.h / 2]], at: lane ? [14, gap] : undefined, side: 'r' })
+      edges.push({ s: id, t: nid, label: lane?.label || '', pts: [[s.x, s.y + s.h / 2], [8, s.y + s.h / 2], [8, t.y + t.h / 2], [t.x, t.y + t.h / 2]], at: lane ? [16, gap] : undefined, side: 'r' })
     } else {
       edges.push({ s: id, t: nid, label: lane?.label || '', pts: [[spine, s.y + s.h], [spine, t.y]], at: lane ? [spine - 10, gap] : undefined, side: 'l' })
     }
@@ -479,6 +501,7 @@ class ArchView {
       const d = el('div', 'ac-band')
       Object.assign(d.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px` })
       const lb = el('div', 'ac-lb')
+      if (b.lbLeft) lb.style.left = `${b.lbLeft}px`
       if (b.title) lb.append(el('b', '', b.title))
       if (b.note) lb.append(document.createTextNode(b.note))
       d.append(lb); st.append(d)
