@@ -14,6 +14,13 @@ const html = ref('')
 const loading = ref(false)
 const full = ref(false)
 const showPrompt = ref(false)
+// An Archify page is close to 1 MB of inline script: it takes a few seconds to draw, and until then
+// the frame is an empty box. Same list as app/deep_diagram.py SANDBOX (popups: a card's GitHub link).
+const SANDBOX = 'allow-scripts allow-downloads allow-popups allow-popups-to-escape-sandbox'
+const drawn = ref(false)
+const fullDrawn = ref(false)
+watch(html, () => { drawn.value = false; fullDrawn.value = false })
+watch(full, (on) => { if (on) fullDrawn.value = false })
 
 async function load() {
   const id = props.itemId
@@ -89,13 +96,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </div>
 
     <template v-if="status.has_diagram && html">
-      <iframe
-        class="block h-[34rem] w-full rounded-xl border border-border bg-card"
-        title="agent 畫的架構圖"
-        sandbox="allow-scripts allow-downloads"
-        referrerpolicy="no-referrer"
-        :srcdoc="html"
-      />
+      <div class="relative">
+        <iframe
+          class="block h-[34rem] w-full rounded-xl border border-border bg-card"
+          title="agent 畫的架構圖"
+          :sandbox="SANDBOX"
+          referrerpolicy="no-referrer"
+          :srcdoc="html"
+          @load="drawn = true"
+        />
+        <div v-if="!drawn" class="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 rounded-xl text-sm text-muted-foreground">
+          <RefreshCw class="size-4 animate-spin" />
+          正在畫架構圖…
+        </div>
+      </div>
       <p class="mt-2 text-xs text-subtle-foreground">
         由你的 agent 用 Archify 讀過程式碼後畫的，每個元件都對照過程式碼。要重畫就
         <button type="button" class="cursor-pointer underline underline-offset-2 hover:text-foreground" @click="copyPrompt">複製指令</button>
@@ -133,7 +147,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             關閉
           </button>
         </div>
-        <iframe class="block w-full flex-1" title="agent 畫的架構圖（全螢幕）" sandbox="allow-scripts allow-downloads" referrerpolicy="no-referrer" :srcdoc="html" />
+        <div class="relative flex-1">
+          <iframe class="absolute inset-0 block size-full" title="agent 畫的架構圖（全螢幕）" :sandbox="SANDBOX" referrerpolicy="no-referrer" :srcdoc="html" @load="fullDrawn = true" />
+          <div v-if="!fullDrawn" class="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <RefreshCw class="size-4 animate-spin" />
+            正在畫架構圖…
+          </div>
+        </div>
       </div>
     </Teleport>
   </section>

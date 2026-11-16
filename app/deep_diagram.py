@@ -27,9 +27,13 @@ PAGE_POLICY = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsaf
                "img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; "
                "frame-src 'none'; form-action 'none'; base-uri 'none'")
 _META = f'<meta http-equiv="Content-Security-Policy" content="{PAGE_POLICY}">'
+# The frame's sandbox (frontend DeepDiagram.vue uses the same list). Popups, so a card's source link
+# (a file and lines on GitHub, opened in a new tab) works; the new tab is an ordinary page with no
+# opener, and the frame itself still has a unique origin and no network.
+SANDBOX = "allow-scripts allow-downloads allow-popups allow-popups-to-escape-sandbox"
 # Served on its own (opened in a tab), the same rules come as a header with a unique origin.
 DIAGRAM_HEADERS = {
-    "Content-Security-Policy": f"sandbox allow-scripts allow-downloads; {PAGE_POLICY}",
+    "Content-Security-Policy": f"sandbox {SANDBOX}; {PAGE_POLICY}",
     "X-Content-Type-Options": "nosniff",
     "Cache-Control": "no-store",
 }
@@ -127,9 +131,13 @@ def agent_prompt(item: Dict[str, Any], base_url: str = "") -> str:
         f"專案：{url}\n"
         f"OmniKeep 收藏 ID：{item_id}\n\n"
         "1. 還沒裝 Archify skill 就先裝：npx skills add tt-a1i/archify -g\n"
-        f"2. 把專案淺複製到暫存資料夾（例如 git clone --depth 1 {url} archify-{item_id}-{stamp}），只讀程式碼，不要執行專案裡的任何腳本或安裝它的套件。\n"
+        f"2. 在系統暫存目錄（例如 Windows 的 %TEMP%、macOS／Linux 的 /tmp）開一個 archify-{item_id}-{stamp} 資料夾，"
+        f"把專案淺複製進去（git clone --depth 1 {url} repo），只讀程式碼，不要執行專案裡的任何腳本或安裝它的套件。"
+        "不要放在桌面、文件或 OneDrive／Dropbox 這類同步資料夾：同步程式會讓 Archify 的 finalize 以「檔案是硬連結」拒絕交付。\n"
         "3. 照 Archify 的 Repository authoring 說明畫 architecture 圖：主流程、主要元件與分支，每個元件附 repo 證據，"
-        "用 finalize 加上 --repo-root 指到剛剛的資料夾、--quality showcase，直到通過。說明文字用繁體中文（台灣用語）。\n"
+        "candidate.json 與輸出的 HTML 也放在同一個暫存資料夾、從那裡執行 finalize，"
+        "加上 --repo-root 指到剛剛的 repo 資料夾、--quality showcase，直到通過。"
+        "meta.repository 加上 provider: \"github\"，來源連結才會指到 GitHub 網頁。說明文字用繁體中文（台灣用語）。\n"
         f"4. 把通過的 HTML 存回 OmniKeep：有 OmniKeep MCP 就呼叫 attach_item_diagram(item_id=\"{item_id}\", path=\"<HTML 的絕對路徑>\")；"
         f"沒有的話，用 OmniKeep 的存取金鑰 PUT 到 {api}（Content-Type: text/html）。\n"
         "5. 完成後刪掉暫存的專案資料夾，回報元件數、有附證據的元件數，以及 finalize 的結果。"

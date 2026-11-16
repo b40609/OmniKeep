@@ -67,3 +67,19 @@ def test_deleting_the_item_deletes_its_diagram():
 def test_the_prompt_says_not_to_run_the_project():
     text = agent_prompt({"id": "abc", "url": "https://github.com/acme/Widget"}, "http://127.0.0.1:5000/")
     assert "不要執行專案裡的任何腳本" in text and "http://127.0.0.1:5000/api/items/abc/diagram" in text
+
+
+def test_source_links_can_open_and_the_frontend_uses_the_same_sandbox():
+    """A card's GitHub link opens in a new tab only with popups allowed; the web app's frame and the
+    page served on its own must carry the same sandbox."""
+    from pathlib import Path
+    from app.deep_diagram import DIAGRAM_HEADERS, SANDBOX
+    assert "allow-popups" in SANDBOX and "allow-same-origin" not in SANDBOX
+    assert DIAGRAM_HEADERS["Content-Security-Policy"].startswith(f"sandbox {SANDBOX};")
+    vue = (Path(__file__).resolve().parents[1] / "frontend/src/components/reader/DeepDiagram.vue").read_text(encoding="utf-8")
+    assert f"const SANDBOX = '{SANDBOX}'" in vue and 'sandbox="allow' not in vue
+
+
+def test_the_prompt_keeps_archify_out_of_synced_folders():
+    text = agent_prompt({"id": "abc", "url": "https://github.com/acme/Widget"})
+    assert "同步資料夾" in text and 'provider: "github"' in text
