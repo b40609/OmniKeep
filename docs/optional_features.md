@@ -34,6 +34,8 @@ pip install -r requirements.txt -r requirements-stt.txt
   | 只有 CPU | 任何語言 | `small`（int8） | 約 480 MB | — |
 
   2026-11-09 用 4 支台灣 YouTube 影片（共 40 分鐘，對上傳者的人工字幕）實測：Breeze 錯字率 7.7%、輸出繁體；`large-v3-turbo` 9.4%，而且 24% 是簡體。英文演講則是 turbo 較準（6.0% 對 7.0%）。turbo 和 small 的中文輸出會用 OpenCC（`s2twp`）轉成台灣繁體。
+
+  同一組影片的完整排名（錯字率）：Breeze CT2 float16 7.7%、Breeze CT2 int8 7.8%（沒有比較快或省 VRAM）、Breeze 原版 8.5%（faster-whisper 讀不了、要約 15 GB VRAM）、`large-v3-turbo` 9.4%、`large-v3` 9.9%、SenseVoice-Small 11.5%、Qwen3-ASR-1.7B 12.3%（切 30 秒段；整檔 20.6%）、Paraformer-zh 14.3%、TEA-ASR-1.1 21.3%。Qwen3-ASR 和 TEA-ASR 在公開短句測試集領先，但在長的實際影片上反而落後，所以選模型以實測為準。沒有實測過的：FireRedASR2、Fun-ASR-Nano-2512。
 - **Breeze 從哪裡來**：faster-whisper 讀不了官方權重，所以用社群轉好的 CTranslate2 版本 [`shdennlin/breeze-asr-25-ct2`](https://huggingface.co/shdennlin/breeze-asr-25-ct2)（Apache-2.0，跟官方同授權）的 `float16` 資料夾，鎖定 revision `70660216b01a6f6b7b8c5690767a4763df61755f`（`reel.py` 的 `BREEZE_REVISION`）。CT2 的 `model.bin` 是純權重，不是 pickle，載入時不會執行程式碼。下載失敗（離線、Hugging Face 掛掉）時改用 `large-v3-turbo`，一小時後再試，轉錄不會因此失敗。
 - **VRAM**：一次只放一個模型。需要另一個時先卸載現在的（顯示卡跟 Ollama 共用）；轉錄一次一支（`transcript.py` 的 `_stt_lock`）。
 - **時間戳與章節**：逐字稿約每 30 秒標一次 `[MM:SS]`（一小時以上是 `[H:MM:SS]`），字幕用字幕的時間，本機轉錄用 faster-whisper 每段的起點；影片有章節時，每章加一個 `### [MM:SS] 章節名` 小標。
