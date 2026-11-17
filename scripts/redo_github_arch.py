@@ -74,7 +74,9 @@ def write_backup(out: Path, items: List[Dict[str, Any]]) -> Path:
 
 
 async def run(out: Path, limit: Optional[int], stop_after: int) -> Dict[str, int]:
+    from app import app_settings
     from app.pipeline import run_pipeline
+    app_settings.apply_overrides()  # 設定頁存的值（例如 GitHub Token），伺服器啟動時才會載入
     if not (out / "before.jsonl").exists():
         raise SystemExit(f"{out / 'before.jsonl'} 不存在：先用 --backup-only 備份")
     done_ids = {row["id"] for row in read_jsonl(out / "done.jsonl")}
