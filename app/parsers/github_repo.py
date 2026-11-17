@@ -115,7 +115,7 @@ async def fetch_repo(owner: str, repo: str) -> Dict[str, Any]:
             meta = await client.get(f"https://api.github.com/repos/{owner}/{repo}", headers=_headers())
             if meta.status_code != 200:
                 logger.info("[GitHub] %s/%s: repo lookup answered %s", owner, repo, meta.status_code)
-                return []
+                return empty
             branch = meta.json().get("default_branch") or "main"
             sha = ""
             head = await client.get(f"https://api.github.com/repos/{owner}/{repo}/commits/{branch}",

@@ -113,6 +113,26 @@ def test_file_list_fetch_failure_is_empty(monkeypatch):
     assert asyncio.run(github_repo.fetch_repo_files("owner", "repo")) == []
 
 
+def test_repo_lookup_refused_is_empty_not_a_crash(monkeypatch):
+    # GitHub's 403 (rate limit) used to return a bare list, and every caller then failed on ["paths"].
+    class Reply:
+        status_code = 403
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, *a, **kw):
+            return Reply()
+
+    monkeypatch.setattr(github_repo, "public_http_client", lambda **kw: Client())
+    assert asyncio.run(github_repo.fetch_repo("owner", "repo")) == {"paths": [], "sha": "", "sizes": {}}
+    assert asyncio.run(github_repo.fetch_repo_files("owner", "repo")) == []
+
+
 # ── checks before delivery (Archify-style), line ranges and the commit ──────────
 
 from app.arch_block import arch_body, check_arch, drop_arch  # noqa: E402
