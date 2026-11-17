@@ -106,7 +106,7 @@ const keyPlaceholder = computed(() => {
     <div class="set-form__pair">
       <div>
         <label for="ai-interval" class="set-label">請求最小間隔（秒）</label>
-        <input id="ai-interval" v-model="form.minInterval" type="number" min="0.05" max="120" step="0.5" class="set-input" :placeholder="String(card.min_interval)">
+        <input id="ai-interval" v-model="form.minInterval" type="number" min="0.05" max="120" step="any" class="set-input" :placeholder="String(card.min_interval)">
         <p v-if="form.errors.min_interval" class="set-error mt-1">{{ form.errors.min_interval }}</p>
       </div>
       <div>
