@@ -101,6 +101,7 @@ test('cooldowns read as short Chinese durations', () => {
   assert.equal(setup.formatCooldown(0), '')
   assert.equal(setup.formatCooldown(42), '42 秒')
   assert.equal(setup.formatCooldown(90), '2 分鐘')
+  assert.equal(setup.formatCooldown(6 * 3600), '6 小時')
 })
 
 // ── The wizard component, with the real setup.ts and a fake API ─────

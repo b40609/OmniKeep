@@ -752,10 +752,12 @@ def migrate_legacy() -> bool:
     return True
 
 
-# Services usable with no account and no key, primary first. Kilo answered a full analysis in 9 s on
-# 2026-11-17 (200 a hour per IP; it keeps free prompts for training, which its card says); OVHcloud is
-# slower and allows 2 a minute, so it is the fallback. Pollinations (1 reply / 45 s) is too tight to list.
-STARTER_CARDS = ("kilo", "ovh")
+# Services usable with no account and no key, primary first, from the 2026-11-17 tests with the real
+# analysis prompt: flm 5 s (60 a minute per IP), JarvisClaw 6 s, Kilo kilo-auto/free 35 s (200 an hour;
+# it keeps free prompts for training), OVHcloud 30 to 90 s (2 a minute). Their cards say who runs them
+# and what happens to the text. The chain moves one that keeps failing behind the others by itself.
+# Pollinations (1 reply / 45 s) is too tight to list.
+STARTER_CARDS = ("flm", "jarvisclaw", "kilo", "ovh")
 
 
 def _add_starters() -> None:

@@ -371,6 +371,8 @@ export interface ServiceOutcome {
   action_required?: boolean
   fix_url?: string | null
   cooldown_seconds?: number
+  /** why the chain paused this connection, in the owner's words */
+  cooldown_reason?: string
   label?: string
 }
 

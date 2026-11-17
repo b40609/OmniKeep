@@ -51,7 +51,6 @@ const keyPlaceholder = computed(() => {
       <p class="text-base font-semibold">{{ form.mode === 'new' ? '新增連線' : '編輯連線' }}：{{ card.label }}</p>
       <p class="set-text mt-1">{{ card.limits }}</p>
       <p v-if="card.notes" class="set-text">{{ card.notes }}</p>
-      <p v-if="card.training_note" class="set-notice set-notice--warn mt-2">{{ card.training_note }}</p>
       <p v-if="card.ended" class="set-notice set-notice--warn mt-2">限時免費活動已在 {{ card.ends }} 結束，先到官網確認還能不能免費用。</p>
     </div>
 

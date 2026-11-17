@@ -297,7 +297,6 @@ onMounted(async () => {
           <div class="space-y-1 text-sm text-muted-foreground">
             <p><span class="font-semibold text-foreground">{{ card.label }}</span>：{{ card.limits }}</p>
             <p v-if="card.notes">{{ card.notes }}</p>
-            <p v-if="card.training_note" class="text-warning">提醒：{{ card.training_note }}</p>
           </div>
 
           <div v-if="card.kind !== 'gemini'">

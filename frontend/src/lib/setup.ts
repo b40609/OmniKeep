@@ -109,5 +109,6 @@ export function sameValues(a: object | null, b: object): boolean {
 export function formatCooldown(seconds: number): string {
   if (seconds <= 0) return ''
   if (seconds < 60) return `${seconds} 秒`
-  return `${Math.ceil(seconds / 60)} 分鐘`
+  if (seconds < 3600) return `${Math.ceil(seconds / 60)} 分鐘`
+  return `${Math.round(seconds / 3600)} 小時`
 }

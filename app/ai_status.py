@@ -64,7 +64,8 @@ def record_success(service: str, label: str = "") -> None:
     with _lock:
         _state[service] = {"ok": True, "at": _now(), "status": None, "message": "", "hint": "",
                            "kind": "", "action_required": False, "fix_url": None,
-                           "cooldown_until": 0.0, "label": label or _state.get(service, {}).get("label", "")}
+                           "cooldown_until": 0.0, "cooldown_reason": "",
+                           "label": label or _state.get(service, {}).get("label", "")}
 
 
 def record_failure(service: str, status: Optional[int], message: str, label: str = "") -> None:
@@ -77,17 +78,22 @@ def record_failure(service: str, status: Optional[int], message: str, label: str
             "ok": False, "at": _now(), "status": status, "message": clean,
             "hint": info["hint"], "kind": info["kind"], "action_required": info["action_required"],
             "fix_url": info["fix_url"], "cooldown_until": previous.get("cooldown_until", 0.0),
+            "cooldown_reason": previous.get("cooldown_reason", ""),
             "label": label or previous.get("label", ""),
         }
 
 
-def set_cooldown(service: str, seconds: float) -> None:
-    """Prefer other connections for a while (after a rate limit or an outage)."""
+def set_cooldown(service: str, seconds: float, reason: str = "") -> None:
+    """Prefer other connections for a while (after a rate limit, an outage, a model that went away).
+    `reason` is what the settings page says about it, in the owner's words."""
     with _lock:
         entry = _state.setdefault(service, {"ok": False, "at": _now(), "status": None, "message": "",
                                             "hint": "", "kind": "", "action_required": False,
                                             "fix_url": None, "label": ""})
-        entry["cooldown_until"] = max(entry.get("cooldown_until", 0.0), time.time() + max(0.0, seconds))
+        until = time.time() + max(0.0, seconds)
+        if until >= entry.get("cooldown_until", 0.0):
+            entry["cooldown_until"] = until
+            entry["cooldown_reason"] = reason
 
 
 def get(service: str) -> Dict[str, Any]:
@@ -109,6 +115,29 @@ def forget(*services: str) -> None:
     with _lock:
         for service in services or list(_state):
             _state.pop(service, None)
+        for service in services or list(_streaks):
+            _streaks.pop(service, None)
+
+
+# Failures in a row per connection (app/providers/chain.py pauses one that keeps failing);
+# one success clears it, and so does editing the connection (forget).
+_streaks: Dict[str, int] = {}
+
+
+def bump_streak(service: str) -> int:
+    with _lock:
+        _streaks[service] = _streaks.get(service, 0) + 1
+        return _streaks[service]
+
+
+def clear_streak(service: str) -> None:
+    with _lock:
+        _streaks.pop(service, None)
+
+
+def streak(service: str) -> int:
+    with _lock:
+        return _streaks.get(service, 0)
 
 
 def snapshot() -> Dict[str, Dict[str, Any]]:

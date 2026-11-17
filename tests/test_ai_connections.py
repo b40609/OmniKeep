@@ -58,7 +58,7 @@ def test_catalog_lists_options_without_a_default_or_subscription_routes():
     text = str(cards).lower()
     assert "claude" not in text and "chatgpt" not in text and "antigravity" not in text
     no_signup = {c["id"] for c in cards if c["no_signup"]}
-    assert no_signup == {"kilo", "ovh"}
+    assert no_signup == {"flm", "jarvisclaw", "kilo", "ovh"}
     assert all(c["key_mode"] == "none" for c in cards if c["no_signup"])
 
 
@@ -425,14 +425,14 @@ def test_migration_keeps_a_custom_address_as_the_embeddings_fallback(monkeypatch
 
 
 def test_a_fresh_install_can_analyse_with_no_account(monkeypatch):
-    monkeypatch.setattr(ai_connections, "STARTER_CARDS", ("kilo", "ovh"))
+    monkeypatch.setattr(ai_connections, "STARTER_CARDS", ("flm", "jarvisclaw", "kilo", "ovh"))
     with TestClient(app) as client:
         body = client.get("/api/ai/connections", headers=HEADERS).json()
     cards = {c["id"]: c["card"] for c in body["connections"]}
-    assert set(cards.values()) == {"ollama", "kilo", "ovh"}  # Ollama is what the vector search already tried
+    assert set(cards.values()) == {"ollama", "flm", "jarvisclaw", "kilo", "ovh"}  # Ollama: what the vector search tried
     by_slot = {s["id"]: s["entries"] for s in body["slots"]}
     # the services that need no sign-up analyse, Kilo first; nothing to set up before the first link
-    assert [cards[e["connection_id"]] for e in by_slot["analysis"]] == ["kilo", "ovh"]
+    assert [cards[e["connection_id"]] for e in by_slot["analysis"]] == ["flm", "jarvisclaw", "kilo", "ovh"]
     assert body["needs_setup"] is False
     assert ai_connections.migrate_legacy() is False  # and only once: deleting them later sticks
 
@@ -444,7 +444,7 @@ def test_settings_from_an_older_version_get_no_starters(monkeypatch):
     with TestClient(app):
         pass
     assert {c.card for c in ai_connections.list_connections()} >= {"agnes"}
-    assert not {"kilo", "ovh"} & {c.card for c in ai_connections.list_connections()}
+    assert not {"flm", "jarvisclaw", "kilo", "ovh"} & {c.card for c in ai_connections.list_connections()}
 
 
 def test_flat_settings_saved_by_older_clients_reach_the_migrated_connection(monkeypatch):
@@ -501,3 +501,52 @@ def test_the_json_in_an_answer_is_found_even_with_a_diagram_inside_it():
     assert _json.loads(json_part("Here it is:\n" + analysis + "\nDone."), strict=False)["title_l1"] == "x"
     assert _json.loads(json_part("```json\n" + analysis + "\n```"), strict=False)["title_l1"] == "x"
     assert _json.loads(json_part("<think>{draft}</think>\n" + analysis), strict=False)["title_l1"] == "x"
+
+
+# ── The order adjusts itself ─────────────────────────────────────
+
+async def test_a_model_that_went_away_is_put_behind_the_others_for_hours(two_agnes):
+    fakes, primary_key, _ = two_agnes
+    fakes["primary"] = Fake("primary", [_status_error(openai.NotFoundError, 404,
+                                                      "The model [Beam-1.0] you requested is unavailable.")])
+    fakes["backup"] = Fake("backup", [])
+    chain = providers.get_primary_provider()
+    assert await chain.generate_json("x") == {"from": "backup"}
+    status = ai_status.snapshot()[primary_key]
+    assert status["cooldown_seconds"] > 5 * 3600 and status["cooldown_reason"] == "模型目前下架或改名"
+    assert await chain.generate_json("x") == {"from": "backup"}
+    assert fakes["primary"].calls == 1  # not asked again while it is paused
+
+
+async def test_answers_in_the_wrong_shape_pause_a_connection_from_the_second_in_a_row(two_agnes):
+    import json as _json
+    fakes, primary_key, _ = two_agnes
+    bad = lambda: _json.JSONDecodeError("Expecting value", "", 0)
+    fakes["primary"] = Fake("primary", [bad(), bad(), {"from": "primary"}])
+    fakes["backup"] = Fake("backup", [])
+    chain = providers.get_primary_provider()
+    assert await chain.generate_json("x") == {"from": "backup"}
+    assert ai_status.snapshot().get(primary_key, {}).get("cooldown_seconds", 0) == 0  # a first one may be a fluke
+    assert await chain.generate_json("x") == {"from": "backup"}
+    status = ai_status.snapshot()[primary_key]
+    assert 0 < status["cooldown_seconds"] <= 600 and "格式不對" in status["cooldown_reason"]
+    assert await chain.generate_json("x") == {"from": "backup"} and fakes["primary"].calls == 2
+
+
+async def test_a_paused_connection_comes_back_by_itself(two_agnes):
+    import json as _json
+    fakes, primary_key, _ = two_agnes
+    bad = lambda: _json.JSONDecodeError("Expecting value", "", 0)
+    fakes["primary"] = Fake("primary", [bad(), bad(), {"from": "primary"}])
+    fakes["backup"] = Fake("backup", [])
+    chain = providers.get_primary_provider()
+    await chain.generate_json("x"); await chain.generate_json("x")
+    ai_status.set_cooldown(primary_key, 0)  # the pause is over
+    with ai_status._lock:
+        ai_status._state[primary_key]["cooldown_until"] = 0.0
+    assert await chain.generate_json("x") == {"from": "primary"}  # tried first again, and it answers
+    assert chain_streak(primary_key) == 0
+
+
+def chain_streak(key):
+    return ai_status.streak(key)

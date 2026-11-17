@@ -93,7 +93,8 @@ function light(conn: AiConnection): { tone: 'ok' | 'warn' | 'bad' | 'idle'; text
   const s = conn.status
   if (!s) return { tone: 'idle', text: '尚未使用' }
   if (s.action_required) return { tone: 'bad', text: '要處理' }
-  if (s.cooldown_seconds > 0) return { tone: 'warn', text: `冷卻中 ${formatCooldown(s.cooldown_seconds)}` }
+  // the chain put it behind the others by itself; it is tried again when the pause ends
+  if (s.cooldown_seconds > 0) return { tone: 'warn', text: `暫時排到後面${s.cooldown_reason ? `（${s.cooldown_reason}）` : ''}，${formatCooldown(s.cooldown_seconds)}後再試` }
   if (!s.ok) return { tone: 'bad', text: '最近失敗' }
   return { tone: 'ok', text: '正常' }
 }
