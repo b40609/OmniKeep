@@ -205,8 +205,9 @@ function editorInput(): AiConnectionInput {
   const card = editorCard.value
   const input: AiConnectionInput = {
     card: e.cardId, label: e.label.trim(), model: e.model.trim(),
-    min_interval: e.minInterval.trim() === '' ? null : Number(e.minInterval),
-    max_concurrency: e.maxConcurrency.trim() === '' ? null : Number(e.maxConcurrency),
+    // v-model on a number input hands back a number once the field is edited, so trim a string of it.
+    min_interval: String(e.minInterval ?? '').trim() === '' ? null : Number(e.minInterval),
+    max_concurrency: String(e.maxConcurrency ?? '').trim() === '' ? null : Number(e.maxConcurrency),
     caps: { json_mode: e.jsonMode },
   }
   if (card?.kind === 'gemini') input.caps = { ...input.caps, thinking_level: e.thinkingLevel }
