@@ -797,7 +797,12 @@ class ArchView {
   }
 }
 
-const views = new WeakMap<HTMLElement, ArchView>()
+// every live view, so a block that left the page (its markdown was replaced) can be stopped
+const views = new Map<HTMLElement, ArchView>()
+
+function dropDetached() {
+  views.forEach((v, b) => { if (!b.isConnected) { v.destroy(); views.delete(b) } })
+}
 
 function fallback(block: HTMLElement, a: Arch | null, code: string) {
   const ol = el('ol', 'mermaid-fallback')
@@ -810,6 +815,8 @@ function fallback(block: HTMLElement, a: Arch | null, code: string) {
 /** Draw every not-yet-drawn architecture block inside a rendered markdown container. */
 export function renderArchIn(container: HTMLElement | null): void {
   if (!container) return
+  // a re-render with the same markdown keeps the blocks and their views; only replaced ones go
+  dropDetached()
   for (const block of Array.from(container.querySelectorAll<HTMLElement>('.arch-block:not([data-done])'))) {
     block.dataset.done = '1'
     const code = block.querySelector('.arch-src')?.textContent || ''
@@ -819,7 +826,8 @@ export function renderArchIn(container: HTMLElement | null): void {
   }
 }
 
-/** Stop the animation of every diagram drawn inside a container that is about to be replaced. */
+/** Stop every diagram inside a container that is going away for good (the reader closes). */
 export function disposeArchIn(container: HTMLElement | null): void {
-  container?.querySelectorAll<HTMLElement>('.arch-block').forEach((b) => views.get(b)?.destroy())
+  container?.querySelectorAll<HTMLElement>('.arch-block').forEach((b) => { views.get(b)?.destroy(); views.delete(b) })
+  dropDetached()
 }

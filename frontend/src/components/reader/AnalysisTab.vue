@@ -61,8 +61,8 @@ watch(
   async () => {
     detachCodeCopy?.()
     detachCodeCopy = null
-    disposeFlowsIn(contentRef.value)
-    disposeArchIn(contentRef.value)
+    // no dispose here: the same markdown again keeps its drawn diagrams (disposing them left them blank
+    // forever, 2026-11-17); render*In stops the ones whose blocks were replaced
     if (!ui.activeItem?.deep_analysis) return
     await nextTick()
     detachCodeCopy = useCodeCopy(contentRef.value)
