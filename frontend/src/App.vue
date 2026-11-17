@@ -32,6 +32,7 @@ import BrainDialog from '@/components/modals/BrainDialog.vue'
 import SnapshotDialog from '@/components/modals/SnapshotDialog.vue'
 import * as api from '@/lib/api'
 import { Toaster } from '@/components/ui/sonner'
+import { watchForUpdates } from '@/lib/updateCheck'
 import { useMutations } from '@/composables/useMutations'
 
 initTheme()
@@ -283,12 +284,19 @@ async function maybeShowSessionHint() {
   }
 }
 
+let stopUpdateCheck: () => void = () => {}
 function onAuthRequired() {
   requireLogin(true)
 }
 
 onMounted(() => {
   window.addEventListener('omnikeep-auth-required', onAuthRequired)
+  // a newer build went live while this tab was open: say so once, the tab stays until the user reloads
+  stopUpdateCheck = watchForUpdates(() => toast.info('OmniKeep 有新版本', {
+    description: '重新整理後才會用到新版。',
+    duration: Infinity,
+    action: { label: '重新整理', onClick: () => location.reload() },
+  }))
   navigator.serviceWorker?.addEventListener('message', onWorkerMessage)
   window.addEventListener('open-item', async (e: any) => {
     const itemId = e.detail?.itemId
@@ -311,6 +319,7 @@ onMounted(() => {
   bootstrapAuth()
 })
 onUnmounted(() => {
+  stopUpdateCheck()
   window.removeEventListener('omnikeep-auth-required', onAuthRequired)
   navigator.serviceWorker?.removeEventListener('message', onWorkerMessage)
 })

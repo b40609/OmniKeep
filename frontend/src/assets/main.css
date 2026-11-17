@@ -1065,16 +1065,16 @@ input, textarea { caret-color: var(--primary); }
 /* ---- 系統架構圖（lib/archchart.ts）：2026-11-15 定案的 V1 樣式，用主題色票，深色、OLED、淺色都適用 ---- */
 .prose-reader .arch-src { display: none; }
 /* 2026-11-16 配色 A：群組只留框線不填色，卡片是唯一有底色的東西（加淡邊），背景、群組、卡片三層才分得開 */
-.prose-reader .arch-block { --ac-frame: var(--surface-1); --ac-card: var(--card);
+.prose-reader .arch-block { --ac-frame: var(--background); --ac-card: var(--card);
   --ac-line: color-mix(in srgb, var(--foreground) 12%, transparent); --ac-edge: color-mix(in srgb, var(--foreground) 10%, transparent); --ac-lift: 0 1px 2px rgba(0, 0, 0, .06);
   --ac-key: var(--warning); --ac-ease: cubic-bezier(.2, .7, .2, 1); margin: 0.4em 0 1em;
   --ac-wire: color-mix(in srgb, var(--foreground) 34%, transparent); --ac-tip: color-mix(in srgb, var(--foreground) 62%, transparent); --ac-ring: 70%; }
 :root:not(.dark):not(.oled) .prose-reader .arch-block { --ac-line: color-mix(in srgb, var(--foreground) 18%, transparent); --ac-edge: color-mix(in srgb, var(--foreground) 14%, transparent); }
 :root.dark .prose-reader .arch-block, :root.oled .prose-reader .arch-block {
-  --ac-frame: color-mix(in srgb, var(--background) 55%, var(--surface-1)); --ac-card: color-mix(in srgb, var(--foreground) 4%, var(--surface-2)); --ac-lift: 0 1px 3px rgba(0, 0, 0, .35);
+  --ac-card: color-mix(in srgb, var(--foreground) 4%, var(--surface-2)); --ac-lift: 0 1px 3px rgba(0, 0, 0, .35);
   --ac-wire: color-mix(in srgb, var(--foreground) 22%, transparent); --ac-tip: color-mix(in srgb, var(--foreground) 45%, transparent); --ac-ring: 42%; }
 .prose-reader .ac-gist { margin: 0 0 12px; color: var(--muted-foreground); font-size: 15px; line-height: 1.6; }
-.prose-reader .ac-frame { padding: 24px 20px 20px; border-radius: 16px; background: var(--ac-frame); }
+.prose-reader .ac-frame { padding: 8px 0 0; background: transparent; }
 .prose-reader .ac-cap { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 0 4px 16px; }
 .prose-reader .ac-cap b { font-weight: 500; font-size: 15px; color: var(--foreground); }
 .prose-reader .ac-cap span { color: var(--subtle-foreground); font-size: 13px; }
@@ -1178,4 +1178,4 @@ input, textarea { caret-color: var(--primary); }
 .prose-reader .ac-narrow .ac-nd p { -webkit-line-clamp: 1; margin-top: 4px; }
 .prose-reader .ac-narrow .ac-nd i { padding-top: 4px; }
 .prose-reader .ac-narrow .ac-lb { right: 64px; }
-@media (max-width: 640px) { .prose-reader .ac-frame { padding: 18px 12px 14px; } }
+

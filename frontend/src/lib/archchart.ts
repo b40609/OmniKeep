@@ -461,7 +461,10 @@ class ArchView {
       this.kick()
     }, { threshold: 0.25 })
     io.observe(this.frame)
-    this.observers.push(ro, io)
+    // switching theme changes the ground the labels must match
+    const mo = new MutationObserver(() => this.matchGround())
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    this.observers.push(ro, io, mo)
     const bound = this.bound()
     if (bound) { const fo = new ResizeObserver(() => this.fit()); fo.observe(bound); this.observers.push(fo) }
     this.fit()
@@ -491,7 +494,16 @@ class ArchView {
     root.style.marginLeft = `${left - c.left}px`; root.style.width = `${W}px`
   }
 
+  /** Line labels hide the line under them with the colour the diagram sits on; it differs per theme and view. */
+  private matchGround() {
+    for (let e = this.root.parentElement; e; e = e.parentElement) {
+      const c = getComputedStyle(e).backgroundColor
+      if (c && c !== 'transparent' && !/^rgba\(.*,\s*0\)$/.test(c)) { this.root.style.setProperty('--ac-frame', c); return }
+    }
+  }
+
   private relayout() {
+    this.matchGround()
     const cs = getComputedStyle(this.frame)
     const w = Math.floor(this.frame.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight))
     if (!w || w === this.width) return
