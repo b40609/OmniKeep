@@ -23,15 +23,16 @@ export default defineConfig({
       manifest: false,
       injectRegister: null,
       workbox: {
-        globPatterns: ['index.html', '*.svg'],
-        navigateFallback: '/static/dist/index.html',
-        // Direct .html navigations hit the network; only extension-less
-        // routes (e.g. "/") fall back to the SPA shell.
-        navigateFallbackDenylist: [/\.html$/],
+        // The page shell is NOT precached: a precached shell kept serving the build from before a deploy,
+        // so a reload showed old code (2026-11-17). Opening the app asks the server first and uses the
+        // copy kept from the last visit only when the server cannot be reached.
+        globPatterns: ['*.svg'],
         cleanupOutdatedCaches: true,
         // Push/notificationclick handlers (public/push-sw.js), resolved next to sw.js.
         importScripts: ['push-sw.js'],
         runtimeCaching: [
+          { urlPattern: ({ request }) => request.mode === 'navigate', handler: 'NetworkFirst',
+            options: { cacheName: 'omnikeep-shell', networkTimeoutSeconds: 4, expiration: { maxEntries: 4 } } },
           { urlPattern: /\/static\/dist\/assets\/.*/, handler: 'CacheFirst',
             options: { cacheName: 'omnikeep-assets-v2', expiration: { maxEntries: 80 } } },
           {
