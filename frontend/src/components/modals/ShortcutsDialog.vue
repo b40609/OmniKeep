@@ -21,6 +21,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
       ['/ 或 Ctrl/Cmd+K', '搜尋、篩選與動作'],
       ['B', '提問'],
       ['Ctrl/Cmd+B', '展開或收合側邊欄'],
+      ['[ / ]', '整頁閱讀時收合左邊目錄／右邊資訊欄'],
     ],
   },
   {

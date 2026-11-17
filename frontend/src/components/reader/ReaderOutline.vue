@@ -12,6 +12,7 @@ const entries = ref<Entry[]>([])
 const active = ref(0)
 let scroller: HTMLElement | null = null
 let mo: MutationObserver | null = null
+let queued = 0
 
 function label(el: HTMLElement): string {
   const t = (el.textContent || '').replace(/#\s*$/, '').trim()
@@ -23,7 +24,7 @@ function collect() {
   if (!root) { entries.value = []; return }
   const found: Entry[] = []
   root.querySelectorAll<HTMLElement>(':scope > section h2, :scope > section .prose-reader > details > summary').forEach((el) => {
-    if (el.closest('nav')) return
+    if (el.closest('nav') || el.getClientRects().length === 0) return // e.g. old mermaid parts the CSS hides
     const sub = !!el.closest('.prose-reader')
     const text = label(el)
     if (text) found.push({ el, text, sub })
@@ -55,7 +56,6 @@ function bind() {
   scroller?.addEventListener('scroll', onScroll, { passive: true })
   if (props.root) {
     // the analysis renders after the item loads, and sections come and go with it
-    let queued = 0
     mo = new MutationObserver(() => { if (!queued) queued = requestAnimationFrame(() => { queued = 0; collect() }) })
     mo.observe(props.root, { childList: true, subtree: true })
   }
@@ -64,7 +64,7 @@ function bind() {
 
 onMounted(bind)
 watch(() => [props.root, props.version], async () => { await nextTick(); bind() })
-onBeforeUnmount(() => { scroller?.removeEventListener('scroll', onScroll); mo?.disconnect() })
+onBeforeUnmount(() => { scroller?.removeEventListener('scroll', onScroll); mo?.disconnect(); cancelAnimationFrame(queued) })
 </script>
 
 <template>

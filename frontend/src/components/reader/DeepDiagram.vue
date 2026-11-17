@@ -139,7 +139,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </div>
 
     <Teleport to="body">
-      <div v-if="full && html" class="fixed inset-0 z-50 flex flex-col bg-background" role="dialog" aria-label="agent 架構圖（全螢幕）">
+      <div v-if="full && html" data-owns-keys class="fixed inset-0 z-50 flex flex-col bg-background" role="dialog" aria-label="agent 架構圖（全螢幕）">
         <div class="flex items-center justify-between border-b border-hairline px-4 py-2">
           <span class="text-sm text-muted-foreground">agent 架構圖</span>
           <button type="button" class="inline-flex min-h-9 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-sm text-muted-foreground hover:bg-accent" aria-label="關閉全螢幕" @click="full = false">

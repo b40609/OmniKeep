@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, shallowRef } from 'vue'
+import { ref, shallowRef, computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import type { Item } from '@/lib/api'
 import { DEFAULT_SECTION, resolveSettingsTarget, type SettingsSectionId } from '@/lib/settingsSections'
@@ -34,6 +34,15 @@ export const useUiStore = defineStore('ui', () => {
   const readerSide = useLocalStorage<'right' | 'left'>('omnikeep-reader-side', 'right')
   const outlineOpen = useLocalStorage('omnikeep-reader-outline', true)
   const railOpen = useLocalStorage('omnikeep-reader-rail', true)
+  // Whether the outline and the details rail can show right now (full page, the analysis tab, a window
+  // wide enough). The buttons and [ ] only act when this says the column would appear.
+  const viewportW = ref(typeof window !== 'undefined' ? window.innerWidth : 0)
+  if (typeof window !== 'undefined') window.addEventListener('resize', () => { viewportW.value = window.innerWidth })
+  const sidesFit = computed(() => focusMode.value && detailTab.value === 'analysis' && viewportW.value >= 1180)
+  const outlineShown = computed(() => sidesFit.value && outlineOpen.value)
+  /** the rail fits beside the column (with the outline too, the window must be wider) */
+  const railFits = computed(() => sidesFit.value && viewportW.value >= (outlineOpen.value ? 1440 : 1180))
+  const railShown = computed(() => railFits.value && railOpen.value)
 
   // Modals
   /** 新增: one panel for links, notes and bookmark files (components/modals/AddDialog.vue). */
@@ -114,7 +123,7 @@ export const useUiStore = defineStore('ui', () => {
 
   return {
     sidebarOpen, sidebarMobileOpen, searchFocusRequests, pendingQuestion, ask,
-    activeItem, cursorId, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode, readerOpen, readerSide, outlineOpen, railOpen,
+    activeItem, cursorId, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode, readerOpen, readerSide, outlineOpen, railOpen, sidesFit, outlineShown, railFits, railShown,
     showAddModal, addDraft, openAdd, showCategoryModal, showShortcutsModal, showRadarModal, showWatchModal, showImportModal, importTab, importFile, openImport, showDeckModal,
     showDailyDeckModal, showBrainModal,
     showSettingsModal, settingsTab, settingsBlock, settingsLevel, settingsCloseRequests, settingsCard, settingsVersion, openSettings, showSetupWizard,

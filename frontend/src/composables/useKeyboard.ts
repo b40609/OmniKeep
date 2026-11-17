@@ -34,6 +34,8 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
 
   function handleKeyDown(e: KeyboardEvent) {
     if (!enabled() || e.defaultPrevented || e.isComposing) return
+    // a full-screen diagram handles its own keys (Esc closes it); nothing behind it should move
+    if (typeof document.querySelector === 'function' && document.querySelector('[data-owns-keys]')) return
 
     // Ctrl/Cmd+K goes to the search box, also from another field; not from under a dialog or the settings page.
     if (!e.altKey && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -153,10 +155,9 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
       case '[':
       case ']':
         // full-page reading: fold the outline ([) or the details beside the article (])
-        if (ui.activeItem && ui.focusMode) {
-          e.preventDefault()
-          if (e.key === '[') ui.outlineOpen = !ui.outlineOpen
-          else ui.railOpen = !ui.railOpen
+        if (ui.activeItem && ui.sidesFit) {
+          if (e.key === '[') { e.preventDefault(); ui.outlineOpen = !ui.outlineOpen }
+          else if (ui.railFits) { e.preventDefault(); ui.railOpen = !ui.railOpen }
         }
         return
       case 'n':
@@ -181,6 +182,9 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
     }
     const target = ui.activeItem ?? (browsing && currentIndex >= 0 ? list[currentIndex] : null)
 
+    // arrow keys scroll the article when the reader has focus; J and K still change item
+    const inReader = !!el?.closest('[data-reader-scroll], .reader-side')
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && inReader) return
     if (e.key === 'j' || e.key === 'ArrowDown') {
       e.preventDefault()
       moveTo(Math.min(list.length - 1, currentIndex + 1))

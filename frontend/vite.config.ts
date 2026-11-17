@@ -27,12 +27,16 @@ export default defineConfig({
         // so a reload showed old code (2026-11-17). Opening the app asks the server first and uses the
         // copy kept from the last visit only when the server cannot be reached.
         globPatterns: ['*.svg'],
+        // the plugin's default falls back to a precached index.html; with none precached that route made
+        // the worker throw on start (non-precached-url), so it never installed — 2026-11-17 review
+        navigateFallback: null,
         cleanupOutdatedCaches: true,
         // Push/notificationclick handlers (public/push-sw.js), resolved next to sw.js.
         importScripts: ['push-sw.js'],
         runtimeCaching: [
           { urlPattern: ({ request }) => request.mode === 'navigate', handler: 'NetworkFirst',
-            options: { cacheName: 'omnikeep-shell', networkTimeoutSeconds: 4, expiration: { maxEntries: 4 } } },
+            // every address serves the same app shell, so /?open=… offline still finds the one kept
+            options: { cacheName: 'omnikeep-shell', networkTimeoutSeconds: 4, expiration: { maxEntries: 4 }, matchOptions: { ignoreSearch: true } } },
           { urlPattern: /\/static\/dist\/assets\/.*/, handler: 'CacheFirst',
             options: { cacheName: 'omnikeep-assets-v2', expiration: { maxEntries: 80 } } },
           {

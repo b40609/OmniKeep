@@ -1069,7 +1069,8 @@ input, textarea { caret-color: var(--primary); }
   --ac-line: color-mix(in srgb, var(--foreground) 12%, transparent); --ac-edge: color-mix(in srgb, var(--foreground) 10%, transparent); --ac-lift: 0 1px 2px rgba(0, 0, 0, .06);
   --ac-key: var(--warning); --ac-ease: cubic-bezier(.2, .7, .2, 1); margin: 0.4em 0 1em;
   --ac-wire: color-mix(in srgb, var(--foreground) 34%, transparent); --ac-tip: color-mix(in srgb, var(--foreground) 62%, transparent); --ac-ring: 70%; }
-:root:not(.dark):not(.oled) .prose-reader .arch-block { --ac-line: color-mix(in srgb, var(--foreground) 18%, transparent); --ac-edge: color-mix(in srgb, var(--foreground) 14%, transparent); }
+:root:not(.dark):not(.oled) .prose-reader .arch-block { --ac-line: color-mix(in srgb, var(--foreground) 18%, transparent); --ac-edge: color-mix(in srgb, var(--foreground) 14%, transparent);
+  /* the reader is white in the light theme: cards a shade off it, so they stand apart */ --ac-card: color-mix(in srgb, var(--foreground) 3%, var(--card)); --ac-lift: 0 1px 3px rgba(0, 0, 0, .08); }
 :root.dark .prose-reader .arch-block, :root.oled .prose-reader .arch-block {
   --ac-card: color-mix(in srgb, var(--foreground) 4%, var(--surface-2)); --ac-lift: 0 1px 3px rgba(0, 0, 0, .35);
   --ac-wire: color-mix(in srgb, var(--foreground) 22%, transparent); --ac-tip: color-mix(in srgb, var(--foreground) 45%, transparent); --ac-ring: 42%; }
@@ -1199,7 +1200,15 @@ input, textarea { caret-color: var(--primary); }
 
 /* ---- 整頁閱讀（2026-11-17）：左邊目錄、中間內文、右邊資訊欄，兩側可收合（[ ]），收起來內文仍置中 ---- */
 .reader-layout.has-outline, .reader-layout.has-rail { display: grid; grid-template-columns: 220px minmax(0, 44rem) 220px; justify-content: center; column-gap: 40px; }
-.reader-layout.has-rail { grid-template-columns: 300px minmax(0, 44rem) 300px; }
+.reader-layout.has-rail { grid-template-columns: minmax(0, 44rem) 300px; }
+.reader-layout.has-rail:not(.has-outline) .reader-main { grid-column: 1; }
+.reader-layout.has-rail:not(.has-outline) .reader-side--right { grid-column: 2; }
+/* with room to spare the column stays centred, an empty column balancing the rail */
+@media (min-width: 1500px) {
+  .reader-layout.has-rail { grid-template-columns: 300px minmax(0, 44rem) 300px; }
+  .reader-layout.has-rail:not(.has-outline) .reader-main { grid-column: 2; }
+  .reader-layout.has-rail:not(.has-outline) .reader-side--right { grid-column: 3; }
+}
 .reader-layout.has-outline.has-rail { grid-template-columns: 220px minmax(0, 44rem) 300px; }
 .reader-layout .reader-main { grid-column: 2; grid-row: 1; }
 .reader-side { position: sticky; top: 0; align-self: start; grid-row: 1; max-height: calc(100dvh - 56px); box-sizing: border-box; padding: 40px 0 32px; overflow-y: auto; }
@@ -1244,4 +1253,11 @@ input, textarea { caret-color: var(--primary); }
 /* 閱讀畫面的捲軸（2026-11-17）：細、軌道透明，平常幾乎看不見，滑過那一欄才淡淡浮現；資訊欄內容不貼著捲軸 */
 [data-reader-scroll], .reader-side { scrollbar-width: thin; scrollbar-color: transparent transparent; scrollbar-gutter: stable; transition: scrollbar-color .3s; }
 [data-reader-scroll]:hover, .reader-side:hover, [data-reader-scroll]:focus-within, .reader-side:focus-within { scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent; }
-.reader-side--right { padding-right: 10px; margin-right: -10px; }
+/* Chrome and Safari ignore scrollbar-color once any ::-webkit-scrollbar rule applies (the app sets one), so say it there too */
+[data-reader-scroll]::-webkit-scrollbar, .reader-side::-webkit-scrollbar { width: 8px; background: transparent; }
+[data-reader-scroll]::-webkit-scrollbar-track, .reader-side::-webkit-scrollbar-track { background: transparent; }
+[data-reader-scroll]::-webkit-scrollbar-thumb, .reader-side::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+[data-reader-scroll]:hover::-webkit-scrollbar-thumb, .reader-side:hover::-webkit-scrollbar-thumb,
+[data-reader-scroll]:focus-within::-webkit-scrollbar-thumb, .reader-side:focus-within::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--foreground) 22%, transparent); }
+.reader-side--right { padding-right: 10px; }
+.reader-side--left { padding-left: 4px; padding-right: 4px; }

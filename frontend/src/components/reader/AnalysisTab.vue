@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
-import { useWindowSize } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import { Link2, Package, ChevronRight, ChevronLeft, Camera, Sparkles, Network, ExternalLink, ArrowRight, List, Hash, FileText, CornerUpLeft, Loader2 } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
@@ -84,10 +83,8 @@ function scrollToHeading(id: string) { document.getElementById(id)?.scrollIntoVi
 
 // Full-page reading on a wide screen: the outline on the left, the item's details on the right; each
 // folds away ([ ]). When the window cannot fit both beside the 44rem column, the details go back under it.
-const { width: vw } = useWindowSize()
-const wide = computed(() => ui.focusMode && vw.value >= 1180)
-const outlineOn = computed(() => wide.value && ui.outlineOpen)
-const railOn = computed(() => wide.value && ui.railOpen && vw.value >= (outlineOn.value ? 1440 : 1180))
+const outlineOn = computed(() => ui.outlineShown)
+const railOn = computed(() => ui.railShown)
 const mainRef = ref<HTMLElement | null>(null)
 // the previous and next item of the list the reader came from (J / K do the same)
 const neighbours = computed(() => {
@@ -356,8 +353,9 @@ function openItem(id: number | string) {
         <div
           v-for="rel in ui.activeItem.related_items"
           :key="rel.id"
-          class="group flex flex-col justify-between rounded-xl border border-border/60 bg-muted/20 p-3.5 transition hover:border-primary/40 hover:bg-card cursor-pointer"
-          @click="openItem(rel.id)"
+          class="group flex flex-col justify-between rounded-xl border border-border/60 bg-muted/20 p-3.5 transition hover:border-primary/40 hover:bg-card cursor-pointer focus-visible:outline-2 focus-visible:outline-ring"
+          role="button" tabindex="0" :aria-label="`開啟 ${rel.title_l1}`"
+          @click="openItem(rel.id)" @keydown.enter.prevent="openItem(rel.id)" @keydown.space.prevent="openItem(rel.id)"
         >
           <div>
             <div class="mb-1.5 flex items-center justify-between gap-1.5">
@@ -419,7 +417,10 @@ function openItem(id: number | string) {
                 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
                 : 'border-border bg-card text-foreground hover:border-primary/40 cursor-pointer',
             ]"
+            :role="node.type !== 'center' && node.id && !String(node.id).startsWith('ent-') ? 'button' : undefined"
+            :tabindex="node.type !== 'center' && node.id && !String(node.id).startsWith('ent-') ? 0 : undefined"
             @click="node.type !== 'center' && node.id && !String(node.id).startsWith('ent-') ? openItem(node.id) : null"
+            @keydown.enter.prevent="node.type !== 'center' && node.id && !String(node.id).startsWith('ent-') ? openItem(node.id) : null"
           >
             <FileText v-if="node.type === 'center'" class="size-3.5 shrink-0" aria-hidden="true" />
             <CornerUpLeft v-else-if="node.type === 'backlink'" class="size-3.5 shrink-0" aria-hidden="true" />
@@ -441,7 +442,7 @@ function openItem(id: number | string) {
           </div>
         </div>
 
-        <div class="mt-3 flex items-center gap-4 text-3xs text-muted-foreground pt-2 border-t border-border/40">
+        <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-3xs text-muted-foreground pt-2 border-t border-border/40">
           <span class="flex items-center gap-1"><FileText class="size-3" aria-hidden="true" />這一則</span>
           <span class="flex items-center gap-1"><CornerUpLeft class="size-3" aria-hidden="true" />引用這一則的收藏</span>
           <span class="flex items-center gap-1"><Package class="size-3" aria-hidden="true" />文中提到的項目</span>

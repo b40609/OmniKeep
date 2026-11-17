@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onBeforeUnmount } from 'vue'
+import { ref, watch, computed, onBeforeUnmount, nextTick } from 'vue'
 import { ArrowLeft, X, Maximize2, Minimize2, PanelLeft, PanelRight } from 'lucide-vue-next'
 import ItemActions from '@/components/items/ItemActions.vue'
 import Skeleton from '@/components/ui/skeleton/Skeleton.vue'
@@ -62,13 +62,20 @@ const paneW = ref(0)
 let ro: ResizeObserver | null = null
 watch(rootRef, (el) => {
   ro?.disconnect(); ro = null
-  if (!el || typeof ResizeObserver === 'undefined') return
+  if (!el) return
+  paneW.value = el.getBoundingClientRect().width // the first frame already knows, so the bar does not jump
+  if (typeof ResizeObserver === 'undefined') return
   ro = new ResizeObserver(([e]) => { paneW.value = e.contentRect.width })
   ro.observe(el)
 })
 onBeforeUnmount(() => { ro?.disconnect(); lgQuery?.removeEventListener?.('change', onLg) })
-const merged = computed(() => isLg.value && paneW.value >= 760)
+const merged = computed(() => isLg.value && paneW.value >= 840)
 const TABS = [{ id: 'analysis', label: '重點分析' }, { id: 'reader', label: '原文' }] as const
+
+// another item, or the other tab: start at the top, not where the last one was left
+watch(() => [ui.activeItem?.id, ui.detailTab], () => {
+  void nextTick(() => { const s = rootRef.value?.querySelector?.<HTMLElement>('[data-reader-scroll]'); if (s) s.scrollTop = 0 })
+})
 
 function changeTab(event: KeyboardEvent) {
   const tabs = Array.from((event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="tab"]'))
@@ -93,7 +100,7 @@ function changeTab(event: KeyboardEvent) {
     <div class="relative flex min-h-14 shrink-0 items-center justify-between gap-1 border-b border-hairline px-2 sm:px-4">
       <button class="item-action" :class="ui.focusMode ? '' : 'lg:hidden'" aria-label="返回清單" title="返回清單（Esc）" @click="closeReader"><ArrowLeft class="size-5" /></button>
       <span class="min-w-0 truncate text-sm text-muted-foreground" :class="merged && !ui.focusMode ? 'mr-3 shrink' : 'flex-1'">{{ sourceName(ui.activeItem) }}</span>
-      <div v-if="merged" class="flex items-center gap-0.5 rounded-xl bg-muted/60 p-1" :class="ui.focusMode ? 'xl:absolute xl:left-1/2 xl:-translate-x-1/2' : 'mr-auto'" role="tablist" aria-label="閱讀模式" @keydown="changeTab">
+      <div v-if="merged" class="flex items-center gap-0.5 rounded-xl bg-muted/60 p-1" :class="ui.focusMode ? '2xl:absolute 2xl:left-1/2 2xl:-translate-x-1/2' : 'mr-auto'" role="tablist" aria-label="閱讀模式" @keydown="changeTab">
         <button v-for="t in TABS" :id="'tab-' + t.id" :key="t.id"
           role="tab" :aria-selected="ui.detailTab === t.id" :aria-controls="'panel-' + t.id" :tabindex="ui.detailTab === t.id ? 0 : -1"
           class="min-h-9 rounded-lg px-4 text-sm font-medium transition-colors" :class="ui.detailTab === t.id ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
@@ -113,12 +120,12 @@ function changeTab(event: KeyboardEvent) {
           </select>
         </label>
         <span class="mr-2 text-xs text-muted-foreground">{{ ui.activeItem.is_read ? '已封存' : '未封存' }}</span>
-        <template v-if="ui.focusMode">
-        <span class="mx-1 h-5 w-px bg-hairline max-[1179px]:hidden" aria-hidden="true" />
-        <button class="item-action max-[1179px]:hidden" :aria-pressed="ui.outlineOpen" :aria-label="ui.outlineOpen ? '收起左邊目錄' : '打開左邊目錄'" :title="(ui.outlineOpen ? '收起目錄' : '打開目錄') + '（[）'" @click="ui.outlineOpen = !ui.outlineOpen">
+        <template v-if="ui.sidesFit">
+        <span class="mx-1 h-5 w-px bg-hairline" aria-hidden="true" />
+        <button class="item-action" :aria-pressed="ui.outlineOpen" :aria-label="ui.outlineOpen ? '收起左邊目錄' : '打開左邊目錄'" :title="(ui.outlineOpen ? '收起目錄' : '打開目錄') + '（[）'" @click="ui.outlineOpen = !ui.outlineOpen">
           <PanelLeft class="size-4" :class="ui.outlineOpen ? 'text-foreground' : 'text-subtle-foreground'" />
         </button>
-        <button class="item-action max-[1179px]:hidden" :aria-pressed="ui.railOpen" :aria-label="ui.railOpen ? '收起右邊資訊欄' : '打開右邊資訊欄'" :title="(ui.railOpen ? '收起資訊欄' : '打開資訊欄') + '（]）'" @click="ui.railOpen = !ui.railOpen">
+        <button v-if="ui.railFits" class="item-action" :aria-pressed="ui.railOpen" :aria-label="ui.railOpen ? '收起右邊資訊欄' : '打開右邊資訊欄'" :title="(ui.railOpen ? '收起資訊欄' : '打開資訊欄') + '（]）'" @click="ui.railOpen = !ui.railOpen">
           <PanelRight class="size-4" :class="ui.railOpen ? 'text-foreground' : 'text-subtle-foreground'" />
         </button>
         </template>

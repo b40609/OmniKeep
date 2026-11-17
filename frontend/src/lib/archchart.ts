@@ -461,7 +461,11 @@ class ArchView {
     this.pop = el('div', 'ac-pop')
     this.pop.setAttribute('role', 'dialog')
     this.pop.addEventListener('click', (ev) => ev.stopPropagation())
-    const onDoc = (ev: Event) => { if (ev.type === 'click' || (ev as KeyboardEvent).key === 'Escape') this.close() }
+    // Esc that closes an open card stops there, so it does not also close the reader behind it
+    const onDoc = (ev: Event) => {
+      if (ev.type === 'click') { this.close(); return }
+      if ((ev as KeyboardEvent).key === 'Escape' && this.openId) { this.close(); ev.stopPropagation() }
+    }
     document.addEventListener('click', onDoc)
     document.addEventListener('keydown', onDoc)
     this.offDoc = () => { document.removeEventListener('click', onDoc); document.removeEventListener('keydown', onDoc) }
@@ -815,6 +819,7 @@ function expandIcon(): SVGSVGElement {
 /** The whole diagram on a full-screen sheet, laid out side by side; Esc, the close button or 縮小 brings the reader back. */
 function openFull(a: Arch, from: HTMLElement) {
   const sheet = el('div', 'prose-reader ac-sheet')
+  sheet.dataset.ownsKeys = '' // the reader's shortcuts (J, K, [, ], Esc…) wait while it is open
   sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', '完整架構圖')
   const close = el('button', 'ac-sheet-x', '收合') as HTMLButtonElement
   close.type = 'button'
@@ -823,9 +828,13 @@ function openFull(a: Arch, from: HTMLElement) {
   document.body.append(sheet)
   const overflow = document.body.style.overflow
   document.body.style.overflow = 'hidden'
+  // keep Tab inside the sheet: the app under it cannot take focus while it is open
+  const app = document.getElementById('app')
+  if (app) app.inert = true
   const view = new ArchView(block, a, true)
   const done = () => {
     view.destroy(); sheet.remove(); document.body.style.overflow = overflow
+    if (app) app.inert = false
     document.removeEventListener('keydown', onKey, true); from.focus({ preventScroll: true })
   }
   // Esc closes an open card first (ArchView's own handler), then the sheet

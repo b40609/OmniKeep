@@ -20,5 +20,14 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     navigator.serviceWorker
       .register('/static/dist/sw.js', { scope: '/' })
       .catch((err) => console.warn('[OmniKeep PWA] SW registration failed:', err))
+    // A newer worker took over a page an older worker served (e.g. one that still held the old precached
+    // shell): reload once so the page is the new build, instead of asking the user to reload twice.
+    const hadController = !!navigator.serviceWorker.controller
+    let reloaded = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || reloaded) return
+      reloaded = true
+      window.location.reload()
+    })
   })
 }
