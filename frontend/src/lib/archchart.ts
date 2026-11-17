@@ -431,8 +431,12 @@ class ArchView {
   private litEdge: EdgeView | null = null
   private offDoc: () => void
 
-  constructor(root: HTMLElement, a: Arch) {
+  private expand: HTMLButtonElement | null = null
+  private full: boolean
+
+  constructor(root: HTMLElement, a: Arch, full = false) {
     this.root = root
+    this.full = full
     this.a = a
     root.replaceChildren()
     root.classList.add('ac-root')
@@ -442,6 +446,15 @@ class ArchView {
     const name = a.repo ? a.repo.split('/')[1] : ''
     cap.append(el('b', '', name ? `${name} 怎麼運作` : '怎麼運作'))
     if (a.note) cap.append(el('span', '', a.note))
+    if (!full) {
+      // a diagram too wide for the reading column is stacked; this opens it full screen, side by side
+      const bt = el('button', 'ac-expand', '展開') as HTMLButtonElement
+      bt.type = 'button'; bt.hidden = true
+      bt.setAttribute('aria-label', '用全螢幕看完整架構圖')
+      bt.prepend(expandIcon())
+      bt.addEventListener('click', (ev) => { ev.stopPropagation(); openFull(a, bt) })
+      cap.append(bt); this.expand = bt
+    }
     this.stage = el('div', 'ac-stage')
     this.frame.append(cap, this.stage)
     root.append(this.frame, el('p', 'ac-foot', a.sides.length ? '光束走一次完整的使用流程，虛線是元件另外呼叫的程序；點卡片看細節' : '光束走一次完整的使用流程；點卡片看細節'))
@@ -453,7 +466,7 @@ class ArchView {
     document.addEventListener('keydown', onDoc)
     this.offDoc = () => { document.removeEventListener('click', onDoc); document.removeEventListener('keydown', onDoc) }
 
-    const ro = new ResizeObserver(() => { this.fit(); this.relayout() })
+    const ro = new ResizeObserver(() => this.relayout())
     ro.observe(this.frame)
     const io = new IntersectionObserver(([en]) => {
       this.visible = en.isIntersecting
@@ -465,34 +478,11 @@ class ArchView {
     const mo = new MutationObserver(() => this.matchGround())
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
     this.observers.push(ro, io, mo)
-    const bound = this.bound()
-    if (bound) { const fo = new ResizeObserver(() => this.fit()); fo.observe(bound); this.observers.push(fo) }
-    this.fit()
     this.relayout()
   }
 
-  // On a wide screen the diagram steps out of the reading column, up to 1120px, but never past the
-  // nearest scrolling panel, so a reader shown in a side panel keeps it inside (as lib/flowchart.ts).
-  private bound(): HTMLElement | null {
-    for (let e = this.root.parentElement; e; e = e.parentElement) {
-      if (e === document.body) return e
-      const st = getComputedStyle(e)
-      if (st.overflowX !== 'visible' || st.overflowY !== 'visible') return e
-    }
-    return null
-  }
-
-  private fit() {
-    const root = this.root, bound = this.bound()
-    root.style.marginLeft = ''; root.style.width = ''
-    if (!bound) return
-    const b = bound.getBoundingClientRect(), c = root.getBoundingClientRect()
-    if (!c.width) return // inside a closed section; fitted again when it opens
-    const W = Math.min(1120, b.width - 48)
-    if (W <= c.width + 40) return
-    const left = Math.max(b.left + 24, Math.min(c.left + c.width / 2 - W / 2, b.right - 24 - W))
-    root.style.marginLeft = `${left - c.left}px`; root.style.width = `${W}px`
-  }
+  // 2026-11-17 the diagram stays inside the reading column, aligned with the text (it used to step out
+  // to 1120px, which pushed its title left of the text and left it off-centre); too wide → stacked + 展開
 
   /** Line labels hide the line under them with the colour the diagram sits on; it differs per theme and view. */
   private matchGround() {
@@ -518,6 +508,10 @@ class ArchView {
     st.replaceChildren(); this.cards = {}; this.edges = []
     st.classList.remove('ac-focus')
     st.classList.toggle('ac-narrow', L.narrow)
+    // full screen: the summary and title line up with the diagram, not with the whole sheet
+    if (this.full) this.root.style.maxWidth = `${L.width}px`
+    // worth opening full screen only when the screen has room to lay it out side by side
+    if (this.expand) this.expand.hidden = !(L.narrow && layoutArch(this.a, Math.min(window.innerWidth - 64, 1400)).narrow === false)
     st.style.width = `${L.width}px`; st.style.height = `${L.height}px`
     for (const b of L.bands) {
       const d = el('div', 'ac-band')
@@ -811,6 +805,35 @@ class ArchView {
 
 // every live view, so a block that left the page (its markdown was replaced) can be stopped
 const views = new Map<HTMLElement, ArchView>()
+
+function expandIcon(): SVGSVGElement {
+  const s = svgEl('svg', { viewBox: '0 0 24 24', class: 'ac-xi', 'aria-hidden': 'true' }) as SVGSVGElement
+  svgEl('path', { d: 'M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7' }, s)
+  return s
+}
+
+/** The whole diagram on a full-screen sheet, laid out side by side; Esc, the close button or 縮小 brings the reader back. */
+function openFull(a: Arch, from: HTMLElement) {
+  const sheet = el('div', 'prose-reader ac-sheet')
+  sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', '完整架構圖')
+  const close = el('button', 'ac-sheet-x', '收合') as HTMLButtonElement
+  close.type = 'button'
+  const block = el('div', 'arch-block')
+  sheet.append(close, block)
+  document.body.append(sheet)
+  const overflow = document.body.style.overflow
+  document.body.style.overflow = 'hidden'
+  const view = new ArchView(block, a, true)
+  const done = () => {
+    view.destroy(); sheet.remove(); document.body.style.overflow = overflow
+    document.removeEventListener('keydown', onKey, true); from.focus({ preventScroll: true })
+  }
+  // Esc closes an open card first (ArchView's own handler), then the sheet
+  const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape' && !block.querySelector('.ac-pop')) { ev.stopPropagation(); done() } }
+  document.addEventListener('keydown', onKey, true)
+  close.addEventListener('click', done)
+  close.focus({ preventScroll: true })
+}
 
 function dropDetached() {
   views.forEach((v, b) => { if (!b.isConnected) { v.destroy(); views.delete(b) } })
