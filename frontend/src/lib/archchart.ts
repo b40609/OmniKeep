@@ -390,7 +390,7 @@ function rounded(pts: Pt[], R = 12): string {
 }
 const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2)
 
-interface EdgeView { spec: EdgeSpec; p: SVGPathElement; ah: SVGPathElement; d: string; len: number }
+interface EdgeView { spec: EdgeSpec; p: SVGPathElement; ah: SVGPathElement; d: string; len: number; l?: HTMLElement }
 const BEAM = [{ len: 22, w: 6, o: 0.4, glow: true }, { len: 90, w: 2, o: 0.14 }, { len: 48, w: 2, o: 0.35 }, { len: 22, w: 2.5, o: 1 }]
 const DWELL = { start: 1100, plain: 1400, key: 2400, gate: 1600 }
 
@@ -539,12 +539,13 @@ class ArchView {
       const d = rounded(pts)
       const p = svgEl('path', { d, class: 'ac-ed' }, svg)
       const ah = svgEl('path', { d: 'M-6 -4 L0 0 L-6 4', class: 'ac-ah', transform: `translate(${ex},${ey}) rotate(${ang * 180 / Math.PI})` }, svg)
+      let l: HTMLElement | undefined
       if (spec.label && spec.at) {
-        const l = el('div', `ac-el${spec.inBand ? ' ac-inband' : ''}${spec.side ? ` ac-${spec.side}` : ''}`, spec.label)
+        l = el('div', `ac-el${spec.inBand ? ' ac-inband' : ''}${spec.side ? ` ac-${spec.side}` : ''}`, spec.label)
         Object.assign(l.style, { left: `${spec.at[0]}px`, top: `${spec.at[1]}px` })
         st.append(l)
       }
-      this.edges.push({ spec, p, ah, d, len: p.getTotalLength() })
+      this.edges.push({ spec, p, ah, d, len: p.getTotalLength(), l })
     }
     const defs = svgEl('defs', {}, svg)
     const fid = `ac-glow-${Math.random().toString(36).slice(2, 8)}`
@@ -655,12 +656,12 @@ class ArchView {
   private focus(id: string | null) {
     const st = this.stage
     st.classList.toggle('ac-focus', !!id)
-    st.querySelectorAll('.ac-on').forEach((x) => x.classList.remove('ac-on'))
+    st.querySelectorAll('.ac-on').forEach((x) => x.classList.remove('ac-on', 'ac-hot'))
     if (!id) return
-    this.cards[id]?.classList.add('ac-on')
+    this.cards[id]?.classList.add('ac-on', 'ac-hot')
     for (const e of this.edges) {
       if (e.spec.s !== id && e.spec.t !== id) continue
-      e.p.classList.add('ac-on'); e.ah.classList.add('ac-on')
+      e.p.classList.add('ac-on'); e.ah.classList.add('ac-on'); e.l?.classList.add('ac-on')
       this.cards[e.spec.s]?.classList.add('ac-on'); this.cards[e.spec.t]?.classList.add('ac-on')
     }
   }
@@ -713,13 +714,26 @@ class ArchView {
     const W = this.L.width, H = this.L.height, pw = Math.min(this.L.narrow ? W : 300, W)
     pop.style.width = `${pw}px`
     const ph = pop.offsetHeight
-    let px = p.x + p.w + 14, py = p.y
-    if (this.L.narrow || px + pw > W) px = p.x - pw - 14
-    if (this.L.narrow || px < 0) {
-      // no room at either side: under the card, or above it near the bottom
-      px = Math.max(0, Math.min(p.x + p.w - pw, W - pw)); py = p.y + p.h + 8
-      if (py + ph > H && p.y - ph - 8 >= 0) py = p.y - ph - 8
-    } else if (py + ph > H) py = Math.max(0, H - ph)
+    // try the four sides and keep the one that hides the fewest cards, above all the ones this card
+    // connects to; the pop may use the empty frame margin beside the stage
+    const fr = this.frame.getBoundingClientRect(), sr = this.stage.getBoundingClientRect()
+    const lo = Math.min(0, fr.left + 12 - sr.left), hi = Math.max(W, fr.right - 12 - sr.left)
+    const clampX = (x: number) => Math.max(lo, Math.min(x, hi - pw)), clampY = (y: number) => Math.max(0, Math.min(y, Math.max(0, H - ph)))
+    const tries: [number, number][] = this.L.narrow
+      ? [[clampX(p.x + p.w - pw), p.y + p.h + 8], [clampX(p.x + p.w - pw), p.y - ph - 8]]
+      : [[p.x + p.w + 14, clampY(p.y)], [p.x - pw - 14, clampY(p.y)], [clampX(p.x + p.w / 2 - pw / 2), p.y + p.h + 12], [clampX(p.x + p.w / 2 - pw / 2), p.y - ph - 12]]
+    const cost = ([x, y]: [number, number]) => {
+      let c = (x < lo || x + pw > hi ? 1e7 : 0) + (y < 0 ? 1e6 : 0) + Math.max(0, y + ph - H) * 40
+      for (const [nid, q] of Object.entries(this.L.places)) {
+        if (nid === id) continue
+        const ox = Math.max(0, Math.min(x + pw, q.x + q.w) - Math.max(x, q.x)), oy = Math.max(0, Math.min(y + ph, q.y + q.h) - Math.max(y, q.y))
+        const near = this.cards[nid]?.classList.contains('ac-up') || this.cards[nid]?.classList.contains('ac-down')
+        c += ox * oy * (near ? 4 : 1)
+      }
+      return c
+    }
+    let [px, py] = tries.reduce((best, t) => (cost(t) < cost(best) ? t : best))
+    if (py < 0 && !this.L.narrow) py = 0
     pop.style.left = `${px}px`; pop.style.top = `${py}px`
     pop.classList.remove('ac-pop-in'); void pop.offsetWidth; pop.classList.add('ac-pop-in')
     requestAnimationFrame(() => pop.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
@@ -735,7 +749,7 @@ class ArchView {
         for (const e of this.edges) {
           const [a, b] = fwd ? [e.spec.s, e.spec.t] : [e.spec.t, e.spec.s]
           if (a !== cur) continue
-          e.p.classList.add(fwd ? 'ac-down' : 'ac-up'); e.ah.classList.add(fwd ? 'ac-down' : 'ac-up')
+          for (const x of [e.p, e.ah, e.l]) x?.classList.add(fwd ? 'ac-down' : 'ac-up')
           if (b !== from && !seen.has(b)) { seen.add(b); todo.push(b) }
         }
       }

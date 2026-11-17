@@ -1088,12 +1088,13 @@ input, textarea { caret-color: var(--primary); }
 .prose-reader .ac-ic { grid-column: 1; grid-row: 1; align-self: start; margin-top: 2px; display: block; width: 16px; height: 16px; fill: none; stroke: var(--subtle-foreground); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; transition: stroke .5s var(--ac-ease), transform .5s var(--ac-ease); }
 .prose-reader .ac-nd b { grid-column: 2; grid-row: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; font-weight: 500; font-size: 14px; line-height: 20px; color: var(--foreground); }
 .prose-reader .ac-nd p { grid-column: 1 / -1; grid-row: 2; margin: 6px 0 0; color: var(--muted-foreground); font-size: 12.5px; line-height: 18px; text-wrap: pretty; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.prose-reader .ac-nd i { grid-column: 1 / -1; grid-row: 4; padding-top: 6px; font-style: normal; color: var(--subtle-foreground); font-size: 12px; line-height: 16px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.prose-reader .ac-nd i { grid-column: 1 / -1; grid-row: 4; padding-top: 6px; font-style: normal; color: var(--subtle-foreground); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; line-height: 16px; letter-spacing: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .prose-reader .ac-ext { grid-template-rows: auto auto; padding: 10px 12px; background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
 .prose-reader .ac-ext p { margin-top: 2px; -webkit-line-clamp: 1; }
-.prose-reader .ac-key { background: color-mix(in srgb, var(--ac-key) 10%, var(--ac-card)); }
+.prose-reader .ac-key { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac-key) 42%, transparent), var(--ac-lift); }
+.prose-reader .ac-key:hover { background: color-mix(in srgb, var(--foreground) 3%, var(--ac-card)); }
 .prose-reader .ac-key .ac-ic, .prose-reader .ac-gate .ac-ic { stroke: var(--ac-key); }
-.prose-reader .ac-key b { color: var(--ac-key); }
+.prose-reader .ac-key b { color: var(--foreground); }
 .prose-reader .ac-side { background: transparent; box-shadow: none; outline: 1px dashed color-mix(in srgb, var(--foreground) 22%, transparent); outline-offset: -1px; }
 .prose-reader .ac-nd:hover { transform: translateY(-1px); background: color-mix(in srgb, var(--foreground) 3%, var(--ac-card)); }
 .prose-reader .ac-ext:hover, .prose-reader .ac-side:hover { background: color-mix(in srgb, var(--foreground) 3%, transparent); }
@@ -1136,6 +1137,9 @@ input, textarea { caret-color: var(--primary); }
 /* 滑過卡片：它和相連的卡片、線留著，其他退後；點開詳細資訊時其他卡片也退後 */
 .prose-reader .ac-focus .ac-nd:not(.ac-on) { opacity: .32; }
 .prose-reader .ac-focus .ac-ed:not(.ac-on), .prose-reader .ac-focus .ac-ah:not(.ac-on) { opacity: .2; }
+.prose-reader .ac-focus .ac-el:not(.ac-on), .prose-reader .ac-picking .ac-el:not(.ac-up):not(.ac-down) { opacity: .25; }
+.prose-reader .ac-focus .ac-nd.ac-hot { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 34%, transparent), 0 6px 18px rgba(0, 0, 0, .16); }
+.prose-reader .ac-focus .ac-key.ac-hot { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac-key) 75%, transparent), 0 6px 18px rgba(0, 0, 0, .16); }
 .prose-reader .ac-focus .ac-ed.ac-on { stroke: color-mix(in srgb, var(--foreground) 70%, transparent); }
 .prose-reader .ac-picking .ac-nd:not(.ac-picked):not(.ac-up):not(.ac-down) { opacity: .28; }
 .prose-reader .ac-picking .ac-ed:not(.ac-up):not(.ac-down), .prose-reader .ac-picking .ac-ah:not(.ac-up):not(.ac-down) { opacity: .18; }
