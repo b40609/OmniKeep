@@ -36,6 +36,13 @@ async function loadFull(id: number) {
     if (request === detailRequest) fetchingFull.value = false
   }
 }
+// opening an item (not switching from one open item to the next) follows the chosen way to open
+watch(() => ui.activeItem?.id != null, (open) => { if (open) ui.focusMode = ui.readerOpen === 'full' }, { immediate: true })
+// the expand button is also the choice: what you pick is how the next item opens
+function toggleFull() {
+  ui.focusMode = !ui.focusMode
+  ui.readerOpen = ui.focusMode ? 'full' : 'side'
+}
 watch(() => ui.activeItem?.id, (id) => {
   if (id == null) {
     detailRequest++
@@ -63,12 +70,12 @@ function changeTab(event: KeyboardEvent) {
 <template>
   <section v-if="ui.activeItem" data-reader-root
     class="safe-top safe-bottom fixed inset-0 z-40 flex min-w-0 flex-col bg-shell lg:flex-1 lg:border-l lg:border-hairline"
-    :class="ui.focusMode ? 'lg:inset-0 lg:z-30 lg:fixed' : 'lg:static lg:z-auto'" aria-label="閱讀面板">
+    :class="ui.focusMode ? 'lg:inset-0 lg:z-50 lg:fixed' : 'lg:static lg:z-auto'" aria-label="閱讀面板">
     <div class="flex min-h-14 shrink-0 items-center justify-between gap-1 border-b border-hairline px-2 sm:px-4">
-      <button class="item-action lg:hidden" aria-label="返回清單" @click="closeReader"><ArrowLeft class="size-5" /></button>
+      <button class="item-action" :class="ui.focusMode ? '' : 'lg:hidden'" aria-label="返回清單" title="返回清單（Esc）" @click="closeReader"><ArrowLeft class="size-5" /></button>
       <span class="min-w-0 flex-1 truncate text-sm text-muted-foreground">{{ sourceName(ui.activeItem) }}</span>
       <ItemActions :item="ui.activeItem" allow-delete />
-      <button class="item-action hidden lg:flex" :aria-label="ui.focusMode ? '結束全寬閱讀' : '全寬閱讀'" :aria-pressed="ui.focusMode" @click="ui.focusMode = !ui.focusMode">
+      <button class="item-action hidden lg:flex" :aria-label="ui.focusMode ? '改成側邊預覽（之後都這樣開）' : '改成整頁閱讀（之後都這樣開）'" :title="ui.focusMode ? '改成側邊預覽，之後點開也這樣' : '改成整頁閱讀，之後點開也這樣'" :aria-pressed="ui.focusMode" @click="toggleFull">
         <Minimize2 v-if="ui.focusMode" class="size-4" /><Maximize2 v-else class="size-4" />
       </button>
       <button class="item-action hidden lg:flex" aria-label="關閉閱讀面板" title="關閉（Esc）" @click="closeReader"><X class="size-4" /></button>

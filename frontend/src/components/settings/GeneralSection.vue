@@ -7,10 +7,13 @@ import FieldRow from './FieldRow.vue'
 import SaveBar from './SaveBar.vue'
 import { useTheme, type AccentColor } from '@/composables/useTheme'
 import { THEME_MODES, type ThemeMode } from '@/lib/themeMode'
+import { useUiStore } from '@/stores/ui'
 
 /** 設定 › 一般: how it looks (kept in this browser) and what the analysis knows about the owner. */
 const { mode, accent, accents, labels, set: setTheme, setAccent } = useTheme()
 const themeOptions = computed(() => THEME_MODES.map((value) => ({ value, label: labels[value] })))
+const ui = useUiStore()
+const openOptions = [{ value: 'full', label: '整頁閱讀' }, { value: 'side', label: '側邊預覽（清單留在左邊）' }]
 const PROFILE_KEYS = ['USER_BACKGROUND', 'LOCAL_HARDWARE']
 </script>
 
@@ -18,6 +21,9 @@ const PROFILE_KEYS = ['USER_BACKGROUND', 'LOCAL_HARDWARE']
   <SettingBlock id="appearance" title="外觀" description="只影響這個瀏覽器。">
     <SettingRow name="主題" help="整個介面的明暗。" for="setting-theme">
       <Select id="setting-theme" :model-value="mode" :options="themeOptions" @update:model-value="setTheme($event as ThemeMode)" />
+    </SettingRow>
+    <SettingRow name="點開文章" help="寬螢幕上點開一篇時怎麼顯示；閱讀畫面右上角的按鈕也能切換。手機一律整頁。" for="setting-reader-open">
+      <Select id="setting-reader-open" :model-value="ui.readerOpen" :options="openOptions" @update:model-value="ui.readerOpen = $event as 'full' | 'side'" />
     </SettingRow>
     <SettingRow name="強調色" help="主要按鈕和目前所在位置的顏色。">
       <div class="flex gap-1" role="radiogroup" aria-label="強調色">

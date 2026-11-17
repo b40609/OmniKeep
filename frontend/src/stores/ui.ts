@@ -27,6 +27,8 @@ export const useUiStore = defineStore('ui', () => {
   const readerLineHeight = useLocalStorage('omnikeep-reader-lineh', 1.8)
   const readerWidth = useLocalStorage('omnikeep-reader-width', 720)
   const focusMode = ref(false)
+  /** How an item opens on a wide screen: the whole page (default, 2026-11-17) or a panel beside the list. Per browser. */
+  const readerOpen = useLocalStorage<'full' | 'side'>('omnikeep-reader-open', 'full')
 
   // Modals
   /** 新增: one panel for links, notes and bookmark files (components/modals/AddDialog.vue). */
@@ -107,7 +109,7 @@ export const useUiStore = defineStore('ui', () => {
 
   return {
     sidebarOpen, sidebarMobileOpen, searchFocusRequests, pendingQuestion, ask,
-    activeItem, cursorId, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode,
+    activeItem, cursorId, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode, readerOpen,
     showAddModal, addDraft, openAdd, showCategoryModal, showShortcutsModal, showRadarModal, showWatchModal, showImportModal, importTab, importFile, openImport, showDeckModal,
     showDailyDeckModal, showBrainModal,
     showSettingsModal, settingsTab, settingsBlock, settingsLevel, settingsCloseRequests, settingsCard, settingsVersion, openSettings, showSetupWizard,

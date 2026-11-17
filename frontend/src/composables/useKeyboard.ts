@@ -138,9 +138,11 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
       case 'Escape':
         if (ui.sidebarMobileOpen) {
           ui.sidebarMobileOpen = false
-        } else if (ui.focusMode) {
+        } else if (ui.focusMode && ui.readerOpen === 'side') {
+          // expanded just this once from the side panel: back to the panel
           ui.focusMode = false
         } else if (ui.activeItem) {
+          ui.focusMode = false
           ui.activeItem = null
         }
         return
