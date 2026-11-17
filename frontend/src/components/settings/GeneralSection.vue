@@ -13,7 +13,8 @@ import { useUiStore } from '@/stores/ui'
 const { mode, accent, accents, labels, set: setTheme, setAccent } = useTheme()
 const themeOptions = computed(() => THEME_MODES.map((value) => ({ value, label: labels[value] })))
 const ui = useUiStore()
-const openOptions = [{ value: 'full', label: '整頁閱讀' }, { value: 'side', label: '側邊預覽（清單留在左邊）' }]
+const openOptions = [{ value: 'full', label: '整頁閱讀' }, { value: 'side', label: '側邊預覽（清單留在旁邊）' }]
+const sideOptions = [{ value: 'right', label: '畫面右邊' }, { value: 'left', label: '畫面左邊' }]
 const PROFILE_KEYS = ['USER_BACKGROUND', 'LOCAL_HARDWARE']
 </script>
 
@@ -24,6 +25,9 @@ const PROFILE_KEYS = ['USER_BACKGROUND', 'LOCAL_HARDWARE']
     </SettingRow>
     <SettingRow name="點開文章" help="寬螢幕上點開一篇時怎麼顯示；閱讀畫面右上角的按鈕也能切換。手機一律整頁。" for="setting-reader-open">
       <Select id="setting-reader-open" :model-value="ui.readerOpen" :options="openOptions" @update:model-value="ui.readerOpen = $event as 'full' | 'side'" />
+    </SettingRow>
+    <SettingRow name="側邊預覽的位置" help="選「側邊預覽」時，閱讀面板開在畫面哪一邊，清單在另一邊。" for="setting-reader-side">
+      <Select id="setting-reader-side" :model-value="ui.readerSide" :options="sideOptions" @update:model-value="ui.readerSide = $event as 'right' | 'left'" />
     </SettingRow>
     <SettingRow name="強調色" help="主要按鈕和目前所在位置的顏色。">
       <div class="flex gap-1" role="radiogroup" aria-label="強調色">
