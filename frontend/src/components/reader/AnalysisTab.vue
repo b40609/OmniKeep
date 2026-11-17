@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { useWindowSize } from '@vueuse/core'
 import { toast } from 'vue-sonner'
-import { Link2, Package, ChevronRight, Camera, Sparkles, Network, ExternalLink, ArrowRight, List, Hash, FileText, CornerUpLeft, Loader2 } from 'lucide-vue-next'
+import { Link2, Package, ChevronRight, ChevronLeft, Camera, Sparkles, Network, ExternalLink, ArrowRight, List, Hash, FileText, CornerUpLeft, Loader2 } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
 import ItemCover from '@/components/items/ItemCover.vue'
 import { analyzeItem, getServiceStatus, type Item } from '@/lib/api'
@@ -13,6 +14,7 @@ import { renderMermaidIn } from '@/lib/mermaid'
 import { renderFlowsIn, disposeFlowsIn } from '@/lib/flowchart'
 import { renderArchIn, disposeArchIn } from '@/lib/archchart'
 import DeepDiagram from '@/components/reader/DeepDiagram.vue'
+import ReaderOutline from '@/components/reader/ReaderOutline.vue'
 import { useUiStore } from '@/stores/ui'
 import { useMutations } from '@/composables/useMutations'
 
@@ -80,6 +82,21 @@ const isGithubProject = computed(() => /^https?:\/\/(www\.)?github\.com\/[\w.-]+
 const tocItems = computed(() => extractToc(ui.activeItem?.deep_analysis))
 function scrollToHeading(id: string) { document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 
+// Full-page reading on a wide screen: the outline on the left, the item's details on the right; each
+// folds away ([ ]). When the window cannot fit both beside the 44rem column, the details go back under it.
+const { width: vw } = useWindowSize()
+const wide = computed(() => ui.focusMode && vw.value >= 1180)
+const outlineOn = computed(() => wide.value && ui.outlineOpen)
+const railOn = computed(() => wide.value && ui.railOpen && vw.value >= (outlineOn.value ? 1440 : 1180))
+const mainRef = ref<HTMLElement | null>(null)
+// the previous and next item of the list the reader came from (J / K do the same)
+const neighbours = computed(() => {
+  const list = itemsStore.visibleItems
+  const k = list.findIndex((i) => i.id === ui.activeItem?.id)
+  return { prev: k > 0 ? list[k - 1] : null, next: k >= 0 && k < list.length - 1 ? list[k + 1] : null }
+})
+const shortTitle = (it: Item) => (it.title_l1 || '').split(/[：:]/)[0]
+
 function openItem(id: number | string) {
   ui.activeItem = { id: Number(id) } as Item // skeleton placeholder, replaced by full fetch in ReaderPane
 }
@@ -87,16 +104,16 @@ function openItem(id: number | string) {
 
 <template>
   <!-- 44rem less the padding is 40rem: about 40 Chinese characters a line, however wide the pane gets -->
-  <div v-if="ui.activeItem" class="mx-auto max-w-[44rem] space-y-6 p-5 lg:p-8">
-    <!-- Cover: same rules as the wall, and simply absent when there is none -->
-    <ItemCover :item="ui.activeItem" variant="hero" />
-
-    <!-- Article header -->
+  <div v-if="ui.activeItem" class="reader-layout" :class="{ 'has-outline': outlineOn, 'has-rail': railOn }">
+  <aside v-if="outlineOn" class="reader-side reader-side--left"><ReaderOutline :root="mainRef" :version="ui.activeItem.id" /></aside>
+  <div ref="mainRef" class="reader-main mx-auto w-full max-w-[44rem] space-y-6 p-5 lg:p-8">
+    <!-- Article header: the title comes first, the cover under it -->
     <header class="pb-1">
       <h1 class="text-xl leading-snug font-bold tracking-tight text-foreground lg:text-2xl">
         {{ ui.activeItem.title_l1 }}
       </h1>
       <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-subtle-foreground">
+        <template v-if="!railOn">
         <span>{{ cleanHost(ui.activeItem.url) }}</span>
         <span aria-hidden="true">·</span>
         <span>{{ ui.activeItem.published_date || formatRelativeTime(ui.activeItem.created_at) }}</span>
@@ -111,6 +128,7 @@ function openItem(id: number | string) {
         >
           約 {{ estimateReadTime(ui.activeItem.content_raw) }} 分鐘
         </span>
+        </template>
         <button
           type="button"
           class="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-lg border border-border px-3 text-xs text-muted-foreground transition-colors hover:bg-accent"
@@ -123,7 +141,11 @@ function openItem(id: number | string) {
       </div>
     </header>
 
-    <!-- Cited-in backlinks -->
+    <!-- Cover: same rules as the wall, and simply absent when there is none -->
+    <ItemCover :item="ui.activeItem" variant="hero" class="reader-cover" />
+
+    <!-- Cited-in backlinks (in the details rail when it is open) -->
+    <Teleport defer to="#reader-rail-slot" :disabled="!railOn">
     <section
       v-if="ui.activeItem.citations?.length"
       class="border-t border-hairline pt-6"
@@ -163,6 +185,7 @@ function openItem(id: number | string) {
         </button>
       </div>
     </section>
+    </Teleport>
 
     <!-- L1 highlight -->
     <!-- Kept without analysis: what that means, and the one thing to do next -->
@@ -200,7 +223,7 @@ function openItem(id: number | string) {
     <section v-if="plainSummary(ui.activeItem.summary_l1)" class="border-t border-hairline pt-6" :aria-label="notAnalysed ? '原文開頭' : '摘要'">
       <h2 class="mb-2 text-base font-semibold text-foreground">{{ notAnalysed ? '原文開頭' : '摘要' }}</h2>
       <p class="text-base leading-relaxed text-foreground">{{ plainSummary(ui.activeItem.summary_l1) }}</p>
-      <div v-if="ui.activeItem.tech_tags?.length" class="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+      <div v-if="ui.activeItem.tech_tags?.length && !railOn" class="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
         <span
           v-for="tag in ui.activeItem.tech_tags.slice(0, 2)"
           :key="tag"
@@ -279,7 +302,7 @@ function openItem(id: number | string) {
 
       <!-- Table of Contents (TOC) -->
       <nav
-        v-if="tocItems.length >= 2"
+        v-if="tocItems.length >= 2 && !outlineOn"
         class="mb-6 rounded-xl border border-white/[0.08] bg-muted/30 p-3.5 backdrop-blur-md"
         aria-label="目錄"
       >
@@ -312,7 +335,8 @@ function openItem(id: number | string) {
     <!-- A deeper diagram from the user's own agent (Archify), GitHub projects only -->
     <DeepDiagram v-if="isGithubProject" :item-id="ui.activeItem.id" />
 
-    <!-- Semantic Neighbors / Related Items (E4) -->
+    <!-- Semantic Neighbors / Related Items (E4), in the details rail when it is open -->
+    <Teleport defer to="#reader-rail-slot" :disabled="!railOn">
     <section
       v-if="ui.activeItem.related_items?.length"
       class="border-t border-hairline pt-6"
@@ -361,6 +385,7 @@ function openItem(id: number | string) {
         </div>
       </div>
     </section>
+    </Teleport>
 
     <!-- Entity Knowledge Graph (E4) -->
     <section
@@ -423,5 +448,35 @@ function openItem(id: number | string) {
         </div>
       </div>
     </section>
+
+    <!-- previous / next in the list the reader came from -->
+    <nav v-if="neighbours.prev || neighbours.next" class="reader-next" aria-label="上一篇與下一篇">
+      <button v-if="neighbours.prev" type="button" class="reader-next__item" @click="ui.activeItem = neighbours.prev">
+        <span class="reader-next__dir"><ChevronLeft class="size-3.5" />上一篇<kbd>K</kbd></span>
+        <span class="reader-next__title">{{ shortTitle(neighbours.prev) }}</span>
+      </button>
+      <span v-else />
+      <button v-if="neighbours.next" type="button" class="reader-next__item is-next" @click="ui.activeItem = neighbours.next">
+        <span class="reader-next__dir">下一篇<kbd>J</kbd><ChevronRight class="size-3.5" /></span>
+        <span class="reader-next__title">{{ shortTitle(neighbours.next) }}</span>
+      </button>
+    </nav>
+  </div>
+  <!-- the item's details beside the article; kept in the page (v-show) so the sections can move in and out -->
+  <aside v-show="railOn" class="reader-side reader-side--right" aria-label="這則收藏的資訊">
+    <section class="reader-info">
+      <h2>資訊</h2>
+      <dl>
+        <div><dt>來源</dt><dd>{{ cleanHost(ui.activeItem.url) }}</dd></div>
+        <div><dt>{{ ui.activeItem.published_date ? '發布' : '收錄' }}</dt><dd>{{ ui.activeItem.published_date || formatRelativeTime(ui.activeItem.created_at) }}</dd></div>
+        <div v-if="ui.activeItem.author"><dt>作者</dt><dd>{{ ui.activeItem.author }}</dd></div>
+        <div v-if="ui.activeItem.content_raw"><dt>閱讀時間</dt><dd>{{ estimateReadTime(ui.activeItem.content_raw) }} 分鐘</dd></div>
+      </dl>
+      <div v-if="ui.activeItem.tech_tags?.length" class="reader-info__tags">
+        <span v-for="tag in ui.activeItem.tech_tags" :key="tag">#{{ tag }}</span>
+      </div>
+    </section>
+    <div id="reader-rail-slot" />
+  </aside>
   </div>
 </template>

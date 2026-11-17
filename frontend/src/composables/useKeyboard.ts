@@ -150,6 +150,15 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
         e.preventDefault()
         header()?.focusSearchInput()
         return
+      case '[':
+      case ']':
+        // full-page reading: fold the outline ([) or the details beside the article (])
+        if (ui.activeItem && ui.focusMode) {
+          e.preventDefault()
+          if (e.key === '[') ui.outlineOpen = !ui.outlineOpen
+          else ui.railOpen = !ui.railOpen
+        }
+        return
       case 'n':
       case 'N':
         // One panel for a link, a note or a bookmark file.
