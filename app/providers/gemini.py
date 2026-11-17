@@ -236,7 +236,5 @@ class GeminiProvider(BaseLLMProvider):
         try:
             return json.loads(raw, strict=False)
         except Exception:
-            match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
-            if match:
-                raw = match.group(1)
-            return json.loads(raw.strip(), strict=False)
+            from app.providers.openai_compatible import json_part  # a fence counts only at the start
+            return json.loads(json_part(raw), strict=False)

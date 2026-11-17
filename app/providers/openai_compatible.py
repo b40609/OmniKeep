@@ -69,6 +69,34 @@ def extract_completion_content(response: Any) -> str:
     return content
 
 
+def _finish_reason(response: Any) -> str:
+    try:
+        return str(response.choices[0].finish_reason)
+    except Exception:
+        return "?"
+
+
+def json_part(raw: str) -> str:
+    """The JSON object in a model's answer. Models often wrap it: a ```json fence, a <think> block,
+    or a sentence before or after it.
+
+    A fence counts only when the answer starts with it: an analysis carries ```arch / ```flow blocks
+    inside its strings, and taking the first fence anywhere handed back the diagram's source instead
+    of the object. Every analysis with a diagram failed that way on Kilo and fell through to a
+    slower connection (2026-11-17)."""
+    text = re.sub(r"<think>[\s\S]*?</think>", "", raw).strip()
+    if text.startswith("```"):
+        # the opening line goes, and the closing fence is the last one (the object may hold fences)
+        body = text.split("\n", 1)[1] if "\n" in text else ""
+        end = body.rfind("```")
+        text = (body[:end] if end != -1 else body).strip()
+    if not text.startswith("{"):
+        start, end = text.find("{"), text.rfind("}")
+        if start != -1 and end > start:
+            text = text[start:end + 1]
+    return text
+
+
 class OpenAICompatibleProvider(BaseLLMProvider):
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None, model: Optional[str] = None,
                  rate_limiter=None, status_key: str = "llm", label: str = "", json_mode: bool = True,
@@ -211,11 +239,13 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             temperature=0.2,
         )
         raw = self._answer_text(response)
-        # Extract JSON block using regex if wrapped in markdown
-        match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw)
-        if match:
-            raw = match.group(1)
-        return json.loads(raw.strip(), strict=False)
+        try:
+            return json.loads(json_part(raw), strict=False)
+        except json.JSONDecodeError:
+            # what came back instead, so a model that answers in the wrong shape can be told apart
+            logger.info("[%s] not JSON (%d chars, finish %s): %r … %r", self.label or "LLM", len(raw),
+                        _finish_reason(response), raw[:60], raw[-60:])
+            raise
 
     def _answer_text(self, response: Any) -> str:
         """The answer's text for generate_json. An empty answer is a failure: it used to

@@ -424,12 +424,27 @@ def test_migration_keeps_a_custom_address_as_the_embeddings_fallback(monkeypatch
     assert conns["legacy_openai"].id in embed_ids
 
 
-def test_a_fresh_install_gets_no_preselected_provider():
+def test_a_fresh_install_can_analyse_with_no_account(monkeypatch):
+    monkeypatch.setattr(ai_connections, "STARTER_CARDS", ("kilo", "ovh"))
     with TestClient(app) as client:
         body = client.get("/api/ai/connections", headers=HEADERS).json()
-    assert [c["card"] for c in body["connections"]] == ["ollama"]  # what the vector search already tried
+    cards = {c["id"]: c["card"] for c in body["connections"]}
+    assert set(cards.values()) == {"ollama", "kilo", "ovh"}  # Ollama is what the vector search already tried
     by_slot = {s["id"]: s["entries"] for s in body["slots"]}
-    assert by_slot["analysis"] == [] and body["needs_setup"] is True
+    # the services that need no sign-up analyse, Kilo first; nothing to set up before the first link
+    assert [cards[e["connection_id"]] for e in by_slot["analysis"]] == ["kilo", "ovh"]
+    assert body["needs_setup"] is False
+    assert ai_connections.migrate_legacy() is False  # and only once: deleting them later sticks
+
+
+def test_settings_from_an_older_version_get_no_starters(monkeypatch):
+    monkeypatch.setattr(ai_connections, "STARTER_CARDS", ("kilo", "ovh"))
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://apihub.agnes-ai.com/v1")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", AGNES_KEY)
+    with TestClient(app):
+        pass
+    assert {c.card for c in ai_connections.list_connections()} >= {"agnes"}
+    assert not {"kilo", "ovh"} & {c.card for c in ai_connections.list_connections()}
 
 
 def test_flat_settings_saved_by_older_clients_reach_the_migrated_connection(monkeypatch):
@@ -476,3 +491,13 @@ def test_the_vector_test_uses_the_embedding_model(monkeypatch):
                           json={"purpose": "embeddings"}).json()
     assert res["ok"] is True and "embeddinggemma-2" in res["message"]
     assert calls == [("http://127.0.0.1:11434/api/embed", "embeddinggemma-2")]  # not the chat model qwen3:8b
+
+
+def test_the_json_in_an_answer_is_found_even_with_a_diagram_inside_it():
+    from app.providers.openai_compatible import json_part
+    import json as _json
+    analysis = '{"title_l1": "x", "deep_analysis": "## 架構\n```arch\n總結：y\n```\n"}'
+    assert _json.loads(json_part(analysis), strict=False)["title_l1"] == "x"
+    assert _json.loads(json_part("Here it is:\n" + analysis + "\nDone."), strict=False)["title_l1"] == "x"
+    assert _json.loads(json_part("```json\n" + analysis + "\n```"), strict=False)["title_l1"] == "x"
+    assert _json.loads(json_part("<think>{draft}</think>\n" + analysis), strict=False)["title_l1"] == "x"

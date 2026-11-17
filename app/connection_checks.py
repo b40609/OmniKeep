@@ -81,10 +81,8 @@ def _guard_base_url(values: Dict[str, Any], base_url: str) -> Optional[Dict[str,
 
 
 def _parse_json_reply(text: str) -> Optional[Dict[str, Any]]:
-    text = re.sub(r"<think>[\s\S]*?</think>", "", text or "").strip()
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
-    if match:
-        text = match.group(1)
+    from app.providers.openai_compatible import json_part
+    text = json_part(text or "")
     try:
         value = json.loads(text)
     except ValueError:

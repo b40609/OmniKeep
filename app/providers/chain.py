@@ -85,8 +85,9 @@ class ChainProvider(BaseLLMProvider):
                         ai_status.record_failure(member.status_key, info["status"], f"{type(exc).__name__}: {exc}",
                                                  member.label)
                 if index + 1 < len(order):
-                    logger.warning("[%s] %s failed (%s: %s), trying %s", self.slot, member.label or "connection",
-                                   info["kind"], info["status"], order[index + 1].label or "the next connection")
+                    logger.warning("[%s] %s failed (%s: %s; %s: %.160s), trying %s", self.slot, member.label or "connection",
+                                   info["kind"], info["status"], type(exc).__name__, " ".join(str(exc).split()),
+                                   order[index + 1].label or "the next connection")
         raise rate_limited or last
 
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:

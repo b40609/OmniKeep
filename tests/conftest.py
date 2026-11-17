@@ -197,6 +197,8 @@ def isolated_runtime(monkeypatch, request):
     monkeypatch.setattr(settings, "BROWSER_CDP_PROFILE_DIR", str(root / "chrome"))
     monkeypatch.setattr(settings, "BROWSER_CDP_AUTOLAUNCH", False)
     monkeypatch.setattr(settings, "BACKGROUND_SERVICES_ENABLED", False)
+    # a fresh test database stays empty; the test of the no-account starters switches them back on
+    monkeypatch.setattr("app.ai_connections.STARTER_CARDS", ())
     monkeypatch.setattr(cookie_manager, "ensure_cdp_browser", lambda: False)
     monkeypatch.setattr(cookie_manager, "_cached_jar", None)
     monkeypatch.setattr(cookie_manager, "_cached_jar_time", 0)

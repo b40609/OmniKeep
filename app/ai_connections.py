@@ -688,9 +688,12 @@ def migrated() -> bool:
 def migrate_legacy() -> bool:
     """Once per database: turn the flat AI settings into connections and slots.
 
-    Only what is configured becomes a connection, so a fresh install starts with
-    no preselected provider. Returns True when this call did the migration.
+    Only what is configured becomes a connection. A fresh install with nothing for analysis gets the
+    services that need no account (STARTER_CARDS), so it can analyse right away without a sign-up
+    (2026-11-17, the owner: a newcomer should not have to register anywhere first). Returns True when
+    this call did the migration.
     """
+    starters = False
     from app.vector import remote_embedding_model
     with _lock, closing(get_db_connection()) as db, db:
         if db.execute("SELECT 1 FROM ai_meta WHERE key = ?", (META_MIGRATED,)).fetchone():
@@ -735,6 +738,7 @@ def migrate_legacy() -> bool:
                 plan["embeddings"].append((ids["ollama"], settings.EMBEDDING_MODEL))
             if "openai" in ids and settings.OPENAI_API_KEY and _legacy_can_embed(openai_values["card"]):
                 plan["embeddings"].append((ids["openai"], remote_embedding_model()))
+            starters = not plan["analysis"]
             for slot, rows in plan.items():
                 for position, (connection_id, model) in enumerate(rows):
                     db.execute("INSERT INTO ai_slots (slot, position, connection_id, model) VALUES (?, ?, ?, ?)",
@@ -742,8 +746,26 @@ def migrate_legacy() -> bool:
         db.execute("INSERT INTO ai_meta (key, value, updated_at) VALUES (?, ?, ?)", (META_MIGRATED, "1", _now()))
     if ids:
         logger.info("Moved the AI settings into %d connection(s): %s", len(set(ids.values())), ", ".join(sorted(ids)))
+    if starters:
+        _add_starters()
     _changed()
     return True
+
+
+# Services usable with no account and no key, primary first. Kilo answered a full analysis in 9 s on
+# 2026-11-17 (200 a hour per IP; it keeps free prompts for training, which its card says); OVHcloud is
+# slower and allows 2 a minute, so it is the fallback. Pollinations (1 reply / 45 s) is too tight to list.
+STARTER_CARDS = ("kilo", "ovh")
+
+
+def _add_starters() -> None:
+    for card_id in STARTER_CARDS:
+        if provider_catalog.card(card_id) is None:
+            continue
+        try:
+            create({"card": card_id}, slot="analysis")
+        except Exception as exc:  # a card that changed shape must not stop the start-up
+            logger.warning("Could not add the no-account service %s (%s: %s)", card_id, type(exc).__name__, exc)
 
 
 # ── Keeping the flat settings and the connections in step ──────
