@@ -1217,6 +1217,9 @@ input, textarea { caret-color: var(--primary); }
 .reader-info dl { margin: 0; }
 .reader-info dl > div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--hairline); }
 .reader-info dd { margin: 0; color: var(--foreground); text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.reader-info__link { all: unset; display: inline-flex; align-items: center; gap: 2px; cursor: pointer; color: var(--foreground); }
+.reader-info__link:hover { color: var(--primary); }
+.reader-info__link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
 .reader-info__tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .reader-info__tags span { padding: 1px 8px; border-radius: 6px; background: color-mix(in srgb, var(--foreground) 6%, transparent); font-size: 12px; }
 /* sections moved into the rail read as a compact list */

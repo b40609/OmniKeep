@@ -112,7 +112,8 @@ function openItem(id: number | string) {
       <h1 class="text-xl leading-snug font-bold tracking-tight text-foreground lg:text-2xl">
         {{ ui.activeItem.title_l1 }}
       </h1>
-      <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-subtle-foreground">
+      <!-- with the details rail open, all of this lives there (the snapshot too), so the title stands alone -->
+      <div v-if="!railOn" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-subtle-foreground">
         <template v-if="!railOn">
         <span>{{ cleanHost(ui.activeItem.url) }}</span>
         <span aria-hidden="true">·</span>
@@ -471,6 +472,7 @@ function openItem(id: number | string) {
         <div><dt>{{ ui.activeItem.published_date ? '發布' : '收錄' }}</dt><dd>{{ ui.activeItem.published_date || formatRelativeTime(ui.activeItem.created_at) }}</dd></div>
         <div v-if="ui.activeItem.author"><dt>作者</dt><dd>{{ ui.activeItem.author }}</dd></div>
         <div v-if="ui.activeItem.content_raw"><dt>閱讀時間</dt><dd>{{ estimateReadTime(ui.activeItem.content_raw) }} 分鐘</dd></div>
+        <div><dt>離線快照</dt><dd><button type="button" class="reader-info__link" title="開啟收錄時保存的離線網頁" @click="openSnapshot(ui.activeItem)">開啟<ChevronRight class="size-3.5" /></button></dd></div>
       </dl>
       <div v-if="ui.activeItem.tech_tags?.length" class="reader-info__tags">
         <span v-for="tag in ui.activeItem.tech_tags" :key="tag">#{{ tag }}</span>
