@@ -53,8 +53,9 @@ CARDS: List[Dict[str, Any]] = [
     },
     {
         "id": "vertex", "label": "Google Vertex AI（Agent Platform）", "kind": "gemini",
-        "base_url": "", "model": "gemini-3.5-flash",
-        "models": ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"],
+        "base_url": "", "model": "gemini-4-hydrogen",
+        "models": ["gemini-4-hydrogen", "gemini-4-carbon", "gemini-3.5-flash", "gemini-3.5-flash-lite",
+                   "gemini-3.1-flash-lite"],
         "key_mode": "required", "key_url": "https://console.cloud.google.com/apis/credentials",
         "cost": "Google Cloud 計費（Google AI Pro 每月 10 美元抵免額可以用）",
         "limits": "用量先扣付款帳戶上的抵免額，用完才扣卡。到帳單的 Budgets & caps 為 Vertex AI 設「強制執行支出上限」，金額設得比每月抵免額低。",

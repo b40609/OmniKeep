@@ -100,3 +100,37 @@ def test_unknown_thinking_level_is_refused():
     with pytest.raises(ai_connections.AIConfigError) as exc:
         ai_connections.create({"card": "vertex", "key": KEY, "caps": {"thinking_level": "max"}})
     assert "思考等級" in exc.value.errors["caps"]
+
+
+def test_a_model_only_on_the_global_endpoint_is_retried_there_once(fake_genai):
+    # Express mode sends a bare name to the key's region (asia-southeast1); gemini-4-hydrogen is
+    # only on the global endpoint, and the 404 names the project number to build that path from.
+    from app.providers import gemini
+    gemini._global_paths.clear()
+    seen = []
+
+    async def generate(**kwargs):
+        seen.append(kwargs["model"])
+        if "/" not in kwargs["model"]:
+            exc = RuntimeError("404 NOT_FOUND. Publisher model `projects/123456/locations/asia-southeast1/"
+                               "publishers/google/models/gemini-4-hydrogen` was not found")
+            exc.code = 404
+            raise exc
+        return SimpleNamespace(text='{"回覆": "連線成功", "數字": 42}', usage_metadata=None)
+
+    client = SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate)),
+                             _api_client=SimpleNamespace(api_key=KEY))
+    path = "projects/123456/locations/global/publishers/google/models/gemini-4-hydrogen"
+    asyncio.run(gemini.vertex_generate(client, model="gemini-4-hydrogen", contents=["hi"]))
+    asyncio.run(gemini.vertex_generate(client, model="gemini-4-hydrogen", contents=["hi"]))
+    assert seen == ["gemini-4-hydrogen", path, path]  # the second call goes straight to global
+
+
+def test_a_real_404_is_not_retried():
+    from app.providers.gemini import global_model_path
+    missing = RuntimeError("404 Publisher model `projects/1/locations/global/publishers/google/models/x`")
+    missing.code = 404
+    assert global_model_path(missing, "x") is None  # already global: the model does not exist
+    denied = RuntimeError("403 Spend cap breached for project: projects/1")
+    denied.code = 403
+    assert global_model_path(denied, "gemini-4-hydrogen") is None

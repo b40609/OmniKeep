@@ -22,6 +22,45 @@ def genai_client(key: str, vertexai: bool = False):
     return genai.Client(api_key=key, http_options=options)
 
 
+# Vertex express mode sends a bare model name to a regional endpoint the server picks for the key
+# (asia-southeast1 here), and newer models such as gemini-4-hydrogen are only on the global one.
+# The 404 names the key's project number, so the call is retried once as the full global path and
+# that path is remembered for the key and model.
+_PUBLISHER_404 = re.compile(r"projects/(\d+)/locations/([\w-]+)/publishers/google/models/")
+_global_paths: Dict[tuple, str] = {}
+
+
+def _client_key(client) -> str:
+    return str(getattr(getattr(client, "_api_client", None), "api_key", "") or id(client))
+
+
+def global_model_path(exc: Exception, model: str) -> Optional[str]:
+    """The global-endpoint path to retry with, when `exc` is a regional 404 for a bare model name."""
+    if getattr(exc, "code", None) != 404 or not model or "/" in model:
+        return None
+    found = _PUBLISHER_404.search(str(exc))
+    if not found or found.group(2) == "global":
+        return None
+    return f"projects/{found.group(1)}/locations/global/publishers/google/models/{model}"
+
+
+async def vertex_generate(client, **kwargs):
+    """client.aio.models.generate_content with the global-endpoint retry above."""
+    model = kwargs.get("model") or ""
+    remembered = _global_paths.get((_client_key(client), model))
+    if remembered:
+        return await client.aio.models.generate_content(**{**kwargs, "model": remembered})
+    try:
+        return await client.aio.models.generate_content(**kwargs)
+    except Exception as exc:
+        path = global_model_path(exc, model)
+        if not path:
+            raise
+        response = await client.aio.models.generate_content(**{**kwargs, "model": path})
+        _global_paths[(_client_key(client), model)] = path
+        return response
+
+
 async def _generate_content(client, status_key: str = "gemini", label: str = "", rate_limiter=None, **kwargs):
     """Run `generate_content` without blocking the event loop.
 
@@ -35,7 +74,7 @@ async def _generate_content(client, status_key: str = "gemini", label: str = "",
     async def call():
         aio = getattr(client, "aio", None)
         if aio is not None:
-            return await aio.models.generate_content(**kwargs)
+            return await vertex_generate(client, **kwargs)
         return await asyncio.to_thread(client.models.generate_content, **kwargs)
 
     try:

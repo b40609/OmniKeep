@@ -173,14 +173,14 @@ async def check_vertex(key: str, model: str, secrets: Optional[List[str]] = None
     """The Vertex AI (Agent Platform) express-mode version of check_chat: one small Chinese
     JSON request through google-genai, the way GeminiProvider calls it."""
     from google.genai import types as gtypes
-    from app.providers.gemini import genai_client
+    from app.providers.gemini import genai_client, vertex_generate
     secrets = [key, *(secrets or [])]
     extra: Dict[str, Any] = {"models": [], "json_mode": True, "latency_ms": None}
     started = time.monotonic()
     try:
         client = genai_client(key, vertexai=True)
-        response = await client.aio.models.generate_content(
-            model=model, contents=[JSON_PROMPT],
+        response = await vertex_generate(
+            client, model=model, contents=[JSON_PROMPT],
             config=gtypes.GenerateContentConfig(system_instruction=JSON_SYSTEM, temperature=0,
                                                 response_mime_type="application/json"))
     except Exception as exc:
