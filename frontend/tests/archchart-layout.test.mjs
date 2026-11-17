@@ -81,3 +81,60 @@ test('cards are only as tall as what they hold', () => {
   // no tag and a one-line description: well under the old fixed 92px
   assert.ok(L.places.svc.h < 80, `card is ${L.places.svc.h}px tall`)
 })
+
+// two bands under each other in the same column, a second input coming up from the gap into the last
+// card of the first band, and a long next-band name that pushes the line down to the card's left edge
+const CROSS = `入口｜web｜globe｜網頁｜送出請求｜a1｜請求
+入口｜cli｜terminal｜命令列｜批次送出｜a2｜指令
+區｜接收｜檢查請求｜
+元件｜a1｜server｜接收器｜驗證格式｜｜一般｜｜｜
+元件｜a2｜cpu｜排程器｜分派工作｜｜一般｜｜｜
+區｜處理與回寫階段｜把請求轉成結果並寫回儲存再通知所有使用者｜工作
+元件｜b1｜box｜執行器｜跑工作｜｜一般｜｜｜
+元件｜b2｜db｜儲存｜寫回結果｜｜一般｜｜｜`
+
+// the input from the gap goes into a card that has a helper hanging under it
+const HELPER = `入口｜web｜globe｜網頁｜送出請求｜n1｜請求
+入口｜cli｜terminal｜命令列｜批次送出｜n2｜指令
+區｜流程｜三步｜
+元件｜n1｜server｜第一步｜收下｜｜一般｜｜｜
+元件｜n2｜cpu｜第二步｜處理｜｜一般｜｜｜
+元件｜n3｜db｜第三步｜存下｜｜一般｜｜｜
+旁｜s1｜gear｜輔助｜幫第二步｜n2｜送出｜收回｜｜｜
+區｜收尾｜通知｜結果
+元件｜m1｜bell｜通知｜告訴使用者｜｜一般｜｜｜`
+
+const crossings = (code, width) => {
+  const L = layoutArch(parseArch(code), width), segs = []
+  for (const e of L.edges) for (let k = 1; k < e.pts.length; k++) segs.push({ e: `${e.s}->${e.t}`, a: e.pts[k - 1], b: e.pts[k] })
+  const out = []
+  for (const p of segs) for (const q of segs) {
+    if (p.e >= q.e) continue
+    const pv = p.a[0] === p.b[0], qv = q.a[0] === q.b[0]
+    if (pv === qv) continue
+    const [v, h] = pv ? [p, q] : [q, p], x = v.a[0], y = h.a[1]
+    const inside = (u, lo, hi) => u > Math.min(lo, hi) + 1 && u < Math.max(lo, hi) - 1
+    if (inside(x, h.a[0], h.b[0]) && inside(y, v.a[1], v.b[1])) out.push(`${p.e} x ${q.e}`)
+  }
+  return out
+}
+
+for (const width of [1080, 860, 640, 580, 520]) {
+  test(`at ${width}px the input from the gap crosses no other line`, () => {
+    assert.deepEqual(crossings(CROSS, width), [])
+    assert.deepEqual(problems(CROSS, width), [])
+  })
+  test(`at ${width}px the input from the gap goes round a helper card`, () => {
+    assert.deepEqual(problems(HELPER, width), [])
+  })
+}
+
+test('a full line whose tag happens to read like a kind keeps both', () => {
+  const a = parseArch(`入口｜usr｜user｜人｜用｜kk｜送
+區｜甲｜｜
+元件｜kk｜box｜卡｜說明｜重點｜一般｜｜｜src/a.py
+元件｜jj｜box｜卡二｜說明｜｜一般｜｜｜`)
+  assert.equal(a.nodes.kk.tag, '重點')
+  assert.equal(a.nodes.kk.kind, 'plain')
+  assert.deepEqual(a.nodes.kk.files, ['src/a.py'])
+})

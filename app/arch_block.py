@@ -27,6 +27,7 @@ _ID = re.compile(r"^[A-Za-z][\w-]{0,15}$")
 ICONS = {"user", "bot", "globe", "chart", "list", "check", "replay", "coins", "layers", "stamp", "cpu", "shield",
          "swap", "db", "box", "file", "code", "search", "cloud", "key", "bell", "chat", "image", "play", "gear",
          "link", "lock", "mail", "server", "terminal", "clock", "folder", "filter", "send", "download"}
+_KINDS = {"一般", "重點", "關卡"}
 MAX_INPUTS, MAX_LANES, MAX_PER_LANE, MAX_SIDES = 3, 3, 5, 2
 
 
@@ -61,6 +62,11 @@ def tidy_block(body: str, repo: str, files: List[str], seen: Optional[Dict[str, 
         if not line or line.startswith(("專案：", "專案:")):
             continue
         f = _SEP.split(line)
+        # a 元件 line that skipped the 小標籤 column has the kind where the tag goes: put the column back
+        # so the files land at their place (the reader does the same for blocks saved before this)
+        if f[0] == "元件" and len(f) < 10 and len(f) > 6 and f[5] in _KINDS and f[6] not in _KINDS:
+            f.insert(5, "")
+            line = "｜".join(f)
         at = _FILES_AT.get(f[0])
         if at is not None and len(f) > at:
             keep: List[str] = []

@@ -71,7 +71,7 @@ export function parseArch(code: string): Arch | null {
       a.lanes.push(lane)
     } else if (f[0] === '元件') {
       // a line that skipped the 小標籤 column has the kind where the tag goes: put the column back
-      if (KINDS.has(f[5] || '')) { if (KINDS.has(f[6] || '')) f[5] = ''; else f.splice(5, 0, '') }
+      if (f.length < 10 && KINDS.has(f[5] || '') && !KINDS.has(f[6] || '')) f.splice(5, 0, '')
       const kind: ArchKind = f[6] === '重點' ? 'key' : f[6] === '關卡' ? 'gate' : 'plain'
       const n = node(f, kind, { more: 7, facts: 8, files: 9 })
       if (!n) continue
@@ -195,9 +195,11 @@ function walk(a: Arch, edges: EdgeSpec[]): { route: { e: number; to: string }[];
 
 function wideLayout(a: Arch, width: number): ArchLayout | null {
   const n = Math.max(...a.lanes.map((l) => l.ids.length))
-  const IH = 60, GAP = 28, PAD = 12
+  const GAP = 28, PAD = 12
   // an input card is wide enough for its name and one-line description, within 148 to 200
   const IW = Math.round(Math.min(200, Math.max(148, ...a.inputs.map((i) => 24 + Math.max(textW(i.title, 14) + 24, textW(i.desc, 12.5)) + 8))))
+  // ... and tall enough for a name that still needs two lines
+  const IH = Math.max(60, ...a.inputs.map((i) => 20 + 20 * lines(i.title, 14, IW - 48, 2) + (i.desc ? 20 : 0)))
   const straight = a.inputs.filter((i) => i.to === a.lanes[0].ids[0]).slice(0, 2)
   const viaGap = a.inputs.filter((i) => !straight.includes(i)).slice(0, a.lanes.length > 1 ? 1 : 2)
   const inputs = [...straight, ...viaGap]
@@ -234,7 +236,7 @@ function wideLayout(a: Arch, width: number): ArchLayout | null {
     for (const s of a.sides) {
       const p = places[s.parent]
       if (!p || !l.ids.includes(s.parent)) continue
-      places[s.id] = { x: p.x, y: p.y + p.h + 48, w: p.w, h: s.desc ? 76 : 56 }
+      places[s.id] = { x: p.x, y: p.y + p.h + 48, w: p.w, h: Math.max(s.desc ? 76 : 56, cardH(a.nodes[s.id] || s, p.w, false)) }
       bottom = Math.max(bottom, places[s.id].y + places[s.id].h + 14)
     }
     bands.push({ x: lead, y: top, w: width - lead, h: bottom - top, title: l.title, note: l.note })
@@ -277,7 +279,7 @@ function wideLayout(a: Arch, width: number): ArchLayout | null {
   // inputs: in the column at the left; up to two run straight into the first card, one more comes
   // in from below along the gap between the bands
   const f0 = P(a.lanes[0].ids[0])
-  const centers = straight.length === 2 ? [f0.y + f0.h / 2 - 36, f0.y + f0.h / 2 + 36] : [f0.y + f0.h / 2]
+  const centers = straight.length === 2 ? [f0.y + f0.h / 2 - IH / 2 - 6, f0.y + f0.h / 2 + IH / 2 + 6] : [f0.y + f0.h / 2]
   straight.forEach((i, k) => {
     places[i.id] = { x: 0, y: centers[k] - IH / 2, w: IW, h: IH }
     edges.push({ s: i.id, t: i.to, label: i.label, pts: [[IW, centers[k]], [f0.x, centers[k]]], at: [(IW + f0.x) / 2, centers[k] - 11] })
@@ -286,9 +288,16 @@ function wideLayout(a: Arch, width: number): ArchLayout | null {
     const t = P(i.to), b0 = bands[0]
     const gy = a.lanes.length > 1 ? b0.y + b0.h + BAND_GAP / 2 : b0.y + b0.h + 22 + k * 72
     const lastOfFirst = i.to === a.lanes[0].ids[a.lanes[0].ids.length - 1] && a.lanes.length > 1
-    const vx = lastOfFirst ? cx(t, 0.3) : cx(t)
+    let vx = lastOfFirst ? cx(t, 0.3) : cx(t)
+    // the line down to the next band leaves this card's bottom too: come in left of it
+    const down = edges.find((e) => e.s === i.to && e.t === a.lanes[1]?.ids[0])
+    if (down && down.pts[0][0] <= vx + 8) vx = Math.max(t.x + 14, down.pts[0][0] - 16)
     places[i.id] = { x: 0, y: gy - IH / 2, w: IW, h: IH }
-    edges.push({ s: i.id, t: i.to, label: i.label, pts: [[IW, gy], [vx, gy], [vx, t.y + t.h]], at: [(IW + vx) / 2, gy] })
+    const helper = a.sides.find((x) => x.parent === i.to)
+    // a helper hangs under the card: come up beside the card and in at its left edge instead
+    const ey = t.y + t.h * 0.72, ex = t.x - 16
+    const pts: Pt[] = helper ? [[IW, gy], [ex, gy], [ex, ey], [t.x, ey]] : [[IW, gy], [vx, gy], [vx, t.y + t.h]]
+    edges.push({ s: i.id, t: i.to, label: i.label, pts, at: [(IW + (helper ? ex : vx)) / 2, gy] })
   })
   const h = Math.max(height, ...Object.values(places).map((p) => p.y + p.h))
   return { width, height: h, narrow: false, places, bands, edges, ...walk(a, edges) }
@@ -495,6 +504,7 @@ class ArchView {
     this.L = L
     const st = this.stage
     st.replaceChildren(); this.cards = {}; this.edges = []
+    st.classList.remove('ac-focus')
     st.classList.toggle('ac-narrow', L.narrow)
     st.style.width = `${L.width}px`; st.style.height = `${L.height}px`
     for (const b of L.bands) {
@@ -523,6 +533,7 @@ class ArchView {
         c.tabIndex = 0
         c.setAttribute('role', 'button')
         c.setAttribute('aria-label', `${n.title}，看詳細說明`)
+        c.setAttribute('aria-expanded', 'false')
         const toggle = (ev: Event) => { ev.stopPropagation(); if (this.openId === n.id) this.close(); else this.open(n.id) }
         c.addEventListener('click', toggle)
         c.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(ev) } })
@@ -655,6 +666,7 @@ class ArchView {
   /** Hovering a card keeps it, its neighbours and their lines; the rest steps back. */
   private focus(id: string | null) {
     const st = this.stage
+    if (id && this.openId) return
     st.classList.toggle('ac-focus', !!id)
     st.querySelectorAll('.ac-on').forEach((x) => x.classList.remove('ac-on', 'ac-hot'))
     if (!id) return
@@ -671,7 +683,9 @@ class ArchView {
     if (!n || !c || !p) return
     if (this.openId) this.cards[this.openId]?.classList.remove('ac-picked')
     this.openId = id
+    this.focus(null)
     c.classList.add('ac-picked'); this.stage.classList.add('ac-picking')
+    c.setAttribute('aria-expanded', 'true')
     const reach = this.reach(id)
     const pop = this.pop
     pop.replaceChildren()
@@ -711,7 +725,7 @@ class ArchView {
       pop.append(pp)
     }
     this.stage.append(pop)
-    const W = this.L.width, H = this.L.height, pw = Math.min(this.L.narrow ? W : 300, W)
+    const W = this.L.width, H = this.L.height, pw = Math.min(this.L.narrow ? 420 : 300, W)
     pop.style.width = `${pw}px`
     const ph = pop.offsetHeight
     // try the four sides and keep the one that hides the fewest cards, above all the ones this card
@@ -721,21 +735,22 @@ class ArchView {
     const clampX = (x: number) => Math.max(lo, Math.min(x, hi - pw)), clampY = (y: number) => Math.max(0, Math.min(y, Math.max(0, H - ph)))
     const tries: [number, number][] = this.L.narrow
       ? [[clampX(p.x + p.w - pw), p.y + p.h + 8], [clampX(p.x + p.w - pw), p.y - ph - 8]]
-      : [[p.x + p.w + 14, clampY(p.y)], [p.x - pw - 14, clampY(p.y)], [clampX(p.x + p.w / 2 - pw / 2), p.y + p.h + 12], [clampX(p.x + p.w / 2 - pw / 2), p.y - ph - 12]]
+      : [[p.x + p.w + 14, clampY(p.y)], [p.x - pw - 14, clampY(p.y)], [clampX(p.x + p.w / 2 - pw / 2), p.y + p.h + 12], [clampX(p.x + p.w / 2 - pw / 2), Math.max(0, p.y - ph - 12)]]
     const cost = ([x, y]: [number, number]) => {
-      let c = (x < lo || x + pw > hi ? 1e7 : 0) + (y < 0 ? 1e6 : 0) + Math.max(0, y + ph - H) * 40
+      let c = (x < lo || x + pw > hi ? 1e9 : 0) + Math.max(0, y + ph - H) * pw * 2
       for (const [nid, q] of Object.entries(this.L.places)) {
-        if (nid === id) continue
         const ox = Math.max(0, Math.min(x + pw, q.x + q.w) - Math.max(x, q.x)), oy = Math.max(0, Math.min(y + ph, q.y + q.h) - Math.max(y, q.y))
         const near = this.cards[nid]?.classList.contains('ac-up') || this.cards[nid]?.classList.contains('ac-down')
-        c += ox * oy * (near ? 4 : 1)
+        c += ox * oy * (nid === id ? 20 : near ? 4 : 1)
       }
       return c
     }
-    let [px, py] = tries.reduce((best, t) => (cost(t) < cost(best) ? t : best))
-    if (py < 0 && !this.L.narrow) py = 0
+    const [px, py] = tries.reduce((best, t) => (cost(t) < cost(best) ? t : best))
     pop.style.left = `${px}px`; pop.style.top = `${py}px`
+    pop.setAttribute('aria-label', `${n.title}的詳細說明`)
     pop.classList.remove('ac-pop-in'); void pop.offsetWidth; pop.classList.add('ac-pop-in')
+    // opened from the keyboard: move into the pop so its links are next, and come back on close
+    if (c === document.activeElement) x.focus({ preventScroll: true })
     requestAnimationFrame(() => pop.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
   }
 
@@ -765,7 +780,9 @@ class ArchView {
 
   private close() {
     if (!this.openId) return
-    this.cards[this.openId]?.classList.remove('ac-picked')
+    const c = this.cards[this.openId]
+    c?.classList.remove('ac-picked'); c?.setAttribute('aria-expanded', 'false')
+    if (this.pop.contains(document.activeElement)) c?.focus({ preventScroll: true })
     this.unreach()
     this.pop.remove(); this.stage.classList.remove('ac-picking')
     this.openId = null; this.last = 0

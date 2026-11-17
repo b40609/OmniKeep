@@ -68,6 +68,15 @@ def test_only_existing_paths_stay_and_the_repo_line_is_added():
     assert "<details open>" in out and out.endswith("</details>")
 
 
+def test_a_line_that_skipped_the_tag_column_gets_it_back_and_its_files_checked():
+    from app.arch_block import tidy_block
+    NL = chr(10)
+    body = "元件｜api｜server｜服務｜收請求｜重點｜細節｜事實｜app/main.py、made/up.py" + NL + "元件｜db｜db｜儲存｜寫入｜重點｜一般｜｜｜app/main.py"
+    out = tidy_block(body, "", FILES).splitlines()
+    assert out[0] == "元件｜api｜server｜服務｜收請求｜｜重點｜細節｜事實｜app/main.py"
+    assert out[1].split("｜")[5:7] == ["重點", "一般"]  # a full line whose tag reads like a kind is left alone
+
+
 def test_without_a_file_list_no_path_is_kept():
     out = tidy_arch(BLOCK, "owner/repo", [])
     assert "app/main.py" not in out and "專案：owner/repo" in out
