@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
-import { useMediaQuery } from '@vueuse/core'
+import { ref, watch, computed, onBeforeUnmount } from 'vue'
 import { ArrowLeft, X, Maximize2, Minimize2, PanelLeft, PanelRight } from 'lucide-vue-next'
 import ItemActions from '@/components/items/ItemActions.vue'
 import Skeleton from '@/components/ui/skeleton/Skeleton.vue'
@@ -52,9 +51,23 @@ watch(() => ui.activeItem?.id, (id) => {
   } else void loadFull(id)
 }, { immediate: true })
 
-// full-page reading on a desktop: the tabs and the category join the top bar, so the article starts right under it
-const isLg = useMediaQuery('(min-width: 1024px)')
-const merged = computed(() => ui.focusMode && isLg.value)
+// on a desktop the tabs and the category join the top bar whenever it is wide enough (full page or a wide
+// side panel), so the article starts right under one bar; a narrow pane keeps them on one second row
+const lgQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(min-width: 1024px)') : null
+const isLg = ref(!!lgQuery?.matches)
+const onLg = () => { isLg.value = !!lgQuery?.matches }
+lgQuery?.addEventListener?.('change', onLg)
+const rootRef = ref<HTMLElement | null>(null)
+const paneW = ref(0)
+let ro: ResizeObserver | null = null
+watch(rootRef, (el) => {
+  ro?.disconnect(); ro = null
+  if (!el || typeof ResizeObserver === 'undefined') return
+  ro = new ResizeObserver(([e]) => { paneW.value = e.contentRect.width })
+  ro.observe(el)
+})
+onBeforeUnmount(() => { ro?.disconnect(); lgQuery?.removeEventListener?.('change', onLg) })
+const merged = computed(() => isLg.value && paneW.value >= 760)
 const TABS = [{ id: 'analysis', label: '重點分析' }, { id: 'reader', label: '原文' }] as const
 
 function changeTab(event: KeyboardEvent) {
@@ -74,13 +87,13 @@ function changeTab(event: KeyboardEvent) {
 </script>
 
 <template>
-  <section v-if="ui.activeItem" data-reader-root
+  <section v-if="ui.activeItem" ref="rootRef" data-reader-root
     class="safe-top safe-bottom fixed inset-0 z-40 flex min-w-0 flex-col bg-shell lg:flex-1 lg:border-l lg:border-hairline"
     :class="ui.focusMode ? 'lg:inset-0 lg:z-50 lg:fixed' : 'lg:static lg:z-auto'" aria-label="閱讀面板">
     <div class="relative flex min-h-14 shrink-0 items-center justify-between gap-1 border-b border-hairline px-2 sm:px-4">
       <button class="item-action" :class="ui.focusMode ? '' : 'lg:hidden'" aria-label="返回清單" title="返回清單（Esc）" @click="closeReader"><ArrowLeft class="size-5" /></button>
-      <span class="min-w-0 flex-1 truncate text-sm text-muted-foreground">{{ sourceName(ui.activeItem) }}</span>
-      <div v-if="merged" class="flex items-center gap-0.5 rounded-xl bg-muted/60 p-1 xl:absolute xl:left-1/2 xl:-translate-x-1/2" role="tablist" aria-label="閱讀模式" @keydown="changeTab">
+      <span class="min-w-0 truncate text-sm text-muted-foreground" :class="merged && !ui.focusMode ? 'mr-3 shrink' : 'flex-1'">{{ sourceName(ui.activeItem) }}</span>
+      <div v-if="merged" class="flex items-center gap-0.5 rounded-xl bg-muted/60 p-1" :class="ui.focusMode ? 'xl:absolute xl:left-1/2 xl:-translate-x-1/2' : 'mr-auto'" role="tablist" aria-label="閱讀模式" @keydown="changeTab">
         <button v-for="t in TABS" :id="'tab-' + t.id" :key="t.id"
           role="tab" :aria-selected="ui.detailTab === t.id" :aria-controls="'panel-' + t.id" :tabindex="ui.detailTab === t.id ? 0 : -1"
           class="min-h-9 rounded-lg px-4 text-sm font-medium transition-colors" :class="ui.detailTab === t.id ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
@@ -100,6 +113,7 @@ function changeTab(event: KeyboardEvent) {
           </select>
         </label>
         <span class="mr-2 text-xs text-muted-foreground">{{ ui.activeItem.is_read ? '已封存' : '未封存' }}</span>
+        <template v-if="ui.focusMode">
         <span class="mx-1 h-5 w-px bg-hairline max-[1179px]:hidden" aria-hidden="true" />
         <button class="item-action max-[1179px]:hidden" :aria-pressed="ui.outlineOpen" :aria-label="ui.outlineOpen ? '收起左邊目錄' : '打開左邊目錄'" :title="(ui.outlineOpen ? '收起目錄' : '打開目錄') + '（[）'" @click="ui.outlineOpen = !ui.outlineOpen">
           <PanelLeft class="size-4" :class="ui.outlineOpen ? 'text-foreground' : 'text-subtle-foreground'" />
@@ -107,6 +121,7 @@ function changeTab(event: KeyboardEvent) {
         <button class="item-action max-[1179px]:hidden" :aria-pressed="ui.railOpen" :aria-label="ui.railOpen ? '收起右邊資訊欄' : '打開右邊資訊欄'" :title="(ui.railOpen ? '收起資訊欄' : '打開資訊欄') + '（]）'" @click="ui.railOpen = !ui.railOpen">
           <PanelRight class="size-4" :class="ui.railOpen ? 'text-foreground' : 'text-subtle-foreground'" />
         </button>
+        </template>
         <span class="mx-1 h-5 w-px bg-hairline" aria-hidden="true" />
       </template>
       <ItemActions :item="ui.activeItem" allow-delete />
@@ -115,16 +130,6 @@ function changeTab(event: KeyboardEvent) {
       </button>
       <button class="item-action hidden lg:flex" aria-label="關閉閱讀面板" title="關閉（Esc）" @click="closeReader"><X class="size-4" /></button>
     </div>
-    <div v-if="!merged" class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-hairline px-3 py-2 sm:px-4">
-      <label class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-        分類
-        <select :value="ui.activeItem.category_name" class="min-h-11 w-36 max-w-full rounded-lg border border-border bg-card px-2 text-sm text-foreground" @change="updateCategory(ui.activeItem!, ($event.target as HTMLSelectElement).value)">
-          <option v-for="c in itemsStore.categories.filter(c => c.name !== 'Inbox')" :key="c.id" :value="c.name">{{ c.name }}</option>
-          <option value="Inbox">收件匣</option>
-        </select>
-      </label>
-      <span class="text-xs text-muted-foreground">{{ ui.activeItem.is_read ? '已封存' : '未封存' }}</span>
-    </div>
     <div v-if="!merged" class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-hairline px-3 py-1 sm:px-4">
       <div class="flex items-center gap-1" role="tablist" aria-label="閱讀模式" @keydown="changeTab">
         <button v-for="t in TABS" :id="'tab-' + t.id" :key="t.id"
@@ -132,10 +137,20 @@ function changeTab(event: KeyboardEvent) {
           class="min-h-11 rounded-lg px-3 text-sm font-medium" :class="ui.detailTab === t.id ? 'bg-primary-soft text-primary-soft-foreground' : 'text-muted-foreground hover:bg-accent'"
           @click="ui.detailTab = t.id">{{ t.label }}</button>
       </div>
-      <div v-if="ui.detailTab === 'reader'" class="flex items-center text-xs text-muted-foreground" role="group" aria-label="原文字級">
-        <button class="item-action" :disabled="ui.readerFontSize <= 13" aria-label="縮小字級" @click="ui.readerFontSize = Math.max(13, ui.readerFontSize - 1)">A−</button>
-        <span class="w-5 text-center tabular-nums">{{ ui.readerFontSize }}</span>
-        <button class="item-action" :disabled="ui.readerFontSize >= 20" aria-label="放大字級" @click="ui.readerFontSize = Math.min(20, ui.readerFontSize + 1)">A+</button>
+      <div class="flex items-center gap-2">
+        <div v-if="ui.detailTab === 'reader'" class="flex items-center text-xs text-muted-foreground" role="group" aria-label="原文字級">
+          <button class="item-action" :disabled="ui.readerFontSize <= 13" aria-label="縮小字級" @click="ui.readerFontSize = Math.max(13, ui.readerFontSize - 1)">A−</button>
+          <span class="w-5 text-center tabular-nums">{{ ui.readerFontSize }}</span>
+          <button class="item-action" :disabled="ui.readerFontSize >= 20" aria-label="放大字級" @click="ui.readerFontSize = Math.min(20, ui.readerFontSize + 1)">A+</button>
+        </div>
+        <label class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <span class="sr-only sm:not-sr-only">分類</span>
+          <select :value="ui.activeItem.category_name" aria-label="分類" class="min-h-11 w-32 max-w-full rounded-lg border border-border bg-card px-2 text-sm text-foreground" @change="updateCategory(ui.activeItem!, ($event.target as HTMLSelectElement).value)">
+            <option v-for="c in itemsStore.categories.filter(c => c.name !== 'Inbox')" :key="c.id" :value="c.name">{{ c.name }}</option>
+            <option value="Inbox">收件匣</option>
+          </select>
+        </label>
+        <span class="text-xs text-muted-foreground">{{ ui.activeItem.is_read ? '已封存' : '未封存' }}</span>
       </div>
     </div>
     <div v-if="detailError" class="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2 text-sm" role="alert">
