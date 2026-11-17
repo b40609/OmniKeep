@@ -138,3 +138,47 @@ test('a full line whose tag happens to read like a kind keeps both', () => {
   assert.equal(a.nodes.kk.kind, 'plain')
   assert.deepEqual(a.nodes.kk.files, ['src/a.py'])
 })
+
+// a band longer than the reading column holds (like the swin-transformer diagram that fell back to
+// the stacked layout): it wraps onto a second row inside the band and the diagram stays side by side
+const LONG = `入口｜data｜folder｜ImageNet｜影像分類資料集｜pipe｜資料
+入口｜who｜user｜研究者｜指定設定檔與資料路徑｜cfg｜命令列
+區｜準備｜讀取設定與資料｜
+元件｜cfg｜gear｜設定解析｜讀 YAML 與命令列覆寫｜Swin-V2 設定｜一般｜｜｜
+元件｜pipe｜db｜資料管線｜載入 ImageNet 並快取｜快取 3 模式｜重點｜｜｜
+區｜模型｜建構 Swin 骨幹與分類頭｜設定
+元件｜build｜box｜模型建構｜依設定挑 Swin 版本｜V1/V2｜一般｜｜｜
+元件｜back｜layers｜Swin 骨幹｜分層特徵與位移視窗｜4 階段｜一般｜｜｜
+元件｜head｜cpu｜分類頭｜池化後輸出類別｜1000 類｜一般｜｜｜
+元件｜loss｜chart｜損失函數｜標籤平滑交叉熵｜Mixup｜一般｜｜｜
+元件｜opt｜swap｜最佳化器｜AdamW 與學習率排程｜餘弦退火｜一般｜｜｜
+旁｜amp｜cpu｜混合精度｜縮放梯度避免溢位｜back｜前向｜梯度｜｜｜
+區｜訓練｜分散式迴圈與存檔｜批次
+元件｜loop｜replay｜訓練迴圈｜多卡同步梯度｜DDP｜一般｜｜｜
+元件｜ckpt｜download｜存檔｜保存最佳權重｜｜一般｜｜｜`
+
+for (const width of [1080, 860, 640, 580]) {
+  test(`at ${width}px a long band wraps instead of stacking, with no line through a card or another line`, () => {
+    const L = layoutArch(parseArch(LONG), width)
+    assert.equal(L.narrow, false)
+    assert.deepEqual(problems(LONG, width), [])
+    assert.deepEqual(crossings(LONG, width), [])
+  })
+}
+
+test('at 640px the five-card band wraps onto more rows inside one band, a row ending early before the helper', () => {
+  const L = layoutArch(parseArch(LONG), 640)
+  const ys = ['build', 'back', 'head', 'loss', 'opt'].map((id) => L.places[id].y)
+  assert.ok(new Set(ys).size >= 2, `rows at ${ys}`)
+  // no line goes down out of the card the helper hangs under
+  assert.ok(!L.edges.some((e) => e.s === 'back' && e.down), 'down line leaves the card the helper hangs under')
+  const band = L.bands[1]
+  for (const id of ['build', 'opt']) assert.ok(L.places[id].y + L.places[id].h <= band.y + band.h, `${id} inside its band`)
+  // every step of the flow is still walked by the beam
+  assert.equal(L.route.filter((r) => r.to === 'opt').length, 1)
+})
+
+test('the stacked layout is left only for a column too narrow for two cards a row', () => {
+  assert.equal(layoutArch(parseArch(LONG), 350).narrow, true)
+  assert.deepEqual(problems(LONG, 520), [])
+})

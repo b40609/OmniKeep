@@ -12,8 +12,9 @@
 
    Drawn the way the owner picked on 2026-11-15 ("V1 精修"): inputs in a column at the left, each
    區 a band of cards in data-flow order, snaking down from one band to the next, helpers hanging
-   under the card that calls them. On a narrow column the same diagram stacks top to bottom at full
-   size instead of shrinking. A beam walks the flow one line at a time and rests on each card; a
+   under the card that calls them. A band too long for the reading column wraps onto another row and
+   the snake goes on (2026-11-17); only a column too narrow for two cards a row stacks the diagram
+   top to bottom at full size instead. A beam walks the flow one line at a time and rests on each card; a
    click opens the card's details beside it and, like Archify's Upstream/Downstream, lights
    everything that leads to the card and everything it leads to. A file may carry a line range
    (app/main.py:12-40); links open those lines on the commit the analysis read. Like lib/flowchart.ts it plays even under the system's
@@ -154,7 +155,7 @@ const iconFor = (name: string, kind: ArchKind) => ICONS[name] || (kind === 'ext'
 
 type Pt = [number, number]
 interface Place { x: number; y: number; w: number; h: number }
-interface EdgeSpec { s: string; t: string; pts: Pt[]; label: string; at?: Pt; inBand?: boolean; side?: 'l' | 'r' }
+interface EdgeSpec { s: string; t: string; pts: Pt[]; label: string; at?: Pt; inBand?: boolean; side?: 'l' | 'r'; down?: boolean }
 interface BandSpec extends Place { title: string; note: string; lbLeft?: number }
 export interface ArchLayout {
   width: number; height: number; narrow: boolean
@@ -193,8 +194,45 @@ function walk(a: Arch, edges: EdgeSpec[]): { route: { e: number; to: string }[];
   return { route: route.filter((r) => r.e >= 0), start: first ? first.id : seq[0] }
 }
 
+interface Row { lane: number; ids: string[]; top: number; bottom: number }
+
+/** Each band's cards in rows of at most `cols`, as even as they go. A row may end a card early so
+ *  the line down to the next row never leaves a card a helper hangs under; null if it still would. */
+function splitRows(a: Arch, cols: number): Row[] | null {
+  const hangs = new Set(a.sides.map((s) => s.parent))
+  const rows: Row[] = []
+  a.lanes.forEach((l, li) => {
+    const per = Math.ceil(l.ids.length / Math.ceil(l.ids.length / cols))
+    for (let i = 0; i < l.ids.length;) {
+      let k = Math.min(per, l.ids.length - i)
+      while (k > 1 && i + k < l.ids.length && hangs.has(l.ids[i + k - 1])) k--
+      rows.push({ lane: li, ids: l.ids.slice(i, i + k), top: 0, bottom: 0 })
+      i += k
+    }
+  })
+  return rows.slice(0, -1).some((r) => hangs.has(r.ids[r.ids.length - 1])) ? null : rows
+}
+
+/** Would a new line along `pts` cross or run along a line already drawn? */
+function blocked(edges: EdgeSpec[], pts: Pt[]): boolean {
+  const inside = (u: number, a: number, b: number) => u > Math.min(a, b) + 1 && u < Math.max(a, b) - 1
+  const overlap = (a0: number, a1: number, b0: number, b1: number) => Math.min(Math.max(a0, a1), Math.max(b0, b1)) - Math.max(Math.min(a0, a1), Math.min(b0, b1)) > 1
+  for (let j = 1; j < pts.length; j++) {
+    const [p, q] = [pts[j - 1], pts[j]], pv = p[0] === q[0]
+    for (const e of edges) {
+      for (let k = 1; k < e.pts.length; k++) {
+        const [a, b] = [e.pts[k - 1], e.pts[k]], av = a[0] === b[0]
+        if (pv !== av) {
+          const [v0, v1, h0, h1] = pv ? [p, q, a, b] : [a, b, p, q]
+          if (inside(v0[0], h0[0], h1[0]) && inside(h0[1], v0[1], v1[1])) return true
+        } else if (pv ? Math.abs(p[0] - a[0]) < 2 && overlap(p[1], q[1], a[1], b[1]) : Math.abs(p[1] - a[1]) < 2 && overlap(p[0], q[0], a[0], b[0])) return true
+      }
+    }
+  }
+  return false
+}
+
 function wideLayout(a: Arch, width: number): ArchLayout | null {
-  const n = Math.max(...a.lanes.map((l) => l.ids.length))
   const GAP = 28, PAD = 12
   // an input card is wide enough for its name and one-line description, within 148 to 200
   const IW = Math.round(Math.min(200, Math.max(148, ...a.inputs.map((i) => 24 + Math.max(textW(i.title, 14) + 24, textW(i.desc, 12.5)) + 8))))
@@ -209,8 +247,19 @@ function wideLayout(a: Arch, width: number): ArchLayout | null {
   const cards = a.lanes.flatMap((l) => l.ids.map((id) => a.nodes[id]))
   // a long name (often English) may widen the cards up to 236 if the row has room
   const longest = Math.max(...cards.map((c) => textW(c.title, 14) + 28 + 24 + 4))
-  const W = Math.min(Math.max(n <= 3 ? 196 : 176, Math.min(236, Math.ceil(longest))), Math.floor((inner - (n - 1) * GAP) / n))
-  if (W < 136) return null
+  const fit = (c: number) => Math.min(Math.max(c <= 3 ? 196 : 176, Math.min(236, Math.ceil(longest))), Math.floor((inner - (c - 1) * GAP) / c))
+  // as many cards to a row as keep each one readable; a band longer than that wraps onto the next
+  // row and the flow snakes on, so the diagram stays side by side inside the reading column
+  const maxLen = Math.max(...a.lanes.map((l) => l.ids.length))
+  let rows: Row[] | null = null
+  for (let c = maxLen; c >= Math.min(2, maxLen) && !rows; c--) {
+    const w = fit(c)
+    if (w >= 160 || (c <= 2 && w >= 136)) rows = splitRows(a, c)
+  }
+  if (!rows) return null
+  const R = rows
+  const n = Math.max(...R.map((r) => r.ids.length))
+  const W = fit(n)
   const gap = n > 1 ? Math.min(56, (inner - n * W) / (n - 1)) : 0
   // a short flow keeps its cards together and the diagram narrower, centred in the frame
   inner = n * W + (n - 1) * gap
@@ -219,25 +268,33 @@ function wideLayout(a: Arch, width: number): ArchLayout | null {
   const H = Math.max(64, ...cards.map((c) => cardH(c, W, false)))
   const colX = (c: number) => lead + PAD + c * step
   const places: Record<string, Place> = {}, bands: BandSpec[] = [], edges: EdgeSpec[] = []
-  const BAND_GAP = 60, TOP = 38
-  let y = 4, col = 0, dir = 1
+  const BAND_GAP = 60, ROW_GAP = 44, TOP = 38
+  let y = 4, col = 0, dir = 1, prevLen = 0
   a.lanes.forEach((l, li) => {
-    const len = l.ids.length
-    // each band starts under the card the band above ended on and runs back the other way
-    let start: number
-    if (li === 0) { start = 0; dir = 1 } else {
-      dir = -dir
-      start = dir < 0 ? Math.max(col, len - 1) : Math.min(col, n - len)
-    }
     const top = y
-    l.ids.forEach((id, k) => { places[id] = { x: colX(start + dir * k), y: top + TOP, w: W, h: H } })
-    col = start + dir * (len - 1)
-    let bottom = top + TOP + H + 18
-    for (const s of a.sides) {
-      const p = places[s.parent]
-      if (!p || !l.ids.includes(s.parent)) continue
-      places[s.id] = { x: p.x, y: p.y + p.h + 48, w: p.w, h: Math.max(s.desc ? 76 : 56, cardH(a.nodes[s.id] || s, p.w, false)) }
-      bottom = Math.max(bottom, places[s.id].y + places[s.id].h + 14)
+    let ry = top + TOP, bottom = ry
+    for (const r of R.filter((x) => x.lane === li)) {
+      const len = r.ids.length
+      // each row starts under the card the row above ended on and runs back the other way; a lone
+      // card runs no way, so the row after it runs whichever way fits and the line down stays straight
+      let start: number
+      if (r === R[0]) { start = 0; dir = 1 } else {
+        dir = prevLen > 1 ? -dir : col + len - 1 <= n - 1 ? 1 : -1
+        start = dir < 0 ? Math.max(col, len - 1) : Math.min(col, n - len)
+      }
+      r.ids.forEach((id, k) => { places[id] = { x: colX(start + dir * k), y: ry, w: W, h: H } })
+      col = start + dir * (len - 1)
+      prevLen = len
+      r.top = ry; r.bottom = ry + H
+      bottom = ry + H + 18
+      for (const s of a.sides) {
+        const p = places[s.parent]
+        if (!p || !r.ids.includes(s.parent)) continue
+        places[s.id] = { x: p.x, y: p.y + p.h + 48, w: p.w, h: Math.max(s.desc ? 76 : 56, cardH(a.nodes[s.id] || s, p.w, false)) }
+        r.bottom = Math.max(r.bottom, places[s.id].y + places[s.id].h)
+        bottom = Math.max(bottom, places[s.id].y + places[s.id].h + 14)
+      }
+      ry = r.bottom + ROW_GAP
     }
     bands.push({ x: lead, y: top, w: width - lead, h: bottom - top, title: l.title, note: l.note })
     y = bottom + BAND_GAP
@@ -245,28 +302,34 @@ function wideLayout(a: Arch, width: number): ArchLayout | null {
   const height = y - BAND_GAP
   const P = (id: string) => places[id]
   const cx = (p: Place, f = 0.5) => p.x + p.w * f
-  // inside a band: card to card, left or right
-  a.lanes.forEach((l, li) => {
-    for (let k = 1; k < l.ids.length; k++) {
-      const s = P(l.ids[k - 1]), t = P(l.ids[k]), my = s.y + s.h / 2
-      edges.push({ s: l.ids[k - 1], t: l.ids[k], label: '', pts: t.x > s.x ? [[s.x + s.w, my], [t.x, my]] : [[s.x, my], [t.x + t.w, my]] })
+  // inside a row: card to card, left or right
+  for (const r of R) {
+    for (let k = 1; k < r.ids.length; k++) {
+      const s = P(r.ids[k - 1]), t = P(r.ids[k]), my = s.y + s.h / 2
+      edges.push({ s: r.ids[k - 1], t: r.ids[k], label: '', pts: t.x > s.x ? [[s.x + s.w, my], [t.x, my]] : [[s.x, my], [t.x + t.w, my]] })
     }
-    // from the last card of a band down to the first of the next
-    const next = a.lanes[li + 1]
-    if (!next) return
-    const sid = l.ids[l.ids.length - 1], tid = next.ids[0], s = P(sid), t = P(tid)
-    const gy = bands[li].y + bands[li].h + BAND_GAP / 2
-    // the line never crosses the next band's name: it comes down right of the name if the card
-    // leaves room, otherwise near the card's left edge with the name starting just past it
-    const nb = bands[li + 1], lx0 = nb.x + 14, lx1 = lx0 + bandLabelW(nb)
-    let tx = cx(t)
-    if ((nb.title || nb.note) && tx > lx0 - 12 && tx < lx1 + 12) {
-      if (lx1 + 16 <= t.x + t.w - 28) tx = lx1 + 16
-      else { tx = t.x + 28; nb.lbLeft = tx - nb.x + 14 }
+  }
+  // from the last card of a row down to the first of the next, in the same band or the next one
+  R.forEach((r, ri) => {
+    const nx = R[ri + 1]
+    if (!nx) return
+    const sid = r.ids[r.ids.length - 1], tid = nx.ids[0], s = P(sid), t = P(tid)
+    let tx = cx(t), gy: number, label = ''
+    if (nx.lane === r.lane) gy = (r.bottom + nx.top) / 2
+    else {
+      gy = bands[r.lane].y + bands[r.lane].h + BAND_GAP / 2
+      label = a.lanes[nx.lane].label
+      // the line never crosses the next band's name: it comes down right of the name if the card
+      // leaves room, otherwise near the card's left edge with the name starting just past it
+      const nb = bands[nx.lane], lx0 = nb.x + 14, lx1 = lx0 + bandLabelW(nb)
+      if ((nb.title || nb.note) && tx > lx0 - 12 && tx < lx1 + 12) {
+        if (lx1 + 16 <= t.x + t.w - 28) tx = lx1 + 16
+        else { tx = t.x + 28; nb.lbLeft = tx - nb.x + 14 }
+      }
     }
     const sx = s.x === t.x ? tx : cx(s)
     const pts: Pt[] = sx === tx ? [[sx, s.y + s.h], [tx, t.y]] : [[sx, s.y + s.h], [sx, gy], [tx, gy], [tx, t.y]]
-    edges.push({ s: sid, t: tid, label: next.label, pts, at: sx === tx ? [tx, gy] : [(sx + tx) / 2, gy] })
+    edges.push({ s: sid, t: tid, label, pts, at: sx === tx ? [tx, gy] : [(sx + tx) / 2, gy], down: true })
   })
   // helpers: out of the caller's bottom and back in, labels beside the two lines
   for (const s of a.sides) {
@@ -284,21 +347,38 @@ function wideLayout(a: Arch, width: number): ArchLayout | null {
     places[i.id] = { x: 0, y: centers[k] - IH / 2, w: IW, h: IH }
     edges.push({ s: i.id, t: i.to, label: i.label, pts: [[IW, centers[k]], [f0.x, centers[k]]], at: [(IW + f0.x) / 2, centers[k] - 11] })
   })
-  viaGap.forEach((i, k) => {
+  const usedGaps = new Set<number>()
+  for (const [k, i] of viaGap.entries()) {
     const t = P(i.to), b0 = bands[0]
-    const gy = a.lanes.length > 1 ? b0.y + b0.h + BAND_GAP / 2 : b0.y + b0.h + 22 + k * 72
-    const lastOfFirst = i.to === a.lanes[0].ids[a.lanes[0].ids.length - 1] && a.lanes.length > 1
-    let vx = lastOfFirst ? cx(t, 0.3) : cx(t)
-    // the line down to the next band leaves this card's bottom too: come in left of it
-    const down = edges.find((e) => e.s === i.to && e.t === a.lanes[1]?.ids[0])
+    // it comes in along the gap under its card's row: inside the band if the band wraps on below it
+    const ri = R.findIndex((r) => r.ids.includes(i.to)), nx = R[ri + 1]
+    const inBand = !!nx && nx.lane === 0
+    if (inBand && usedGaps.has(ri)) return null
+    usedGaps.add(ri)
+    const gy = inBand ? (R[ri].bottom + nx.top) / 2 : a.lanes.length > 1 ? b0.y + b0.h + BAND_GAP / 2 : b0.y + b0.h + 22 + k * 72
+    // the line down to the next row leaves this card's bottom too: come in left of it
+    const down = edges.find((e) => e.s === i.to && e.down)
+    let vx = down ? cx(t, 0.3) : cx(t)
     if (down && down.pts[0][0] <= vx + 8) vx = Math.max(t.x + 14, down.pts[0][0] - 16)
-    places[i.id] = { x: 0, y: gy - IH / 2, w: IW, h: IH }
     const helper = a.sides.find((x) => x.parent === i.to)
     // a helper hangs under the card: come up beside the card and in at its left edge instead
-    const ey = t.y + t.h * 0.72, ex = t.x - 16
+    // ... below the lines that come straight into the same card, so it crosses none of them
+    const ex = t.x - 16, under = Math.max(-Infinity, ...edges.filter((e) => e.t === i.to && e.pts.length === 2 && e.pts[0][1] === e.pts[1][1]).map((e) => e.pts[0][1]))
+    let ey = t.y + t.h * 0.72
+    if (ey < under + 8) ey = (under + t.y + t.h) / 2
     const pts: Pt[] = helper ? [[IW, gy], [ex, gy], [ex, ey], [t.x, ey]] : [[IW, gy], [vx, gy], [vx, t.y + t.h]]
+    // a wrapped band can put another row's line across the way in: then the diagram is stacked
+    if ((helper && ey > t.y + t.h - 6) || blocked(edges, pts)) return null
+    // its card sits on its line, nudged down off an input card above it while the line still leaves its side
+    let iy = gy - IH / 2
+    for (const o of inputs) { const q = places[o.id]; if (q && o !== i && iy < q.y + q.h + 8 && q.y < iy + IH + 8) iy = q.y + q.h + 8 }
+    if (gy < iy + 14) return null
+    places[i.id] = { x: 0, y: iy, w: IW, h: IH }
     edges.push({ s: i.id, t: i.to, label: i.label, pts, at: [(IW + (helper ? ex : vx)) / 2, gy] })
-  })
+  }
+  // input cards never land on each other
+  const ip = inputs.map((i) => places[i.id]).filter(Boolean)
+  for (let x = 0; x < ip.length; x++) for (let z = x + 1; z < ip.length; z++) if (ip[x].y < ip[z].y + ip[z].h + 8 && ip[z].y < ip[x].y + ip[x].h + 8) return null
   const h = Math.max(height, ...Object.values(places).map((p) => p.y + p.h))
   return { width, height: h, narrow: false, places, bands, edges, ...walk(a, edges) }
 }
