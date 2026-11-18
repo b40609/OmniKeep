@@ -1,4 +1,5 @@
 import re
+import time
 import asyncio
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse, parse_qs
@@ -24,6 +25,42 @@ def extract_video_id(url: str) -> Optional[str]:
     m = re.match(r"^/(?:shorts|embed|v|live)/([A-Za-z0-9_-]{11})", parsed.path)
     return m.group(1) if m else None
 
+def unavailable_reason(oembed_status: int, ytdlp_error: str) -> str:
+    """Why the video cannot be watched by anyone, or "" when it may still open later.
+
+    Only when YouTube's own oEmbed says so as well: yt-dlp also fails for passing reasons
+    (a bot check, a sign-in wall), and then oEmbed still answers with the title.
+    """
+    message = (ytdlp_error or "").lower()
+    if oembed_status in (401, 403) and "private video" in message:
+        return "影片設為私人"
+    if oembed_status in (400, 404):
+        return "影片不存在或已被移除"
+    return ""
+
+
+# What yt-dlp read a moment ago, so the ingest API's length check (app/routers/ingest.py) and the
+# pipeline right after it do not both wait for it. Kept a few minutes, for a handful of videos.
+_RECENT: Dict[str, Any] = {}
+_RECENT_SECONDS = 300.0
+
+
+def _remember(url: str, data: Dict[str, Any]) -> None:
+    now = time.monotonic()
+    for key in [k for k, (at, _) in _RECENT.items() if now - at > _RECENT_SECONDS]:
+        del _RECENT[key]
+    if len(_RECENT) >= 32:
+        _RECENT.pop(next(iter(_RECENT)))
+    _RECENT[url] = (now, dict(data))
+
+
+def _recalled(url: str) -> Optional[Dict[str, Any]]:
+    entry = _RECENT.get(url)
+    if entry and time.monotonic() - entry[0] <= _RECENT_SECONDS:
+        return dict(entry[1])
+    return None
+
+
 async def fetch_youtube_metadata(url: str) -> Dict[str, Any]:
     """
     Fetch comprehensive YouTube metadata with fast fallback to oEmbed.
@@ -32,12 +69,16 @@ async def fetch_youtube_metadata(url: str) -> Dict[str, Any]:
     validate_url(url)
     if not is_youtube_url(url):
         raise ValueError("Unsupported YouTube host")
+    recalled = _recalled(url)
+    if recalled is not None:
+        return recalled
     video_id = extract_video_id(url)
     default_thumb = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg" if video_id else ""
     
     data = {
         "url": url,
-        "title": "YouTube Video",
+        # Only when neither yt-dlp nor oEmbed answered (no network, say): never a bare "YouTube Video".
+        "title": f"YouTube 影片 {video_id}" if video_id else "YouTube 影片",
         "author": "",
         "cover_image": default_thumb,
         "video_id": video_id or "",
@@ -47,6 +88,7 @@ async def fetch_youtube_metadata(url: str) -> Dict[str, Any]:
     }
 
     # 1. Primary: yt-dlp fast metadata extraction (skip-download)
+    ytdlp_error = ""
     try:
         from app.parsers.media_network import PublicYoutubeDL
         ydl_opts = {
@@ -70,17 +112,22 @@ async def fetch_youtube_metadata(url: str) -> Dict[str, Any]:
             # Kept for app/parsers/transcript.py, so the subtitles need no second extraction.
             for key in ("subtitles", "automatic_captions", "language", "live_status", "is_live", "chapters"):
                 data[key] = info.get(key)
+            _remember(url, data)
             return data
-    except Exception:
-        pass
+    except Exception as exc:
+        ytdlp_error = str(exc)
 
-    # 2. Fallback: Official oEmbed if yt-dlp fails
+    # 2. Fallback: Official oEmbed if yt-dlp fails (a sign-in or bot check, for one)
     try:
         async with public_http_client(timeout=8.0) as client:
             resp = await client.get(
                 "https://www.youtube.com/oembed",
-                params={"url": url, "format": "json"}
+                # the watch address: oEmbed answers for it whatever form the link had (Shorts, youtu.be)
+                params={"url": f"https://www.youtube.com/watch?v={video_id}" if video_id else url, "format": "json"}
             )
+            gone = unavailable_reason(resp.status_code, ytdlp_error)
+            if gone:
+                data["unavailable"] = gone
             if resp.status_code == 200:
                 js = resp.json()
                 data["title"] = js.get("title", data["title"])

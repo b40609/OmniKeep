@@ -143,17 +143,25 @@ async function loadComponent(path) {
   return (await import(moduleUrl(`${outputText}\n// wizard ${++moduleId}`))).default
 }
 
-function context(status = { services: {}, needs_setup: true, undecryptable: [] }) {
+const FEATURES = [
+  { id: 'analysis', name: '分析', level: 'basic', now: '用免註冊的服務：分析比較精簡', step: '申請金鑰', card: 'gemini' },
+  { id: 'search', name: '用意思找收藏', level: 'basic', now: '每分鐘只能查 2 次' },
+]
+
+function context(status = { services: {}, needs_setup: true, undecryptable: [] }, total = 0, local = new Map()) {
   const store = new Map()
   globalThis.sessionStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) }
+  globalThis.localStorage = { getItem: (k) => local.get(k) ?? null, setItem: (k, v) => local.set(k, v) }
   globalThis.window = new EventTarget()
   const ctx = {
     ui: reactive({
       showSetupWizard: false, showSettingsModal: false, settingsVersion: 0,
-      openSettings(tab) { ctx.opened = tab }, openAdd() { ctx.addOpened = true },
+      openSettings(tab, card, block) { ctx.opened = tab; ctx.openedBlock = block }, openAdd() { ctx.addOpened = true },
     }),
     api: {
       getServiceStatus: async () => status,
+      getStats: async () => ({ inbox: total, starred: 0, archived: 0, radar: 0, total }),
+      getAiFeatures: async () => ({ features: FEATURES, summary: null }),
       getAiCatalog: async () => ({ verified: '2026-11-05', cards: CARDS }),
       testAiDraft: async (draft) => { ctx.tests.push(draft); return ctx.nextTest },
       createAiConnection: async (input) => { ctx.created.push(input); return {} },
@@ -166,7 +174,7 @@ function context(status = { services: {}, needs_setup: true, undecryptable: [] }
       },
     },
     telegram: { configured: false, bound_user_ids: [], pairing_expires_at: null }, saved: [], refuseToken: '',
-    tests: [], created: [], errors: [], nextTest: { ok: true, status: 200, message: 'ok', detail: '' }, store,
+    tests: [], created: [], errors: [], nextTest: { ok: true, status: 200, message: 'ok', detail: '' }, store, local,
   }
   globalThis.__wizard = ctx
   return ctx
@@ -193,9 +201,9 @@ test('opens by itself only while no provider is usable, with nothing preselected
   assert.equal(view.state.cards.length, CARDS.length)
   view.unmount()
 
-  ctx = context({ services: {}, needs_setup: false, undecryptable: [] })
+  ctx = context({ services: {}, needs_setup: false, undecryptable: [] }, 3)
   view = await mountWizard()
-  assert.equal(ctx.ui.showSetupWizard, false)
+  assert.equal(ctx.ui.showSetupWizard, false) // AI connected and links already saved: nothing to guide
   view.unmount()
 
   ctx = context({ services: {}, needs_setup: true, undecryptable: ['OPENAI_API_KEY'] })
@@ -323,5 +331,63 @@ test('a Gemini card is tested without an address', async () => {
     view.state.form.apiKey = 'AIzaWizard'
     await view.state.test()
     assert.deepEqual(ctx.tests.at(-1), { card: 'gemini', key: 'AIzaWizard', model: 'gemini-2.5-flash' })
+  } finally { view.unmount() }
+})
+
+test('setup decision: no AI starts at choosing one; an empty library with AI starts at the welcome, once', () => {
+  const base = { needsSetup: false, undecryptable: 0, total: 0, welcomed: false, later: false, settingsOpen: false }
+  assert.equal(setup.guideStart(base), 'welcome')
+  assert.equal(setup.guideStart({ ...base, needsSetup: true }), 'choose')
+  assert.equal(setup.guideStart({ ...base, welcomed: true }), null)
+  assert.equal(setup.guideStart({ ...base, total: 5 }), null)
+  assert.equal(setup.guideStart({ ...base, total: null }), null) // unknown: do not guess
+  assert.equal(setup.guideStart({ ...base, later: true }), null)
+  assert.equal(setup.guideStart({ ...base, settingsOpen: true }), null)
+  assert.equal(setup.guideStart({ ...base, needsSetup: true, undecryptable: 1 }), null)
+})
+
+test('a new install with the no-signup AI connected opens at the welcome, then Telegram, then the first link', async () => {
+  const local = new Map()
+  const ctx = context({ services: {}, needs_setup: false, undecryptable: [] }, 0, local)
+  let view = await mountWizard()
+  try {
+    assert.equal(ctx.ui.showSetupWizard, true)
+    await settle()
+    const s = view.state
+    assert.equal(s.step, 'welcome')
+    assert.equal(s.welcomeMode, true)
+    assert.deepEqual(s.STEPS.map((x) => x.id), ['welcome', 'telegram', 'done'])
+    assert.equal(s.features.length, FEATURES.length) // what works now, and how well
+    assert.equal(s.stepDone(0), false)
+    s.step = 'telegram'
+    await settle()
+    assert.equal(s.stepDone(0), true) // the AI is connected already: a tick, not a skipped step
+    assert.equal(s.stepDone(1), false)
+    s.step = 'done'
+    s.addFirstLink()
+    assert.equal(ctx.ui.showSetupWizard, false)
+    assert.equal(ctx.addOpened, true)
+    await nextTick()
+    assert.equal(local.get('omnikeep-welcomed'), '1')
+  } finally { view.unmount() }
+
+  // Seen once: the next visit to the still-empty library stays quiet.
+  context({ services: {}, needs_setup: false, undecryptable: [] }, 0, local)
+  view = await mountWizard()
+  assert.equal(globalThis.__wizard.ui.showSetupWizard, false)
+  view.unmount()
+})
+
+test('the welcome points to the upgrade steps in 設定 › AI', async () => {
+  const ctx = context({ services: {}, needs_setup: false, undecryptable: [] }, 0)
+  const view = await mountWizard()
+  try {
+    await settle()
+    view.state.openUpgrades()
+    assert.equal(ctx.ui.showSetupWizard, false)
+    assert.equal(ctx.opened, 'ai')
+    assert.equal(ctx.openedBlock, 'features')
+    await nextTick()
+    assert.equal(ctx.local.get('omnikeep-welcomed'), '1')
   } finally { view.unmount() }
 })

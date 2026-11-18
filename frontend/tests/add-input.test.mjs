@@ -11,7 +11,7 @@ async function load(path) {
   return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`)
 }
 
-const { planAdd, describePlan, submitLabel, findLinks, isLink, isImportFile, isPastedLinks, explainFailure } = await load('../src/lib/addInput.ts')
+const { planAdd, describePlan, submitLabel, findLinks, isLink, isImportFile, isPastedLinks, explainFailure, isDeadLink } = await load('../src/lib/addInput.ts')
 
 test('text that is nothing but addresses is links: one per line or separated by spaces', () => {
   assert.deepEqual(planAdd('https://example.com/a'), { kind: 'links', urls: ['https://example.com/a'] })
@@ -93,4 +93,13 @@ test('a paste on the page opens the panel only for addresses', () => {
   assert.equal(isPastedLinks('一段文字 https://example.com/a'), false)
   assert.equal(isPastedLinks('一段文字'), false)
   assert.equal(isPastedLinks(''), false)
+})
+
+test('an address that cannot be opened for good is told apart: trying again will not help', () => {
+  // the server's words (app/parsers/dead_link.py)
+  assert.equal(isDeadLink('這個網址打不開：網站回應 404（找不到這一頁）。'), true)
+  assert.equal(isDeadLink('這個網址打不開：找不到網域 a.example，可能打錯字，或網站已經不在了。沒有收藏。'), true)
+  assert.equal(isDeadLink('這支 YouTube 影片打不開：影片不存在或已被移除。沒有收藏。'), true)
+  assert.equal(isDeadLink('AI 服務限流'), false)
+  assert.equal(isDeadLink(undefined), false)
 })

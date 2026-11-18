@@ -252,7 +252,7 @@ def to_traditional(text: str) -> str:
             _opencc = opencc.OpenCC("s2twp")
         except Exception as exc:
             logger.warning("[Transcript] opencc is not available (%s); Simplified Chinese from the speech "
-                           "recognition stays Simplified (pip install -r requirements-stt.txt)", _short(exc))
+                           "recognition stays Simplified (pip install -r requirements.txt)", _short(exc))
             _opencc = False
     return _opencc.convert(text) if _opencc else text
 

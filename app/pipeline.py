@@ -20,7 +20,8 @@ from app.parsers import (
     is_bilibili_url,
     parse_bilibili_video
 )
-from app.parsers.blocked import detect_blocked_page, is_error_title, reason_text
+from app.parsers.blocked import NO_PUBLIC_TEXT, detect_blocked_page, is_error_title, reason_text
+from app.parsers.dead_link import DeadLinkError, page_message, video_message
 from app.parsers.reel import is_video_reel_url, parse_video_reel
 from app.parsers.screen import screen_notes
 from app.parsers.transcript import TRANSCRIPT_MISSING, get_transcript
@@ -30,6 +31,7 @@ from app.providers.base import UnconfiguredProvider
 from app.arch_block import arch_body, check_arch, drop_arch, replace_arch, tidy_arch
 from app.config import settings
 from app.error_translate import mark_ai_failure
+from app.zh_text import fix_fields
 from app.parsers.github_repo import (TREE_HEADING, excerpts_in, fetch_excerpts, fetch_repo, files_in, files_section,
                                      repo_from_url)
 from app.schemas.intelligence import AnalysisFailedError, generate_structured_intelligence, usable_analysis
@@ -244,6 +246,16 @@ def _title_from_url(url: str) -> str:
 def video_failed_note(reason_line: str) -> str:
     return (f"⚠️ 擷取失敗：{reason_line}。只憑標題和說明欄猜不出影片講了什麼，所以沒有做 AI 分析。"
             "OmniKeep 會在 7 天內自動重抓，讀到逐字稿就補做分析。")
+
+
+def no_public_text_fields(url: str, platform: str, title: str = "") -> Dict[str, Any]:
+    """A social post that gave no public text: say so and what to do, never "無法解析" from the AI."""
+    from app.parsers.blocked import NO_PUBLIC_TEXT_HINT
+    generic = not title or title == f"{platform} 貼文" or is_error_title(title)
+    return {"title_l1": f"{platform} 貼文（讀不到內容）" if generic else title,
+            "summary_l1": f"{FETCH_FAILED_TAG}{platform} 沒有給公開的文字。{NO_PUBLIC_TEXT_HINT}",
+            "deep_analysis": f"> ⚠️ 擷取失敗：{platform} 沒有給這則貼文公開的文字，所以沒有做 AI 分析。{NO_PUBLIC_TEXT_HINT}",
+            "tech_tags": []}
 
 
 def fetch_failed_fields(url: str, reason_line: str, title: str = "", video: bool = False) -> Dict[str, Any]:
@@ -552,7 +564,7 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
     parsed: Dict[str, Any] = {
         "url": url, "content_raw": "", "cover_image": "", "author": "", "title": "",
         "original_title": "", "description": "", "raw_html": "", "fallback_summary": "",
-        "http_status": None, "transcript_status": "", "transcript_reason": "", "screen_text": "",
+        "http_status": None, "fetch_error": "", "transcript_status": "", "transcript_reason": "", "screen_text": "",
     }
     short_video = is_youtube_shorts_url(url) or is_video_reel_url(url)
     if short_video and not light:
@@ -566,6 +578,9 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
                       transcript_reason=reel_data.get("transcript_reason", ""))
     elif is_youtube_url(url):
         meta = await fetch_youtube_metadata(url)
+        if meta.get("unavailable"):
+            # nobody can watch it: no transcript to wait for, nothing to save
+            raise DeadLinkError(video_message(meta["unavailable"]))
         desc_text = meta.get("description", "").strip()
         desc_part = f"\n\n## 影片說明欄\n{desc_text}" if desc_text else ""
         # light (setup previews) stays on the page metadata; the full path reads what is said.
@@ -613,7 +628,8 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
                       original_title=page_data.get("title", ""),
                       fallback_summary=page_description,
                       raw_html=page_data.get("raw_html") or (page_data.get("meta") or {}).get("raw_html") or "",
-                      http_status=page_data.get("http_status"))
+                      http_status=page_data.get("http_status"),
+                      fetch_error=page_data.get("fetch_error") or "")
         repo = None if light else repo_from_url(url)
         if repo and parsed["content_raw"] and parsed.get("http_status") == 200:  # not for a 404 or an error page
             # the architecture diagram's cards link to real files (app/arch_block.py)
@@ -689,6 +705,13 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
         raw_html = parsed["raw_html"]
         fallback_summary = parsed["fallback_summary"] or fallback_summary
         description = page_description or parsed["description"]
+        if kind == "web" and not (page_title or page_description or user_note):
+            # A 404, a 410 or no such domain will not open later either: say so, save nothing.
+            # Sent from the browser (bookmarklet), the page did open there: a private repository.
+            dead = page_message(url, parsed.get("http_status"), parsed.get("fetch_error") or "")
+            if dead:
+                logger.warning("[Pipeline] %s: %s", url, dead)
+                raise DeadLinkError(dead)
         if kind in BLOCK_CHECKED_KINDS:
             blocked = detect_blocked_page(content_raw, parsed.get("http_status"))
 
@@ -703,6 +726,10 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                     titles.append(candidate)
             description = (page_description or "").strip()
             has_metadata = bool(titles or description or user_note)
+            if blocked == "no_public_text":
+                # the post's own title says nothing ("Instagram 貼文"): only what the owner's browser
+                # or the owner sent is worth analysing
+                has_metadata = bool(page_title or description or user_note)
             logger.warning("[Pipeline] %s: %s (%s)", url, reason_line,
                            "analysing title/description only" if has_metadata else "no AI analysis")
             if has_metadata:
@@ -952,7 +979,8 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
         prompt += interest_profile_block()
         ai_result = await _analyze_with_guardrails(primary, prompt)
 
-    # Extract fields with safe defaults
+    # Extract fields with safe defaults; Simplified Chinese the model slipped in becomes Traditional
+    ai_result = fix_fields(dict(ai_result or {}), ("title_l1", "summary_l1", "deep_analysis", "tech_tags"))
     category_name = manual_category or ai_result.get("category", "Inbox")
     if category_name not in category_names and category_name != "Inbox":
         category_name = "Inbox"
@@ -974,7 +1002,11 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
         tech_tags = []
     elif fetch_failed:
         video = parsed.get("transcript_status") == "failed"  # parsed: fetch_failed is only set for a URL
-        failed = fetch_failed_fields(url, reason_line, title=default_title if video else "", video=video)
+        platform = NO_PUBLIC_TEXT.get((content_raw or "").strip()) if blocked == "no_public_text" else None
+        if platform:
+            failed = no_public_text_fields(url, platform, default_title)
+        else:
+            failed = fetch_failed_fields(url, reason_line, title=default_title if video else "", video=video)
         title_l1, summary_l1, deep_analysis = failed["title_l1"], failed["summary_l1"], failed["deep_analysis"]
     elif evidence_note:
         summary_l1 = f"{METADATA_ONLY_TAG}{summary_l1}"

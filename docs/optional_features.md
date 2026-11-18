@@ -5,7 +5,7 @@
 | 功能 | 套件 | 怎麼安裝 | 沒裝的話 |
 |---|---|---|---|
 | 自動化 Chrome 登入、CDP cookie 橋接、網頁瀏覽器回退 | `playwright` | Windows：`requirements.txt` 會自動安裝。其他系統：不安裝 | 「設定 › 收錄管道 › 社群平台登入」會提示這台電腦沒有安裝 playwright、沒辦法開登入視窗；cookies.txt 匯入仍然可用 |
-| 本機語音轉錄（YouTube、Reels、Bilibili、X、Threads） | `faster-whisper`、`ctranslate2`、`opencc` | `pip install -r requirements-stt.txt` | Reels 改用雲端轉錄（主要 LLM 端點的 `whisper-1`，其次是 Gemini）；沒有字幕的 YouTube 影片標成擷取失敗；沒有字幕的 Bilibili 影片不會有逐字稿 |
+| 本機語音轉錄（YouTube、Reels、Bilibili、X、Threads） | `faster-whisper`、`ctranslate2` | `pip install -r requirements-stt.txt` | Reels 改用雲端轉錄（主要 LLM 端點的 `whisper-1`，其次是 Gemini）；沒有字幕的 YouTube 影片標成擷取失敗；沒有字幕的 Bilibili 影片不會有逐字稿 |
 | 長影片的畫面文字（OCR） | `scenedetect`、`opencv-python-headless`、`imagehash`、`rapidocr`、`onnxruntime` | 安裝腳本（`scripts/install.ps1`、`install.sh`）會自動裝；手動是 `pip install -r requirements-ocr.txt`。沒放進 `requirements.txt`，是為了 onnxruntime 還不支援的新版 Python 仍裝得起基本功能 | 跳過畫面層，log 記一行；逐字稿與分析照常 |
 
 ## playwright：只在 Windows 安裝

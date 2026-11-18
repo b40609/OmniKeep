@@ -96,7 +96,7 @@ def test_simplified_chinese_becomes_taiwan_traditional(monkeypatch, caplog):
     monkeypatch.setitem(__import__("sys").modules, "opencc", None)
     with caplog.at_level(logging.WARNING, logger="omnikeep.transcript"):
         assert tr.to_traditional("这个") == "这个" and tr.to_traditional("软件") == "软件"
-    assert sum("requirements-stt.txt" in r.getMessage() for r in caplog.records) == 1
+    assert sum("pip install -r requirements.txt" in r.getMessage() for r in caplog.records) == 1
 
 
 def test_no_subtitles_means_the_audio_is_transcribed(monkeypatch, isolated_runtime):

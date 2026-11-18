@@ -11,5 +11,5 @@ ctranslate2>=4,<5
 # Breeze-ASR-25, the model for Chinese, is fetched from a pinned revision (app/parsers/reel.py);
 # faster-whisper depends on it already.
 huggingface_hub>=0.21
-# large-v3-turbo and small write Simplified Chinese; turned into Taiwan Traditional (s2twp).
-opencc>=1.1,<2
+# large-v3-turbo and small write Simplified Chinese; turned into Taiwan Traditional (s2twp) by
+# opencc, which requirements.txt installs.

@@ -93,7 +93,8 @@ def _search() -> Dict[str, Any]:
         # 2026-11-18: OVHcloud's Qwen3-Embedding-8B found the right item first 85% of the time on the
         # 300-item test, as the best local model did; the limit is 2 queries a minute
         return _feature("search", "用意思找收藏", BASIC,
-                        f"用 {first.label} 的 {model}：找得跟最好的本機模型一樣準，但每分鐘只能查 2 次，超過時那次只比對關鍵字",
+                        f"用 {first.label} 的 {model}：找得跟最好的本機模型一樣準，但每分鐘只能查 2 次；"
+                        "同一分鐘第 3 次起只比對關鍵字，所以常搜尋的時候多半是在用關鍵字找",
                         _embedder_step("沒有次數限制的做法："))
     return _feature("search", "用意思找收藏", GOOD, f"用 {model}")
 

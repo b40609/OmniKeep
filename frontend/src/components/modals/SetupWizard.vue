@@ -7,10 +7,12 @@ import Button from '@/components/ui/button/Button.vue'
 import TelegramGuide from '@/components/settings/TelegramGuide.vue'
 import TelegramPairing from '@/components/settings/TelegramPairing.vue'
 import {
-  createAiConnection, getAiCatalog, getServiceStatus, getTelegramStatus, saveSettings, testAiDraft,
-  type AiCard, type AiTestResult, type TelegramStatus,
+  createAiConnection, getAiCatalog, getAiFeatures, getServiceStatus, getStats, getTelegramStatus, saveSettings, testAiDraft,
+  type AiCard, type AiFeature, type AiTestResult, type TelegramStatus,
 } from '@/lib/api'
-import { cardById, connectionDraft, formProblem, initialForm, isStarterCard, sameValues, type ConnectionDraft, type SetupForm } from '@/lib/setup'
+import {
+  cardById, connectionDraft, formProblem, guideStart, initialForm, isStarterCard, sameValues, type ConnectionDraft, type SetupForm,
+} from '@/lib/setup'
 import { TELEGRAM_TOKEN_EXAMPLE, tokenProblem } from '@/lib/telegramGuide'
 import { useUiStore } from '@/stores/ui'
 
@@ -19,11 +21,16 @@ import { useUiStore } from '@/stores/ui'
  * from the phone. Both parts can be skipped: a link is kept without an AI (it is analysed
  * once one is connected), and Telegram can be set up later in 設定 › 收錄管道.
  * Nothing is preselected; the cards that need no account or no key are listed first.
+ *
+ * A new install already has the no-signup services connected (app/ai_connections.py STARTER_CARDS),
+ * so on a first visit to an empty library the guide opens at a welcome instead: what works now and
+ * how well, then Telegram, then the first link. It is shown once per browser.
  */
 const ui = useUiStore()
 const LATER_KEY = 'omnikeep-setup-later'
+const WELCOMED_KEY = 'omnikeep-welcomed'
 
-type Step = 'choose' | 'connect' | 'telegram' | 'done'
+type Step = 'welcome' | 'choose' | 'connect' | 'telegram' | 'done'
 const step = ref<Step>('choose')
 const cards = ref<AiCard[]>([])
 const catalogError = ref('')
@@ -51,17 +58,39 @@ const values = computed(() => (card.value ? connectionDraft(card.value, form) : 
 const problem = computed(() => (card.value ? formProblem(card.value, form) : '請先選一個服務商'))
 const canSave = computed(() => !!result.value?.ok && !!values.value && sameValues(testedValues.value, values.value) && !saving.value)
 const modelChoices = computed(() => [...new Set([...(card.value?.models ?? []), ...(result.value?.models ?? [])])].slice(0, 200))
-const STEPS: { id: Step; label: string }[] = [
+/** The AI was already connected when the guide opened: it starts at the welcome. */
+const welcomeMode = ref(false)
+/** Where the guide opens next time it is shown. */
+const opening = ref<Step>('choose')
+const features = ref<AiFeature[]>([])
+const FEATURE_LEVEL = { good: '能用', basic: '基本', off: '沒開' } as const
+const SETUP_STEPS: { id: Step; label: string }[] = [
   { id: 'choose', label: '選 AI 服務' },
   { id: 'connect', label: '連線與測試' },
   { id: 'telegram', label: '接上 Telegram' },
   { id: 'done', label: '完成' },
 ]
-const stepIndex = computed(() => STEPS.findIndex((s) => s.id === step.value))
+const WELCOME_STEPS: { id: Step; label: string }[] = [
+  { id: 'welcome', label: 'AI 已接好' },
+  { id: 'telegram', label: '接上 Telegram' },
+  { id: 'done', label: '丟第一個連結' },
+]
+const STEPS = computed(() => (welcomeMode.value ? WELCOME_STEPS : SETUP_STEPS))
+const stepIndex = computed(() => STEPS.value.findIndex((s) => s.id === step.value))
+/** An AI is usable: connected before the guide opened, or saved in it. */
+const aiReady = computed(() => welcomeMode.value || aiSaved.value)
 /** An earlier step shows a tick only when it was really done, not when it was skipped. */
 function stepDone(index: number): boolean {
   if (index >= stepIndex.value) return false
-  return STEPS[index].id === 'telegram' ? telegramBound.value : aiSaved.value
+  return STEPS.value[index].id === 'telegram' ? telegramBound.value : aiReady.value
+}
+
+async function loadFeatures() {
+  try {
+    features.value = (await getAiFeatures()).features
+  } catch {
+    features.value = []
+  }
 }
 
 function choose(id: string) {
@@ -178,7 +207,13 @@ function later() {
 
 function openFullSettings() {
   ui.showSetupWizard = false
-  ui.openSettings(aiSaved.value ? 'channels' : 'ai')
+  ui.openSettings(aiReady.value ? 'channels' : 'ai')
+}
+
+/** 設定 › AI, where every feature lists the one step that makes it better. */
+function openUpgrades() {
+  ui.showSetupWizard = false
+  ui.openSettings('ai', '', 'features')
 }
 
 function addFirstLink() {
@@ -195,24 +230,61 @@ function onOpenChange(open: boolean) {
 watch(
   () => ui.showSetupWizard,
   (open) => {
-    if (!open) return
-    step.value = 'choose'
+    if (!open) {
+      // Seen once is enough: closing it any way at all counts.
+      if (welcomeMode.value) {
+        try {
+          localStorage.setItem(WELCOMED_KEY, '1')
+        } catch {
+          /* private mode */
+        }
+      }
+      return
+    }
+    welcomeMode.value = opening.value === 'welcome'
+    step.value = opening.value
+    opening.value = 'choose'
     aiSaved.value = false
-    loadCatalog()
+    if (welcomeMode.value) void loadFeatures()
+    else loadCatalog()
     if (cardId.value) choose(cardId.value)
   },
 )
 
-onMounted(async () => {
+function stored(storage: () => Storage, key: string): boolean {
   try {
-    if (sessionStorage.getItem(LATER_KEY)) return
+    return !!storage().getItem(key)
   } catch {
-    /* private mode: ask anyway */
+    return false // private mode: show it anyway
   }
+}
+
+onMounted(async () => {
+  const later = stored(() => sessionStorage, LATER_KEY)
+  if (later) return
   try {
     const status = await getServiceStatus()
+    let total: number | null = null
+    if (!status.needs_setup) {
+      try {
+        total = (await getStats()).total
+      } catch {
+        total = null
+      }
+    }
     // A key that cannot be decrypted is a different problem; the banner explains that one.
-    if (status.needs_setup && !status.undecryptable.length && !ui.showSettingsModal) ui.showSetupWizard = true
+    const start = guideStart({
+      needsSetup: status.needs_setup,
+      undecryptable: status.undecryptable.length,
+      total,
+      welcomed: stored(() => localStorage, WELCOMED_KEY),
+      later,
+      settingsOpen: ui.showSettingsModal,
+    })
+    if (start) {
+      opening.value = start
+      ui.showSetupWizard = true
+    }
   } catch {
     /* offline or signed out */
   }
@@ -227,8 +299,11 @@ onMounted(async () => {
           <Sparkles class="size-5" aria-hidden="true" />
         </div>
         <DialogHeader>
-          <DialogTitle>開始使用 OmniKeep</DialogTitle>
-          <DialogDescription class="text-sm">
+          <DialogTitle>{{ welcomeMode ? '歡迎使用 OmniKeep' : '開始使用 OmniKeep' }}</DialogTitle>
+          <DialogDescription v-if="welcomeMode" class="text-sm">
+            在 Telegram 把連結傳給機器人，OmniKeep 幫你讀完、寫成摘要，之後搜尋就找得到。AI 已經自動接好，接下來接上 Telegram，再丟第一個連結。
+          </DialogDescription>
+          <DialogDescription v-else class="text-sm">
             在 Telegram 把連結傳給機器人，OmniKeep 幫你讀完、寫成摘要，之後搜尋就找得到。先接上 AI，再接上 Telegram；兩步都可以略過，之後在「設定」補。
           </DialogDescription>
         </DialogHeader>
@@ -256,8 +331,31 @@ onMounted(async () => {
       </ol>
 
       <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 text-sm">
+        <!-- 0. The no-signup services are connected already: what works now, and how well -->
+        <template v-if="step === 'welcome'">
+          <p class="set-notice set-notice--ok flex items-start gap-2">
+            <CircleCheck class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>AI 已經自動接好：用不必註冊的免費服務，新的收藏會自動寫摘要和分類，不用先申請任何帳號。</span>
+          </p>
+          <div v-if="features.length">
+            <p class="set-label">目前能用的功能</p>
+            <ul class="divide-y divide-border rounded-lg border border-border">
+              <li v-for="f in features" :key="f.id" class="flex items-start justify-between gap-3 px-3 py-2.5">
+                <span class="min-w-0">
+                  <span class="block font-medium text-foreground">{{ f.name }}</span>
+                  <span class="block text-muted-foreground [overflow-wrap:anywhere]">{{ f.now }}</span>
+                </span>
+                <span class="set-status shrink-0" :class="{ 'set-status--ok': f.level === 'good' }">{{ FEATURE_LEVEL[f.level] }}</span>
+              </li>
+            </ul>
+          </div>
+          <p class="set-text">
+            現在就能用。哪一項想要更好，「設定 › AI」有每一項的升級方法，例如申請免費的 Google AI Studio 金鑰，分析會更完整。
+          </p>
+        </template>
+
         <!-- 1. Choose a provider card -->
-        <template v-if="step === 'choose'">
+        <template v-else-if="step === 'choose'">
           <p v-if="catalogError" class="set-error">無法讀取服務商清單：{{ catalogError }}</p>
           <p v-else-if="!cards.length" class="set-text">讀取中…</p>
           <p v-else class="set-text">
@@ -379,6 +477,7 @@ onMounted(async () => {
         <!-- 3. Telegram: token, then the one-time pairing link -->
         <template v-else-if="step === 'telegram'">
           <p v-if="aiSaved" class="set-notice set-notice--ok">已經接上 {{ card?.label }}，新的收藏會自動經過 AI 分析。</p>
+          <p v-else-if="welcomeMode" class="set-notice set-notice--ok">AI 已經自動接好，新的收藏會自動經過 AI 分析。</p>
           <p v-else class="set-notice">還沒有接上 AI：連結照樣能收藏，會標成「尚未分析」，之後接上 AI 就會補分析。</p>
           <p class="set-text">接上 Telegram 之後，在手機或電腦把連結傳給你的機器人，就會收進 OmniKeep。</p>
           <TelegramGuide />
@@ -417,8 +516,9 @@ onMounted(async () => {
         <!-- 4. Done -->
         <template v-else-if="step === 'done'">
           <ul class="space-y-3">
-            <li class="set-notice" :class="aiSaved ? 'set-notice--ok' : ''">
+            <li class="set-notice" :class="aiReady ? 'set-notice--ok' : ''">
               <template v-if="aiSaved">已經接上 {{ card?.label }}。新的收藏會自動經過 AI 分析。</template>
+              <template v-else-if="welcomeMode">AI 已經自動接好。新的收藏會自動經過 AI 分析；想要更好，到「設定 › AI」看升級方法。</template>
               <template v-else>還沒有接上 AI。連結照樣能收藏，會標成「尚未分析」；到「設定 › AI」接上之後會補分析。</template>
             </li>
             <li class="set-notice" :class="telegramBound ? 'set-notice--ok' : ''">
@@ -436,7 +536,11 @@ onMounted(async () => {
         <button v-if="step !== 'done'" type="button" class="set-button set-button--text -ml-2" @click="later">稍後再說</button>
         <button v-else type="button" class="set-button set-button--text -ml-2" @click="openFullSettings">開啟設定</button>
         <div class="flex flex-wrap gap-2">
-          <template v-if="step === 'choose'">
+          <template v-if="step === 'welcome'">
+            <Button variant="ghost" @click="openUpgrades">看升級方法</Button>
+            <Button @click="step = 'telegram'">下一步</Button>
+          </template>
+          <template v-else-if="step === 'choose'">
             <Button variant="ghost" @click="step = 'telegram'">先不接 AI</Button>
             <Button :disabled="!card" @click="step = 'connect'">下一步</Button>
           </template>
@@ -448,7 +552,8 @@ onMounted(async () => {
             </Button>
           </template>
           <template v-else-if="step === 'telegram'">
-            <Button v-if="!aiSaved" variant="ghost" @click="step = 'choose'">上一步</Button>
+            <Button v-if="welcomeMode" variant="ghost" @click="step = 'welcome'">上一步</Button>
+            <Button v-else-if="!aiSaved" variant="ghost" @click="step = 'choose'">上一步</Button>
             <Button v-if="telegramBound" @click="step = 'done'">下一步</Button>
             <Button v-else variant="ghost" @click="step = 'done'">略過這一步</Button>
           </template>

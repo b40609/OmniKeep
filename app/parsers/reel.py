@@ -601,6 +601,9 @@ async def parse_video_reel(url: str) -> Dict[str, Any]:
         elif any(host == d or host.endswith("." + d) for d in ("youtube.com", "youtu.be")):
             from app.parsers.youtube import fetch_youtube_metadata
             meta = await fetch_youtube_metadata(url)
+            if meta.get("unavailable"):
+                from app.parsers.dead_link import DeadLinkError, video_message
+                raise DeadLinkError(video_message(meta["unavailable"])) from e
             desc_val = meta.get("description", "")
             page = {
                 "url": url,

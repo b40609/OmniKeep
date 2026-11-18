@@ -5,6 +5,7 @@ import pytest
 
 from app import database as db
 from app.parsers.blocked import EMPTY_PLACEHOLDER, detect_blocked_page, is_error_title, reason_text
+from app.parsers.dead_link import DeadLinkError
 from app.pipeline import FETCH_FAILED_TAG, METADATA_ONLY_TAG, run_pipeline
 
 X_PAGE = ("We’ve detected that JavaScript is disabled in this browser. Please enable JavaScript or switch to a "
@@ -131,14 +132,48 @@ async def test_an_error_page_with_the_browser_view_is_analysed_from_that_only(fo
 
 
 @pytest.mark.asyncio
-async def test_a_404_with_no_body_is_marked_with_the_status(follow_ups):
+async def test_a_404_is_refused_with_the_reason_and_nothing_is_saved(follow_ups):
+    # 2026-11-18 trial: a GitHub 404 was saved as an empty item that promised a refetch
+    provider = _provider()
+    before = db.count_items()
+    with patch("app.pipeline.parse_web_page",
+               new=AsyncMock(return_value=_page(EMPTY_PLACEHOLDER, title="未知標題", status=404))), \
+         patch("app.pipeline.get_primary_provider", return_value=provider):
+        with pytest.raises(DeadLinkError, match="404") as caught:
+            await run_pipeline("https://github.com/made/up")
+    assert "打不開" in str(caught.value) and "書籤小工具" in str(caught.value)
+    provider.generate_json.assert_not_awaited()
+    assert db.count_items() == before
+
+
+@pytest.mark.asyncio
+async def test_a_404_sent_from_the_browser_is_kept_it_opened_there(follow_ups):
+    # a private repository: the bookmarklet sends what the owner's browser shows
     provider = _provider()
     with patch("app.pipeline.parse_web_page",
                new=AsyncMock(return_value=_page(EMPTY_PLACEHOLDER, title="未知標題", status=404))), \
          patch("app.pipeline.get_primary_provider", return_value=provider):
-        item = await run_pipeline("https://github.com/made/up")
-    provider.generate_json.assert_not_awaited()
-    assert item["summary_l1"].startswith(FETCH_FAILED_TAG) and "HTTP 404" in item["summary_l1"]
+        item = await run_pipeline("https://github.com/me/private", page_title="me/private: 我的私人專案")
+    assert item["id"]
+
+
+@pytest.mark.asyncio
+async def test_a_domain_that_does_not_exist_is_refused(follow_ups):
+    page = dict(_page(EMPTY_PLACEHOLDER, title="未知標題", status=None), fetch_error="dns")
+    with patch("app.pipeline.parse_web_page", new=AsyncMock(return_value=page)), \
+         patch("app.pipeline.get_primary_provider", return_value=_provider()):
+        with pytest.raises(DeadLinkError, match="找不到網域 no-such-place.example"):
+            await run_pipeline("https://no-such-place.example/test")
+
+
+@pytest.mark.asyncio
+async def test_a_page_that_may_open_later_is_still_kept_for_a_refetch(follow_ups):
+    for status in (403, 429, 500, None):
+        with patch("app.pipeline.parse_web_page",
+                   new=AsyncMock(return_value=_page(EMPTY_PLACEHOLDER, title="未知標題", status=status))), \
+             patch("app.pipeline.get_primary_provider", return_value=_provider()):
+            item = await run_pipeline(f"https://example.com/later-{status}")
+        assert item["summary_l1"].startswith(FETCH_FAILED_TAG)
 
 
 @pytest.mark.asyncio

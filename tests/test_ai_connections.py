@@ -482,6 +482,8 @@ def test_a_fresh_install_without_ollama_searches_by_meaning_through_a_no_signup_
     embeddings = next(s["entries"] for s in body["slots"] if s["id"] == "embeddings")
     assert [(cards[e["connection_id"]], e["model"]) for e in embeddings] == [("ovh", "Qwen3-Embedding-8B")]
     assert rows["search"]["level"] == "basic" and "每分鐘" in rows["search"]["now"]
+    # 2026-11-18 trial: searching often, most queries were matched by their words alone; say so
+    assert "常搜尋的時候多半是在用關鍵字找" in rows["search"]["now"]
 
 
 def test_search_upgrade_says_download_a_model_when_ollama_is_already_installed(monkeypatch):

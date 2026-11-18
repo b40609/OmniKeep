@@ -19,6 +19,7 @@ from app.database import (
     get_db_connection
 )
 from app.pipeline import run_pipeline
+from app.parsers.dead_link import DeadLinkError
 from app.parsers.reel import ReelUnavailableError, is_empty_reel_metadata
 from app.providers.openai_compatible import ProviderUnavailableError
 from app.bot.telegram_bot import (
@@ -410,7 +411,7 @@ class TaskWorker:
             logger.error(f"[Queue Worker] Task {task_id} failed on attempt {retry_count + 1}: "
                          f"{type(exc).__name__}: {exc}")
 
-            if isinstance(exc, (ProviderUnavailableError, ReelUnavailableError)):
+            if isinstance(exc, (ProviderUnavailableError, ReelUnavailableError, DeadLinkError)):
                 # A network access block is deterministic; avoid repeated paid API requests.
                 await self._fail_task(task_id, str(exc))
                 await _notify_task_failed(str(exc))

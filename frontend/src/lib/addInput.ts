@@ -118,6 +118,14 @@ export function explainFailure(message: string | null | undefined): string {
   return text
 }
 
+/**
+ * The address cannot be opened for good (a 404, no such domain, a video that is gone): the server
+ * saved nothing and said why (app/parsers/dead_link.py). Trying again will not help.
+ */
+export function isDeadLink(message: string | null | undefined): boolean {
+  return /^這(個網址|支 YouTube 影片)打不開/.test((message || '').trim())
+}
+
 /** Is this pasted text something a paste on the page should open the panel for? */
 export function isPastedLinks(text: string): boolean {
   return planAdd(text).kind === 'links'

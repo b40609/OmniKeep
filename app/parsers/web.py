@@ -217,6 +217,11 @@ async def parse_instagram_page(url: str) -> Dict[str, Any]:
     tw_title_tag = soup.find("meta", attrs={"name": "twitter:title"})
     tw_title = tw_title_tag["content"].strip() if tw_title_tag and tw_title_tag.get("content") else ""
 
+    # Instagram's login page instead of the post: its 「歡迎回到 Instagram。登入以查看…」 is not the post
+    # (2026-11-18 trial: a reel was saved under that title)
+    from app.parsers.blocked import LOGIN_WALL
+    raw_title, raw_desc, tw_title = ("" if LOGIN_WALL.search(v) else v for v in (raw_title, raw_desc, tw_title))
+
     cover_image = extract_meta_image(soup, url)
 
     # Extract author
@@ -304,6 +309,7 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
 
     html = ""
     http_status: Optional[int] = None
+    fetch_error = ""  # "dns": the host name does not resolve (app/parsers/dead_link.py)
     jar = site_cookies(url)  # only this site's cookies, also across redirects
     try:
         async with public_http_client(headers=BROWSER_HEADERS, cookies=jar, timeout=20.0, follow_redirects=True) as client:
@@ -312,7 +318,12 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
             if resp.status_code == 200:
                 html = resp.text
     except Exception as e:
-        logger.warning(f"[Web Parser] HTTP fetch failed ({e}), attempting Playwright fallback...")
+        from app.parsers.dead_link import is_dns_failure
+        if is_dns_failure(e):
+            fetch_error = "dns"
+            logger.warning(f"[Web Parser] {url}: no such domain ({e})")
+        else:
+            logger.warning(f"[Web Parser] HTTP fetch failed ({e}), attempting Playwright fallback...")
 
     # Extract structured article using trafilatura
     extracted_text = ""
@@ -333,8 +344,9 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
                 tag.decompose()
             extracted_text = soup.get_text(separator="\n\n", strip=True)
 
-    # Dynamic fallback to Playwright if page is empty or JavaScript protected
-    if not extracted_text or len(extracted_text.strip()) < 50:
+    # Dynamic fallback to Playwright if page is empty or JavaScript protected (a browser cannot
+    # open a domain that does not exist either)
+    if not fetch_error and (not extracted_text or len(extracted_text.strip()) < 50):
         pw_html = await fetch_page_with_playwright(url)
         if pw_html:
             html = pw_html
@@ -373,4 +385,5 @@ async def parse_web_page(url: str) -> Dict[str, Any]:
         "published_date": "",
         "raw_html": html or "",
         "http_status": http_status,  # of the plain HTTP fetch; None when it raised
+        "fetch_error": fetch_error,
     }

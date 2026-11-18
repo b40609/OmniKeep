@@ -20,6 +20,18 @@ RESIDUAL_LIMIT = 100
 
 # What parse_web_page() stores when it got no text at all.
 EMPTY_PLACEHOLDER = "（未能擷取到網頁內文）"
+# What the Instagram and Facebook parsers keep when the post gave no public text (app/parsers/web.py).
+NO_PUBLIC_TEXT = {
+    "（Instagram 貼文未提供公開文字說明）": "Instagram",
+    "（Facebook 貼文未提供公開文字說明）": "Facebook",
+}
+# What to do instead, shown with a post a server cannot read (2026-11-18 trial: an Instagram post
+# came back titled 「無法解析：Instagram 貼文無公開文字」 and nothing said what to do).
+NO_PUBLIC_TEXT_HINT = ("這類貼文通常要登入才看得到，伺服器讀不到。在瀏覽器打開貼文，用書籤小工具收藏；"
+                       "或把貼文文字複製下來，用「新增」貼成筆記。")
+# The login page Instagram answers with instead of the post.
+LOGIN_WALL = re.compile(r"登入以查看|登录以查看|log ?in to see|welcome back to instagram|歡迎回到 ?instagram",
+                        re.IGNORECASE)
 
 # Why the content is missing, phrased to follow "因為" in a note shown to the reader.
 REASONS = {
@@ -29,6 +41,7 @@ REASONS = {
     "not_found": "網頁不存在（404）",
     "http_error": "網站回應錯誤",
     "empty": "沒有擷取到任何內文",
+    "no_public_text": "貼文沒有公開的文字",
 }
 
 
@@ -113,6 +126,8 @@ def detect_blocked_page(text: str, http_status: Optional[int] = None) -> Optiona
     clean = (text or "").strip()
     if not clean or clean == EMPTY_PLACEHOLDER:
         return "http_error" if http_status and http_status >= 400 else "empty"
+    if clean in NO_PUBLIC_TEXT:
+        return "no_public_text"
     if len(clean) > MAX_CHARS:
         return None
 
@@ -150,5 +165,7 @@ def is_error_title(title: str) -> bool:
     lowered = clean.lower()
     if any(word in lowered for word in ("just a moment", "attention required", "access denied", "403 forbidden",
                                         "page not found", "404", "error", "請稍候", "请稍候")):
+        return True
+    if LOGIN_WALL.search(clean):
         return True
     return any(p.search(clean) for _, patterns in STRONG for p in patterns)

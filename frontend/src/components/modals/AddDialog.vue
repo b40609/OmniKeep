@@ -12,7 +12,7 @@ import { useUiStore } from '@/stores/ui'
 import { useItemsStore } from '@/stores/items'
 import { useExperimentsStore } from '@/stores/experiments'
 import { WATCH_CATEGORIES } from '@/lib/experiments'
-import { IMPORT_EXTENSIONS, describePlan, explainFailure, isPastedLinks, planAdd, submitLabel } from '@/lib/addInput'
+import { IMPORT_EXTENSIONS, describePlan, explainFailure, isDeadLink, isPastedLinks, planAdd, submitLabel } from '@/lib/addInput'
 
 /**
  * 新增: the one panel for adding things. What is typed, pasted or dropped decides
@@ -133,6 +133,8 @@ async function saveLinks(urls: string[]) {
   const failed: { url: string; why: string }[] = []
   let saved = 0
   let item: Item | undefined
+  /** The server put a single long video in the queue instead of reading it while the panel waits. */
+  let backgroundNote = ''
   for (const [index, url] of urls.entries()) {
     if (queued) progress.value = `正在送出第 ${index + 1} 個，共 ${urls.length} 個`
     try {
@@ -140,6 +142,7 @@ async function saveLinks(urls: string[]) {
       if (!data.success) throw new Error(data.detail || '')
       saved++
       item = data.item
+      if (!queued && data.status === 'queued') backgroundNote = data.message || '讀完後會出現在收件匣。'
     } catch (e) {
       failed.push({ url, why: reason(e) })
     }
@@ -149,6 +152,7 @@ async function saveLinks(urls: string[]) {
     text.value = ''
     close()
     if (queued) toast.success(`已排入 ${saved} 個連結`, { description: '讀完後會出現在收件匣。' })
+    else if (backgroundNote) toast.success('已排入背景處理', { description: backgroundNote })
     else if (item?.analysis_status === 'pending') toast.success('已收藏，尚未分析', { description: NOT_ANALYSED_HINT })
     else toast.success('已收藏', { description: item?.title_l1?.slice(0, 70) })
     if (item) ui.activeItem = item
@@ -157,7 +161,7 @@ async function saveLinks(urls: string[]) {
   // Keep what did not go through. Text that was only addresses is cut down to the failed ones.
   if (natural.value.kind === 'links') text.value = failed.map((f) => f.url).join('\n')
   error.value = urls.length === 1
-    ? `連結沒有收藏成功：${failed[0].why}。內容還在，可以再試一次。`
+    ? isDeadLink(failed[0].why) ? `${failed[0].why}。` : `連結沒有收藏成功：${failed[0].why}。內容還在，可以再試一次。`
     : `${failed.length} 個連結沒有送出（另外 ${saved} 個已排入）：${failed[0].why}。沒送出的還在，可以再試一次。`
 }
 

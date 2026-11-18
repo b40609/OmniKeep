@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 from app.error_translate import classify, failure_message, is_ai_failure
 from app.network import validate_url, UnsafeURL
+from app.parsers.dead_link import DeadLinkError
 from app.pipeline import run_pipeline
 from app.database import create_ingest_task
 
@@ -22,6 +23,24 @@ class IngestRequest(BaseModel):
     page_description: Optional[str] = None
     # Keep the text as a note even when it holds an address (the 新增 panel's choice).
     as_note: Optional[bool] = False
+
+
+# A video longer than this is read in the queue even when the caller waits for the result: the
+# 2026-11-18 trial's 2-hour video took over 2 minutes (subtitles, screen text, analysis) and the
+# caller gave up at 120 s. The web page's 新增 and the API wait; Telegram always uses the queue.
+LONG_VIDEO_SECONDS = 20 * 60
+
+
+async def _long_video(url: str) -> int:
+    """The length in seconds of a long YouTube video at this address, or 0 (not one, or not known)."""
+    from app.parsers.youtube import fetch_youtube_metadata, is_youtube_shorts_url, is_youtube_url
+    if not is_youtube_url(url) or is_youtube_shorts_url(url):
+        return 0
+    try:
+        duration = int((await fetch_youtube_metadata(url)).get("duration") or 0)
+    except Exception:
+        return 0
+    return duration if duration > LONG_VIDEO_SECONDS else 0
 
 
 def _page_hint(value: Optional[str], limit: int) -> str:
@@ -54,6 +73,18 @@ async def ingest_url(
             "message": "Content enqueued in persistent queue for two-stage analysis"
         }
 
+    if not as_note and not req.page_title and not req.page_description:
+        long_video = await _long_video(clean_input)
+        if long_video:
+            task = create_ingest_task(url=clean_input, source="api")
+            minutes = round(long_video / 60)
+            return {
+                "success": True,
+                "status": "queued",
+                "task_id": task["id"],
+                "message": f"影片約 {minutes} 分鐘，比較長，改在背景讀：讀完會出現在收件匣，通常要幾分鐘。",
+            }
+
     # Otherwise process and return full item
     try:
         item = await run_pipeline(clean_input, req.category,
@@ -67,6 +98,8 @@ async def ingest_url(
         }
     except UnsafeURL as exc:  # a redirect or an embedded link the pipeline refused
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DeadLinkError as exc:  # 404, no such domain, a removed video: nothing was saved
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Ingestion failed for %s", clean_input[:200])
         raise HTTPException(status_code=_failure_status(exc), detail=failure_message(exc)) from exc

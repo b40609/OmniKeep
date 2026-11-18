@@ -57,8 +57,14 @@ def test_playwright_is_declared_for_windows_only():
 
 def test_speech_to_text_stays_out_of_the_base_install():
     base, stt = _requirements("requirements.txt"), _requirements("requirements-stt.txt")
-    assert {"faster-whisper", "ctranslate2", "opencc"} <= set(stt)
-    assert not {"faster-whisper", "ctranslate2", "opencc"} & set(base)
+    assert {"faster-whisper", "ctranslate2"} <= set(stt)
+    assert not {"faster-whisper", "ctranslate2"} & set(base)
+
+
+def test_simplified_to_traditional_is_in_the_base_install():
+    # 2026-11-18 trial: titles such as 「从零手寫 GPT」 came out mixed because opencc came only with
+    # speech-to-text; the AI's own text needs it on every install (app/zh_text.py)
+    assert "opencc" in _requirements("requirements.txt")
 
 
 def test_frame_ocr_stays_out_of_the_base_install():

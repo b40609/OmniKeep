@@ -686,8 +686,11 @@ export function deleteCategory(name: string): Promise<void> {
 
 export interface IngestResult {
   success: boolean
+  /** "queued": read in the background (several links, or one long video); `message` says so. */
+  status?: 'completed' | 'queued'
   item?: Item
   detail?: string
+  message?: string
 }
 
 export interface IngestOptions {

@@ -35,6 +35,35 @@ export function isStarterCard(card: SetupCard): boolean {
   return !card.ended && (card.no_signup === true || card.key_mode === 'none')
 }
 
+/** Where the first-run guide opens by itself, or null when it stays closed. */
+export type GuideStart = 'choose' | 'welcome' | null
+
+export interface GuideFacts {
+  /** No usable analysis provider (GET /api/settings/status). */
+  needsSetup: boolean
+  /** Saved keys that cannot be decrypted: the banner explains that one instead. */
+  undecryptable: number
+  /** Items saved so far, or null when unknown. */
+  total: number | null
+  /** The welcome was already shown in this browser. */
+  welcomed: boolean
+  /** "稍後再說" in this browser session. */
+  later: boolean
+  settingsOpen: boolean
+}
+
+/**
+ * A new install connects the no-signup services by itself (2026-11-18), so "no AI yet" no longer
+ * catches a first visit: an empty library that has not seen the welcome does. With no AI at all
+ * the guide starts at choosing one, as before.
+ */
+export function guideStart(f: GuideFacts): GuideStart {
+  if (f.later || f.settingsOpen || f.undecryptable > 0) return null
+  if (f.needsSetup) return 'choose'
+  if (f.total === 0 && !f.welcomed) return 'welcome'
+  return null
+}
+
 export interface SetupForm {
   baseUrl: string
   apiKey: string
