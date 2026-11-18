@@ -325,7 +325,7 @@ async def test_embedding_custom_base_url_and_gemini_async_offload(monkeypatch):
 
     vec = await generate_embedding("semantic query test", is_query=True)
     assert len(vec) == 256
-    assert vec[0] == 0.25
+    assert abs(vec[0] - 1 / 16) < 1e-6  # re-normalised to unit length, as Ollama's vectors are
     assert captured["url"] == "https://custom-llm.example.com/v1/embeddings"
     assert captured["json"]["model"] == "text-embedding-3-small"
 

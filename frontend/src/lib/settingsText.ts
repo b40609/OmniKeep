@@ -46,11 +46,11 @@ export const SETTING_TEXT: Record<string, SettingText> = {
 
 /** AI task lists, by slot id (the server's own labels use older names). */
 export const SLOT_TEXT: Record<string, SettingText> = {
-  analysis: { label: '分析', help: '收藏的摘要、分類與剖析。' },
+  analysis: { label: '分析', help: '收藏的標題、摘要、分類與剖析，也負責 GitHub 架構圖和短影音畫面上的字。' },
   brain: { label: '提問', help: '用收藏的內容回答問題。清單用完後改用「分析」的清單。' },
   radar: { label: '探索', help: '探索的相關性評分與精選。清單用完或是空的，就用「分析」的清單。' },
   embeddings: { label: '語意搜尋', help: '把收藏轉成向量，供語意搜尋使用。換模型後，既有收藏要重建向量才找得到。' },
-  video: { label: '影片', help: '直接看影片內容來分析。空的時候改用字幕或語音轉錄的文字。' },
+  video: { label: '影片', help: '直接看 YouTube 影片的畫面和聲音，只有 Google AI Studio 的 Gemini 能做。空的時候改用字幕和畫面上的字。' },
 }
 
 export const AUDIT_ACTION_TEXT: Record<string, string> = {

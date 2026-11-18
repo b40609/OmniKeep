@@ -340,7 +340,7 @@ pip install -r requirements.txt
 
 # 選用：本機語音轉錄（YouTube、Reels、Bilibili、X、Threads），安裝後約多 213 MB
 pip install -r requirements-stt.txt
-# 選用：長影片的畫面文字（OCR），安裝後約多 165 MB
+# 長影片的畫面文字（OCR），安裝後約多 165 MB；安裝腳本會自動裝，手動安裝也建議裝
 pip install -r requirements-ocr.txt
 ```
 

@@ -147,6 +147,12 @@ install_requirements() {
   "$VENV_PYTHON" -m pip install --disable-pip-version-check -q -r "$INSTALL_DIR/requirements.txt"
 }
 act "pip install -r requirements.txt" install_requirements
+# Text on the screen of long videos (about 165 MB, no account). Kept out of requirements.txt so a
+# Python too new for onnxruntime still gets the base install; here a failure only leaves it off.
+install_ocr() {
+  "$VENV_PYTHON" -m pip install --disable-pip-version-check -q -r "$INSTALL_DIR/requirements-ocr.txt"     || note "長影片畫面文字沒裝成，其他功能照常；之後可以再跑 pip install -r requirements-ocr.txt。"
+}
+act "pip install -r requirements-ocr.txt（長影片畫面文字）" install_ocr
 
 # ── 4. 首次設定檔 ────────────────────────────────────────────────
 

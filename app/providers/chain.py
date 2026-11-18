@@ -87,6 +87,8 @@ class ChainProvider(BaseLLMProvider):
 
     def _order(self, method: str) -> List[Member]:
         able = [m for m in self.members if callable(getattr(m.provider, method, None))]
+        if method == "describe_image":
+            able = [m for m in able if getattr(m.provider, "vision", True) is not False]
         ready = [m for m in able if not ai_status.unusable(m.status_key)]
         return ready or able
 
@@ -107,6 +109,13 @@ class ChainProvider(BaseLLMProvider):
             except Exception as exc:
                 info = classify(exc)
                 last = exc
+                if method == "describe_image" and info["kind"] not in ("rate_limit", "server", "connection", "blocked"):
+                    # a model that cannot read this image may still analyse text well: no pause
+                    if index + 1 < len(order):
+                        logger.warning("[%s] %s could not read the image (%s: %s), trying %s", self.slot,
+                                       member.label or "connection", info["kind"], info["status"],
+                                       order[index + 1].label or "the next connection")
+                    continue
                 ai_status.bump_streak(member.status_key)
                 if info["kind"] == "rate_limit":
                     rate_limited = rate_limited or exc

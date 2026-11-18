@@ -216,9 +216,9 @@ CARDS: List[Dict[str, Any]] = [
         "key_mode": "none", "key_url": "", "no_signup": True,
         "cost": "免費（不用金鑰）",
         "limits": "每個 IP 每分鐘 60 次、每天 20,000 次、1,000 萬 token（回應標頭證實）。2026-11-17 實測一篇約 5 秒。",
-        "notes": "auto 由服務自己挑模型。",
+        "notes": "auto 由服務自己挑模型。不收圖片（2026-11-17 實測回 400），短影音畫面交給其他連線。",
         "min_interval": 1.0, "max_concurrency": 2,
-        "caps": {"json_mode": True, "embeddings": False},
+        "caps": {"json_mode": True, "embeddings": False, "vision": False},
         "verified": "2026-11-17",
     },
     {
@@ -243,7 +243,8 @@ CARDS: List[Dict[str, Any]] = [
         "notes": "預設推理設為 low。kilo-auto/free 由 Kilo 指派模型（實測是來源不明的 stealth 模型）。Nemotron 等推理型免費模型太慢，不建議。",
         "training_note": "免費路由的提示與回應會被記錄並用於訓練。",
         "min_interval": 18.0, "max_concurrency": 1,
-        "caps": {"json_mode": False, "embeddings": False, "extra_body": {"reasoning": {"effort": "low"}}},
+        "caps": {"json_mode": False, "embeddings": False, "vision": False,
+                 "extra_body": {"reasoning": {"effort": "low"}}},
         "verified": "2026-11-17",
     },
     {
@@ -252,10 +253,14 @@ CARDS: List[Dict[str, Any]] = [
         "models": ["gpt-oss-120b", "Meta-Llama-3_3-70B-Instruct"],
         "key_mode": "none", "key_url": "", "no_signup": True,
         "cost": "免費（不用金鑰）",
-        "limits": "每個 IP、每個模型每分鐘 2 次（回應標頭證實），適合當備援。2026-11-06 實測 gpt-oss-120b 一篇約 32 秒。",
+        "limits": "每個 IP、每個模型每分鐘 2 次（回應標頭證實），適合當備援。2026-11-06 實測 gpt-oss-120b 一篇約 32 秒；語意搜尋的 Qwen3-Embedding-8B 一次查詢約 1.5 秒（2026-11-18）。",
         "notes": "法國 OVHcloud，官方說不拿來訓練、不留存資料。帶任何金鑰都會被拒，所以不用填。",
         "min_interval": 31.0, "max_concurrency": 1,
-        "caps": {"json_mode": True, "embeddings": False, "context": 131072},
+        # gpt-oss-120b reads no images; Qwen3.6-27B on the same service does (2026-11-18 test)
+        # Qwen3-Embedding-8B on the same service: recall@1 0.853 on the 300-item test, the same as the
+        # best local model (2026-11-18), so a fresh install searches by meaning with no Ollama
+        "caps": {"json_mode": True, "embeddings": True, "embedding_model": "Qwen3-Embedding-8B",
+                 "context": 131072, "vision_model": "Qwen3.6-27B"},
         "verified": "2026-11-06",
     },
     {

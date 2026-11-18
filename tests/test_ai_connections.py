@@ -437,6 +437,94 @@ def test_a_fresh_install_can_analyse_with_no_account(monkeypatch):
     assert ai_connections.migrate_legacy() is False  # and only once: deleting them later sticks
 
 
+def test_a_fresh_install_shows_what_is_basic_and_how_to_improve_it(monkeypatch):
+    monkeypatch.setattr(ai_connections, "STARTER_CARDS", ("flm", "jarvisclaw", "kilo", "ovh"))
+    with TestClient(app) as client:
+        body = client.get("/api/ai/features", headers=HEADERS).json()
+        rows = {f["id"]: f for f in body["features"]}
+        assert rows["analysis"]["level"] == "basic" and rows["analysis"]["card"] == "gemini"
+        assert rows["video"]["level"] == "off" and rows["video"]["card"] == "gemini"
+        assert rows["reel_frames"]["level"] == "good"  # JarvisClaw and OVHcloud read images
+        assert "分析" in body["summary"]
+        # the Gemini key the owner sets up goes ahead of the no-signup services
+        client.post("/api/ai/connections", headers=HEADERS,
+                    json={"card": "gemini", "key": "AIza" + "x" * 35, "slot": "analysis"})
+        after = client.get("/api/ai/connections", headers=HEADERS).json()
+        cards = {c["id"]: c["card"] for c in after["connections"]}
+        analysis = next(s["entries"] for s in after["slots"] if s["id"] == "analysis")
+        assert [cards[e["connection_id"]] for e in analysis] == ["gemini", "flm", "jarvisclaw", "kilo", "ovh"]
+        rows = {f["id"]: f for f in client.get("/api/ai/features", headers=HEADERS).json()["features"]}
+    assert rows["analysis"]["level"] == "good" and "step" not in rows["analysis"]
+
+
+def test_a_connection_added_to_a_list_with_accounts_goes_last(two_agnes):
+    with TestClient(app) as client:
+        client.post("/api/ai/connections", headers=HEADERS, json={"card": "ovh", "slot": "analysis"})
+        after = client.get("/api/ai/connections", headers=HEADERS).json()
+    cards = {c["id"]: c["card"] for c in after["connections"]}
+    analysis = next(s["entries"] for s in after["slots"] if s["id"] == "analysis")
+    assert [cards[e["connection_id"]] for e in analysis] == ["agnes", "agnes", "ovh"]
+
+
+def test_no_ai_at_all_says_so_on_every_ai_feature():
+    with TestClient(app) as client:
+        rows = {f["id"]: f for f in client.get("/api/ai/features", headers=HEADERS).json()["features"]}
+    assert rows["analysis"]["level"] == "off" and rows["reel_frames"]["level"] == "off"
+
+
+def test_a_fresh_install_without_ollama_searches_by_meaning_through_a_no_signup_service(monkeypatch):
+    monkeypatch.setattr(ai_connections, "STARTER_CARDS", ("flm", "jarvisclaw", "kilo", "ovh"))
+    monkeypatch.setattr(ai_connections, "_ollama_expected", lambda url, field: False)
+    with TestClient(app) as client:
+        body = client.get("/api/ai/connections", headers=HEADERS).json()
+        rows = {f["id"]: f for f in client.get("/api/ai/features", headers=HEADERS).json()["features"]}
+    cards = {c["id"]: c["card"] for c in body["connections"]}
+    embeddings = next(s["entries"] for s in body["slots"] if s["id"] == "embeddings")
+    assert [(cards[e["connection_id"]], e["model"]) for e in embeddings] == [("ovh", "Qwen3-Embedding-8B")]
+    assert rows["search"]["level"] == "basic" and "每分鐘" in rows["search"]["now"]
+
+
+async def test_a_keyless_embedding_service_gets_its_query_format_and_no_key(monkeypatch):
+    from app import vector
+    sent = {}
+
+    class Resp:
+        status_code = 200
+        def json(self):
+            return {"data": [{"embedding": [3.0, 4.0] + [0.0] * 2000}]}
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, url, headers, json):
+            sent.update(headers=headers, body=json)
+            return Resp()
+
+    monkeypatch.setattr("app.network.public_http_client", lambda timeout: Client())
+    vec = await vector._remote_embedding("寫程式的工具", 1024, "https://x.example/v1/embeddings", "dummy-key",
+                                         "Qwen3-Embedding-8B", is_query=True)
+    assert "Authorization" not in sent["headers"]
+    assert sent["body"]["input"].startswith("Instruct:") and sent["body"]["input"].endswith("寫程式的工具")
+    assert len(vec) == 1024 and abs(vec[0] - 0.6) < 1e-6  # cut to the stored width and re-normalised
+
+
+async def test_a_no_signup_search_service_at_its_limit_raises_no_alarm(monkeypatch):
+    from app import vector
+
+    class Resp:
+        status_code, text = 429, '{"message":"rate limited"}'
+
+    class Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, url, headers, json): return Resp()
+
+    monkeypatch.setattr("app.network.public_http_client", lambda timeout: Client())
+    assert await vector._remote_embedding("x", 1024, "https://x.example/v1/embeddings", "dummy-key",
+                                          "Qwen3-Embedding-8B", status_key="c77") is None
+    assert "c77" not in ai_status.snapshot()
+
+
 def test_settings_from_an_older_version_get_no_starters(monkeypatch):
     monkeypatch.setattr(ai_connections, "STARTER_CARDS", ("kilo", "ovh"))
     monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://apihub.agnes-ai.com/v1")
@@ -531,6 +619,55 @@ async def test_answers_in_the_wrong_shape_pause_a_connection_from_the_second_in_
     status = ai_status.snapshot()[primary_key]
     assert 0 < status["cooldown_seconds"] <= 600 and "格式不對" in status["cooldown_reason"]
     assert await chain.generate_json("x") == {"from": "backup"} and fakes["primary"].calls == 2
+
+
+class Eyes(Fake):
+    def __init__(self, label, outcomes, images=(), vision=True):
+        super().__init__(label, outcomes)
+        self.images, self.vision, self.seen = list(images), vision, 0
+
+    async def describe_image(self, image, prompt, mime_type="image/jpeg"):
+        self.seen += 1
+        outcome = self.images.pop(0) if self.images else f"{self.label} saw it"
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+async def test_a_service_that_takes_no_images_is_never_sent_one(two_agnes):
+    fakes, primary_key, _ = two_agnes
+    fakes["primary"] = Eyes("primary", [], vision=False)
+    fakes["backup"] = Eyes("backup", [])
+    chain = providers.get_primary_provider()
+    assert await chain.describe_image(b"img", "read") == "backup saw it"
+    assert fakes["primary"].seen == 0
+    assert await chain.generate_json("x") == {"from": "primary"}  # still first for analysis
+
+
+async def test_a_refused_image_does_not_pause_a_connection_for_analysis(two_agnes):
+    fakes, primary_key, _ = two_agnes
+    refused = lambda: _status_error(openai.BadRequestError, 400, "image input is not supported")
+    fakes["primary"] = Eyes("primary", [], images=[refused(), refused(), refused()])
+    fakes["backup"] = Eyes("backup", [])
+    chain = providers.get_primary_provider()
+    for _ in range(3):
+        assert await chain.describe_image(b"img", "read") == "backup saw it"
+    assert ai_status.snapshot().get(primary_key, {}).get("cooldown_seconds", 0) == 0
+    assert await chain.generate_json("x") == {"from": "primary"}
+
+
+def test_no_account_cards_say_which_can_read_images():
+    from app import provider_catalog
+    from app.providers import build_provider as real_build
+    from app.ai_connections import Connection
+    def built(card_id):
+        c = provider_catalog.card(card_id)
+        return real_build(Connection(id=1, card=card_id, kind=c["kind"], label=c["label"], base_url=c["base_url"],
+                                     model=c["model"]))  # caps left empty: an older connection
+    assert built("flm").vision is False and built("kilo").vision is False
+    assert built("jarvisclaw").vision is True
+    ovh = built("ovh")
+    assert ovh.vision is True and ovh.vision_model == "Qwen3.6-27B" and ovh.model == "gpt-oss-120b"
 
 
 async def test_a_paused_connection_comes_back_by_itself(two_agnes):

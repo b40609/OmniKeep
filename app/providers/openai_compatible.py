@@ -100,7 +100,8 @@ def json_part(raw: str) -> str:
 class OpenAICompatibleProvider(BaseLLMProvider):
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None, model: Optional[str] = None,
                  rate_limiter=None, status_key: str = "llm", label: str = "", json_mode: bool = True,
-                 extra_body: Optional[Dict[str, Any]] = None):
+                 extra_body: Optional[Dict[str, Any]] = None, vision: bool = True,
+                 vision_model: Optional[str] = None):
         """With no arguments: the settings that predate connections (OPENAI_*), paced by the
         shared limiter. A connection (app/ai_connections.py) passes its own address, key
         (never empty: a keyless local server gets a placeholder), limiter and status key.
@@ -114,6 +115,11 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         self.label = label
         self.json_mode = json_mode
         self.extra_body = dict(extra_body) if extra_body else None
+        # False: the service takes no images, so the chain never sends it one (a refused image
+        # used to count as a bad answer and pause the connection for analysis as well).
+        # vision_model: the model on the same service that reads images, when the main one cannot.
+        self.vision = vision
+        self.vision_model = vision_model
 
         self.client = AsyncOpenAI(
             base_url=self.base_url,
@@ -172,7 +178,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         import base64
         url = f"data:{mime_type};base64,{base64.b64encode(image).decode('ascii')}"
         response = await self._chat(
-            model=self.model,
+            model=self.vision_model or self.model,
             messages=[{"role": "user", "content": [{"type": "text", "text": prompt},
                                                    {"type": "image_url", "image_url": {"url": url}}]}],
             temperature=0.1,

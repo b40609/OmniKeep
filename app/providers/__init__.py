@@ -53,8 +53,13 @@ def build_provider(conn, model: Optional[str] = None) -> BaseLLMProvider:
         base_url += "/v1"  # Ollama's OpenAI-compatible endpoint
     from app.ai_connections import extra_body_for
     # Never fall back to OPENAI_API_KEY: a keyless (local) server gets a placeholder.
+    # image reading: a connection made before the card knew it still gets the card's answer
+    from app import provider_catalog
+    card_caps = (provider_catalog.card(conn.card) or {}).get("caps", {}) if getattr(conn, "card", "") else {}
+    sees = conn.caps.get("vision", card_caps.get("vision", True)) is not False
     return OpenAICompatibleProvider(base_url=base_url, api_key=conn.key or "dummy-key", model=model,
                                     json_mode=conn.caps.get("json_mode", True) is not False,
+                                    vision=sees, vision_model=conn.caps.get("vision_model") or card_caps.get("vision_model"),
                                     extra_body=extra_body_for(conn, model), **common)
 
 

@@ -257,13 +257,15 @@ def _caps(value: Any, errors: Dict[str, str]) -> Dict[str, Any]:
         errors["caps"] = "格式不對"
         return {}
     out: Dict[str, Any] = {}
-    for flag in ("json_mode", "embeddings", "video"):
+    for flag in ("json_mode", "embeddings", "video", "vision"):
         if flag in value:
             out[flag] = bool(value[flag])
     if "context" in value:
         context = _number(value["context"], int, 0, 10_000_000, "caps", errors)
         if context is not None:
             out["context"] = context
+    if "vision_model" in value:
+        out["vision_model"] = _text(value["vision_model"], 200, "caps", errors)
     if "embedding_model" in value:
         out["embedding_model"] = _text(value["embedding_model"], 200, "caps", errors)
     if "thinking_level" in value:
@@ -469,10 +471,14 @@ def create(data: Dict[str, Any], slot: Optional[str] = None) -> Connection:
         connection_id = _insert(db, values)
         _audit(db, f"ai_connection:{connection_id}", "set")
         if slot:
-            position = db.execute("SELECT COALESCE(MAX(position) + 1, 0) FROM ai_slots WHERE slot = ?",
-                                  (slot,)).fetchone()[0]
-            db.execute("INSERT INTO ai_slots (slot, position, connection_id, model) VALUES (?, ?, ?, '')",
-                       (slot, position, connection_id))
+            rows = _slot_ids(db, slot)
+            if rows and not _no_signup(values["card"]) and all(_no_signup(_card_of(db, cid)) for cid, _ in rows):
+                # an account the owner just set up goes ahead of the no-signup starters: that is
+                # why they set it up (設定 › AI › 目前能用的功能)
+                _put_slot(db, slot, [(connection_id, "")] + rows)
+            else:
+                db.execute("INSERT INTO ai_slots (slot, position, connection_id, model) VALUES (?, ?, ?, '')",
+                           (slot, len(rows), connection_id))
     logger.info("AI connection %s added (%s)", connection_id, values["card"])
     _changed(f"c{connection_id}")
     push_brain_settings()
@@ -762,10 +768,19 @@ STARTER_CARDS = ("flm", "jarvisclaw", "kilo", "ovh")
 
 def _add_starters() -> None:
     for card_id in STARTER_CARDS:
-        if provider_catalog.card(card_id) is None:
+        card = provider_catalog.card(card_id)
+        if card is None:
             continue
         try:
-            create({"card": card_id}, slot="analysis")
+            conn = create({"card": card_id}, slot="analysis")
+            # search by meaning too, when no local Ollama took that job (2026-11-18: OVHcloud's
+            # Qwen3-Embedding-8B finds as well as the best local model; 2 queries a minute, a
+            # search over that is matched by its words alone)
+            embedder = (card.get("caps") or {}).get("embedding_model")
+            if embedder and not slots()["embeddings"]:
+                with _lock, closing(get_db_connection()) as db, db:
+                    _put_slot(db, "embeddings", [(conn.id, embedder)])
+                _changed()
         except Exception as exc:  # a card that changed shape must not stop the start-up
             logger.warning("Could not add the no-account service %s (%s: %s)", card_id, type(exc).__name__, exc)
 
@@ -782,6 +797,15 @@ LEGACY_KEYS = frozenset({
 def _by_origin(db, origin: str) -> Optional[int]:
     row = db.execute("SELECT id FROM ai_connections WHERE origin = ? ORDER BY id LIMIT 1", (origin,)).fetchone()
     return row["id"] if row else None
+
+
+def _no_signup(card_id: Optional[str]) -> bool:
+    return bool((provider_catalog.card(card_id or "") or {}).get("no_signup"))
+
+
+def _card_of(db, connection_id: int) -> Optional[str]:
+    row = db.execute("SELECT card FROM ai_connections WHERE id = ?", (connection_id,)).fetchone()
+    return row["card"] if row else None
 
 
 def _slot_ids(db, slot: str) -> List[Tuple[int, str]]:

@@ -515,6 +515,21 @@ export function getAiCatalog(): Promise<{ verified: string; cards: AiCard[] }> {
   return request<{ verified: string; cards: AiCard[] }>('/api/ai/catalog')
 }
 
+/** 設定 › AI: what works now, how well, and the one step that makes a feature better (app/capabilities.py). */
+export interface AiFeature {
+  id: string
+  name: string
+  level: 'good' | 'basic' | 'off'
+  now: string
+  step?: string
+  /** A provider card the page opens a new connection on. */
+  card?: string
+}
+
+export function getAiFeatures(): Promise<{ features: AiFeature[]; summary: string | null }> {
+  return request<{ features: AiFeature[]; summary: string | null }>('/api/ai/features')
+}
+
 export function getAiConnections(): Promise<AiOverview> {
   return request<AiOverview>('/api/ai/connections')
 }

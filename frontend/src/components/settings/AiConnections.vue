@@ -7,6 +7,7 @@ import Select from '@/components/ui/select/Select.vue'
 import ConfirmDialog from '@/components/ui/confirm/ConfirmDialog.vue'
 import SettingBlock from './SettingBlock.vue'
 import AiConnectionEditor from './AiConnectionEditor.vue'
+import AiFeatures from './AiFeatures.vue'
 import type { AiEditor } from './aiEditor'
 import { useSettingsForm } from '@/composables/useSettingsForm'
 import { SLOT_TEXT } from '@/lib/settingsText'
@@ -79,8 +80,20 @@ function focusLinkedCard() {
   if (card) startNew(card)
 }
 
+const featuresRef = ref<InstanceType<typeof AiFeatures> | null>(null)
+
+/** 目前能用的功能 → 新增這條連線: a new connection on that card, put in the slot it improves. */
+function upgrade(cardId: string, slot: AiSlotId) {
+  const card = cardOf(cardId)
+  if (!card) return
+  startNew(card)
+  if (editor.value) editor.value.slot = slot
+  requestAnimationFrame(() => document.getElementById('settings-connections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
+
 function apply(next: AiOverview) {
   overview.value = next
+  featuresRef.value?.reload()
   for (const slot of next.slots) slotDraft[slot.id] = slot.entries.map((e) => ({ ...e }))
   slotErrors.value = {}
 }
@@ -389,8 +402,8 @@ watch(() => !!editor.value || slotsDirty.value, (dirty) => (form.extraDirty.valu
 onUnmounted(() => (form.extraDirty.value = false))
 
 function emptySlotText(slot: AiSlotId) {
-  if (slot === 'analysis') return '空的：沿用舊版的主要 AI 設定。'
-  if (slot === 'embeddings') return '空的：沿用舊設定（本機 Ollama，再來是 OpenAI 相容服務）。'
+  if (slot === 'analysis') return overview.value?.legacy_active ? '空的：用舊版的主要 AI 設定。' : '空的：新收藏先存原文，接上連線後可以補分析。'
+  if (slot === 'embeddings') return '空的：先試這台電腦的 Ollama，沒有就只比對關鍵字。'
   if (slot === 'video') return '空的：用字幕或本機語音轉錄的文字來分析。'
   return '空的：和「分析」用同一份清單。'
 }
@@ -410,6 +423,8 @@ defineExpose({ refresh })
       <p v-else-if="overview.needs_setup" class="set-notice set-notice--warn mt-6">
         還沒有可以做分析的連線。新增一條，並加到「分析」。
       </p>
+
+      <AiFeatures ref="featuresRef" @upgrade="upgrade" />
 
       <!-- Connections -->
       <SettingBlock id="connections" title="AI 連線" description="一條連線是一組位址、模型和金鑰。同一個服務有兩把金鑰時各建一條，加到同一個用途就會輪流備援。">

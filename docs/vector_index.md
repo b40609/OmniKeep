@@ -29,6 +29,18 @@
 
   數據與腳本在 `backups/local-runtime-poc-20261114/round3`（不進 repo）。
 
+- 2026-11-18 用同一批 300 篇、同樣的口語查詢，補測不用裝 Ollama 的選項：
+
+  | 選項 | 第一名命中 | 備註 |
+  | --- | --- | --- |
+  | OVHcloud 免註冊 `Qwen3-Embedding-8B`（1024 維） | 0.853 | 跟本機 qwen3-embedding:8b 一樣；每個 IP 每分鐘 2 次，一次查詢約 1.5 秒 |
+  | fastembed `Qwen/Qwen3-Embedding-0.6B-Q` | 0.747 | 1.1 GB，CPU 上一次查詢約 2 秒 |
+  | fastembed `jinaai/jina-embeddings-v2-base-zh` | 0.61 | 0.64 GB |
+  | fastembed `BAAI/bge-small-zh-v1.5` | 0.573 | 90 MB，最快 |
+  | 本機雜湊（`local-hash-v1`，沒有任何向量服務時） | 0.047 | 等於只比對關鍵字 |
+
+  所以全新安裝、這台電腦又沒有 Ollama 時，語意搜尋預設用 OVHcloud 的 `Qwen3-Embedding-8B`（`app/ai_connections.py` 的 `_add_starters`）。超過每分鐘 2 次時，那一次查詢只比對關鍵字；沒拿到向量的收藏，背景回填下一輪會補上。設定 › AI ›「目前能用的功能」會寫明這個限制，裝 Ollama 就沒有。
+
 ## 什麼時候需要處理
 
 - **從 2026-11-03（`a7954f4`）之前的版本升級**：舊版遇到沒金鑰或端點失敗時，會用本機雜湊算向量，卻標成 `text-embedding-3-small`。舊版的端點又固定是 `api.openai.com`，用 DeepSeek、Ollama 等相容服務時一律失敗，所以舊資料很可能全是這種向量。

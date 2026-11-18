@@ -263,16 +263,20 @@ async def _ollama_embedding(clean_text: str, dim: int, is_query: bool, base_url:
 
 
 async def _remote_embedding(clean_text: str, dim: int, api_url: str, api_key: str, model: str,
-                            status_key: str = "embeddings", label: str = "") -> Optional[List[float]]:
-    """One OpenAI-compatible /embeddings request (public addresses only)."""
+                            status_key: str = "embeddings", label: str = "",
+                            is_query: bool = False) -> Optional[List[float]]:
+    """One OpenAI-compatible /embeddings request (public addresses only). Queries go in the
+    model's own format, as with Ollama. A keyless service gets no Authorization header
+    (OVHcloud refuses any key)."""
     try:
         from app.network import public_http_client
+        keyless = not api_key or api_key == "dummy-key"
         async with public_http_client(timeout=15.0) as client:
             resp = await client.post(
                 api_url,
-                headers={"Authorization": f"Bearer {api_key}"},
+                headers={} if keyless else {"Authorization": f"Bearer {api_key}"},
                 json={
-                    "input": clean_text,
+                    "input": query_text(model, clean_text) if is_query else clean_text,
                     "model": model,
                     "dimensions": dim
                 }
@@ -281,8 +285,14 @@ async def _remote_embedding(clean_text: str, dim: int, api_url: str, api_key: st
                 data = resp.json()
                 vec = data["data"][0]["embedding"]
                 ai_status.record_success(status_key, label)
-                return list(vec[:dim])
+                return _normalized(list(vec), dim) if len(vec) >= dim else list(vec)
             body = (getattr(resp, "text", "") or "")[:200]
+            if keyless and resp.status_code == 429:
+                # a no-signup service's per-minute limit (OVHcloud: 2 a minute) is expected: this
+                # search matches by words alone, an item is indexed by the next backfill, and no
+                # banner should say the service is down
+                logger.info("[Vector] %s is at its per-minute limit; this one goes without a vector", label or api_url)
+                return None
             ai_status.record_failure(status_key, resp.status_code, body, label)
             logger.warning(
                 "[Vector] Embedding request to %s returned HTTP %s, using the next fallback: %s",
@@ -345,7 +355,8 @@ async def generate_embedding_with_model(text: str, is_query: bool = False) -> Tu
                                               conn.status_key, conn.label)
             else:
                 vec = await _remote_embedding(clean_text, model_dim(model), f"{conn.base_url.rstrip('/')}/embeddings",
-                                              conn.key or "dummy-key", model, conn.status_key, conn.label)
+                                              conn.key or "dummy-key", model, conn.status_key, conn.label,
+                                              is_query=is_query)
             if vec is not None:
                 return vec, model
         return _deterministic_local_embedding(clean_text, dim), LOCAL_EMBEDDING_MODEL
@@ -363,7 +374,8 @@ async def generate_embedding_with_model(text: str, is_query: bool = False) -> Tu
     # 2. OpenAI-compatible endpoint
     if api_key and not getattr(settings, "OMNIKEEP_TESTING", False):
         remote_model = remote_embedding_model()
-        vec = await _remote_embedding(clean_text, model_dim(remote_model), embeddings_api_url(), api_key, remote_model)
+        vec = await _remote_embedding(clean_text, model_dim(remote_model), embeddings_api_url(), api_key, remote_model,
+                                      is_query=is_query)
         if vec is not None:
             return vec, remote_model
 

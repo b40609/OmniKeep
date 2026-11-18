@@ -212,6 +212,16 @@ Invoke-Action 'pip install -r requirements.txt' {
     Invoke-Native $VenvPython @('-m', 'pip', 'install', '--disable-pip-version-check', '-q', '--upgrade', 'pip')
     Invoke-Native $VenvPython @('-m', 'pip', 'install', '--disable-pip-version-check', '-q', '-r', (Join-Path $InstallDir 'requirements.txt'))
 }
+# Text on the screen of long videos (about 165 MB, no account, nothing downloaded at run time). Kept
+# out of requirements.txt so a Python too new for onnxruntime still gets the base install; here a
+# failure only leaves that feature off.
+Invoke-Action 'pip install -r requirements-ocr.txt（長影片畫面文字）' {
+    try {
+        Invoke-Native $VenvPython @('-m', 'pip', 'install', '--disable-pip-version-check', '-q', '-r', (Join-Path $InstallDir 'requirements-ocr.txt'))
+    } catch {
+        Write-Note "長影片畫面文字沒裝成（$($_.Exception.Message)），其他功能照常；之後可以再跑 pip install -r requirements-ocr.txt。"
+    }
+}
 
 # ── 4. 首次設定檔 ────────────────────────────────────────────────
 

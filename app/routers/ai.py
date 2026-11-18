@@ -168,6 +168,13 @@ async def test_connection(connection_id: int, body: Optional[TestBody] = None,
     return result
 
 
+@router.get("/features")
+async def get_features():
+    """What works now, how well, and the one step that makes each feature better (app/capabilities.py)."""
+    from app import capabilities
+    return {"features": capabilities.features(), "summary": capabilities.summary()}
+
+
 @router.get("/slots")
 async def get_slots():
     return ai_connections.describe_slots()
