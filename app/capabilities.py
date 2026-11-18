@@ -6,6 +6,9 @@ says plainly how good it is now, measured where there is a measurement, and the 
 it better. Nothing here calls a model or the network: it reads the connections and what is installed.
 """
 import importlib.util
+import os
+import shutil
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app import ai_connections, provider_catalog
@@ -39,6 +42,24 @@ def _installed(*modules: str) -> bool:
     return all(importlib.util.find_spec(m) is not None for m in modules)
 
 
+def _ollama_installed() -> bool:
+    """Whether Ollama is on this machine (its program, not whether it runs: no network here)."""
+    if shutil.which("ollama"):
+        return True
+    local = os.environ.get("LOCALAPPDATA")
+    places = [Path("/Applications/Ollama.app"), Path("/usr/local/bin/ollama")]
+    if local:
+        places.append(Path(local) / "Programs" / "Ollama" / "ollama.exe")
+    return any(p.exists() for p in places)
+
+
+def _embedder_step(prefix: str = "") -> str:
+    # 2026-11-18 rehearsal: a machine with Ollama but no embedding model was told to install Ollama
+    if _ollama_installed():
+        return f"{prefix}在 Ollama 下載向量模型（免帳號）。跟你的 agent 說「幫我設定 OmniKeep」，它會依這台電腦挑大小並下載"
+    return f"{prefix}裝 Ollama 和向量模型（免帳號，安裝程式會依電腦挑大小）。" + AGENT_HINT
+
+
 def _feature(fid: str, name: str, level: str, now: str, step: str = "", card: str = "") -> Dict[str, Any]:
     out: Dict[str, Any] = {"id": fid, "name": name, "level": level, "now": now}
     if step:
@@ -66,14 +87,14 @@ def _search() -> Dict[str, Any]:
     model = target_embedding_model()
     if model == LOCAL_EMBEDDING_MODEL:
         return _feature("search", "用意思找收藏", OFF, "只比對關鍵字：要打出收藏裡有的字才找得到",
-                        "裝 Ollama 和向量模型（免帳號，安裝程式會依電腦挑大小）。" + AGENT_HINT)
+                        _embedder_step())
     first = next((conn for conn, _ in _entries("embeddings")), None)
     if first is not None and _card(first).get("no_signup"):
         # 2026-11-18: OVHcloud's Qwen3-Embedding-8B found the right item first 85% of the time on the
         # 300-item test, as the best local model did; the limit is 2 queries a minute
         return _feature("search", "用意思找收藏", BASIC,
                         f"用 {first.label} 的 {model}：找得跟最好的本機模型一樣準，但每分鐘只能查 2 次，超過時那次只比對關鍵字",
-                        "裝 Ollama 和向量模型就沒有次數限制（免帳號，安裝程式會依電腦挑大小）。" + AGENT_HINT)
+                        _embedder_step("沒有次數限制的做法："))
     return _feature("search", "用意思找收藏", GOOD, f"用 {model}")
 
 

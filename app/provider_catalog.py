@@ -46,7 +46,6 @@ CARDS: List[Dict[str, Any]] = [
         "cost": "免費層",
         "limits": "免費層的每分鐘與每日次數依模型不同，以 AI Studio 的 Rate Limit 頁為準。可以填多把金鑰，用逗號分隔，輪流使用。",
         "notes": "YouTube 影片解析只有 Gemini 能做。gemini-2.5-flash 對新用戶已停用（2026-12-01 起全面導向新模型）。專案連結付款帳戶後，AI Studio 會改成預付制，要另外儲值，Google AI Pro 的抵免額不能用；要用抵免額請改用 Vertex 卡片。",
-        "training_note": "免費層的內容會被 Google 拿去改進產品。",
         "min_interval": 12.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False, "video": True, "context": 1000000},
         "verified": "2026-11-06",
@@ -138,7 +137,6 @@ CARDS: List[Dict[str, Any]] = [
         "cost": "免費（:free 模型）",
         "limits": "每 7 天滾動的免費額度（金額沒公開），約每分鐘 60 次（第三方數據）；免費模型要先在 dashboard 手動開啟。2026-11-06 實測一篇約 19 秒。",
         "notes": "新加坡公司 TH TECHNOLOGY PTE. LTD.；位址沒有 api. 子網域。",
-        "training_note": "免費路由的內容可能被留存分析，上游服務商可能拿去訓練。",
         "min_interval": 1.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False},
         "verified": "2026-11-06",
@@ -241,7 +239,6 @@ CARDS: List[Dict[str, Any]] = [
         "cost": "免費（不用金鑰）",
         "limits": "每個 IP 每小時 200 次。2026-11-17 實測：kilo-auto/free 一篇約 35 秒；reflection/beam-free 當天下架（回 404 model unavailable），免費路由隨時會換。",
         "notes": "預設推理設為 low。kilo-auto/free 由 Kilo 指派模型（實測是來源不明的 stealth 模型）。Nemotron 等推理型免費模型太慢，不建議。",
-        "training_note": "免費路由的提示與回應會被記錄並用於訓練。",
         "min_interval": 18.0, "max_concurrency": 1,
         "caps": {"json_mode": False, "embeddings": False, "vision": False,
                  "extra_body": {"reasoning": {"effort": "low"}}},
@@ -254,7 +251,7 @@ CARDS: List[Dict[str, Any]] = [
         "key_mode": "none", "key_url": "", "no_signup": True,
         "cost": "免費（不用金鑰）",
         "limits": "每個 IP、每個模型每分鐘 2 次（回應標頭證實），適合當備援。2026-11-06 實測 gpt-oss-120b 一篇約 32 秒；語意搜尋的 Qwen3-Embedding-8B 一次查詢約 1.5 秒（2026-11-18）。",
-        "notes": "法國 OVHcloud，官方說不拿來訓練、不留存資料。帶任何金鑰都會被拒，所以不用填。",
+        "notes": "法國 OVHcloud。帶任何金鑰都會被拒，所以不用填。",
         "min_interval": 31.0, "max_concurrency": 1,
         # gpt-oss-120b reads no images; Qwen3.6-27B on the same service does (2026-11-18 test)
         # Qwen3-Embedding-8B on the same service: recall@1 0.853 on the 300-item test, the same as the
@@ -362,7 +359,7 @@ def catalog() -> Dict[str, Any]:
     cards = []
     for c in CARDS:
         cards.append({
-            "editable_url": False, "embedding_model": "", "training_note": "", "no_signup": False,
+            "editable_url": False, "embedding_model": "", "no_signup": False,
             "verified": VERIFIED, "ends": "", "model_extra_body": {},
             **c,  # a card checked later carries its own "verified"
             "ended": ended(c),

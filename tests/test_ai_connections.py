@@ -484,6 +484,20 @@ def test_a_fresh_install_without_ollama_searches_by_meaning_through_a_no_signup_
     assert rows["search"]["level"] == "basic" and "每分鐘" in rows["search"]["now"]
 
 
+def test_search_upgrade_says_download_a_model_when_ollama_is_already_installed(monkeypatch):
+    from app import capabilities
+    monkeypatch.setattr(capabilities, "_ollama_installed", lambda: True)
+    assert "下載向量模型" in capabilities._embedder_step() and "裝 Ollama" not in capabilities._embedder_step()
+    monkeypatch.setattr(capabilities, "_ollama_installed", lambda: False)
+    assert capabilities._embedder_step().startswith("裝 Ollama")
+
+
+def test_service_options_say_nothing_about_training():
+    from app import provider_catalog
+    text = repr(provider_catalog.catalog())
+    assert "training" not in text and "訓練" not in text
+
+
 def _fresh_slots(monkeypatch, pulled):
     monkeypatch.setattr(ai_connections, "STARTER_CARDS", ("flm", "ovh"))
     monkeypatch.setattr(ai_connections, "ollama_models", lambda url: pulled)
