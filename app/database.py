@@ -483,6 +483,9 @@ def init_db():
             PRIMARY KEY (connection_id, day)
         )
     """)
+    # 30. The same counts split by the program a call was made for (app/llm_gateway.py).
+    from app.ai_usage import ensure_sources_table
+    ensure_sources_table(cursor)
 
     conn.commit()
     conn.close()

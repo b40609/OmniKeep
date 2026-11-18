@@ -83,6 +83,46 @@ function Ensure-Ollama {
     Write-WatchdogEvent "Ollama startup health check timed out (PID $($proc.Id))."
 }
 
+# The local OpenAI-compatible endpoint (run_gateway.py, app/llm_gateway.py) that lets claude-mem
+# use the Vertex AI connections. It runs only where llm_gateway.json exists (made by
+# scripts/llm_gateway_setup.py), and apart from run.py, so either can restart alone.
+function Ensure-Gateway {
+    $configFile = Join-Path $projectRoot 'llm_gateway.json'
+    if (-not (Test-Path $configFile -PathType Leaf)) { return }
+    $gatewayPort = 5101
+    try {
+        $config = Get-Content -Raw -Encoding UTF8 $configFile | ConvertFrom-Json
+        if ($config.PSObject.Properties.Name -contains 'port') { $gatewayPort = [int]$config.port }
+    } catch {
+        Write-WatchdogEvent 'llm_gateway.json cannot be read; using port 5101.'
+    }
+    try {
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$gatewayPort/health" -TimeoutSec 4
+        if ($health.status -eq 'healthy' -and $health.service -eq 'OmniKeep LLM gateway') { return }
+    } catch { }
+    $gatewayScript = Join-Path $projectRoot 'run_gateway.py'
+    if (-not (Test-Path $gatewayScript -PathType Leaf)) { return }
+    $escaped = [regex]::Escape($gatewayScript)
+    $running = @(Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe'" |
+        Where-Object { $_.CommandLine -match $escaped })
+    if ($running.Count -gt 0) {
+        Write-WatchdogEvent "Gateway not answering; its process is still running (PID $($running[0].ProcessId))."
+        return
+    }
+    $owners = @(Get-NetTCPConnection -LocalPort $gatewayPort -State Listen -ErrorAction SilentlyContinue)
+    if ($owners.Count -gt 0) {
+        Write-WatchdogEvent "Gateway port $gatewayPort belongs to another process. Start skipped."
+        return
+    }
+    if (-not (Test-Path $pythonExe -PathType Leaf)) { return }
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmssfff'
+    $proc = Start-Process -FilePath $pythonExe -ArgumentList @('-B', ('"' + $gatewayScript + '"')) `
+        -WorkingDirectory $projectRoot -WindowStyle Hidden `
+        -RedirectStandardOutput (Join-Path $logDir "gateway-$stamp.stdout.log") `
+        -RedirectStandardError (Join-Path $logDir "gateway-$stamp.stderr.log") -PassThru
+    Write-WatchdogEvent "Started the LLM gateway (PID $($proc.Id)) on port $gatewayPort; logs: gateway-$stamp.*.log"
+}
+
 $mutex = [System.Threading.Mutex]::new($false, 'Local\OmniKeep-Service-Watchdog')
 $ownsMutex = $false
 try {
@@ -97,6 +137,12 @@ try {
         Ensure-Ollama
     } catch {
         Write-WatchdogEvent "Ollama check failed ($($_.Exception.GetType().Name))."
+    }
+
+    try {
+        Ensure-Gateway
+    } catch {
+        Write-WatchdogEvent "Gateway check failed ($($_.Exception.GetType().Name))."
     }
 
     try {

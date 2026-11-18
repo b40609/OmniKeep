@@ -24,6 +24,26 @@ def _today() -> str:
     return datetime.now().astimezone().date().isoformat()
 
 
+SOURCES_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS ai_usage_sources (
+        connection_id INTEGER NOT NULL REFERENCES ai_connections(id) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        source TEXT NOT NULL,
+        model TEXT NOT NULL DEFAULT '',
+        requests INTEGER NOT NULL DEFAULT 0,
+        failures INTEGER NOT NULL DEFAULT 0,
+        prompt_tokens INTEGER NOT NULL DEFAULT 0,
+        completion_tokens INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (connection_id, day, source, model)
+    )
+"""
+
+
+def ensure_sources_table(db) -> None:
+    """Additive: run by app.database.init_db and by the gateway, which may start first."""
+    db.execute(SOURCES_TABLE_SQL)
+
+
 def _connection_id(status_key: str) -> Optional[int]:
     m = _CONNECTION_KEY.match(status_key or "")
     return int(m.group(1)) if m else None
@@ -81,6 +101,48 @@ def record_success(status_key: str, response: Any) -> None:
 
 def record_failure(status_key: str) -> None:
     _add(status_key, False)
+
+
+def record_source(status_key: str, source: str, model: str, ok: bool, response: Any = None) -> None:
+    """Count one call made for `source` (in addition to ai_usage, which _add already counted)."""
+    connection_id = _connection_id(status_key)
+    if connection_id is None or not source:
+        return
+    prompt, completion = token_counts(response) if ok and response is not None else (0, 0)
+    try:
+        with closing(get_db_connection()) as db, db:
+            ensure_sources_table(db)
+            db.execute(
+                "INSERT INTO ai_usage_sources (connection_id, day, source, model, requests, failures, "
+                "prompt_tokens, completion_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(connection_id, day, source, model) DO UPDATE SET "
+                "requests = requests + excluded.requests, failures = failures + excluded.failures, "
+                "prompt_tokens = prompt_tokens + excluded.prompt_tokens, "
+                "completion_tokens = completion_tokens + excluded.completion_tokens",
+                (connection_id, _today(), source, model or "", 1 if ok else 0, 0 if ok else 1, prompt, completion))
+    except Exception as exc:
+        logger.debug("ai_usage_sources record failed: %s", exc)
+
+
+def source_rows(source: Optional[str] = None, since: Optional[str] = None) -> list:
+    """Per connection, day, source and model, newest day first."""
+    sql = ("SELECT connection_id, day, source, model, requests, failures, prompt_tokens, completion_tokens "
+           "FROM ai_usage_sources WHERE 1 = 1")
+    params: list = []
+    if source:
+        sql += " AND source = ?"
+        params.append(source)
+    if since:
+        sql += " AND day >= ?"
+        params.append(since)
+    sql += " ORDER BY day DESC, connection_id, model"
+    try:
+        with closing(get_db_connection()) as db:
+            ensure_sources_table(db)
+            return [dict(row) for row in db.execute(sql, params).fetchall()]
+    except Exception as exc:
+        logger.debug("ai_usage_sources read failed: %s", exc)
+        return []
 
 
 def _totals(db, connection_id: int, since: Optional[str]) -> Dict[str, int]:

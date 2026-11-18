@@ -40,3 +40,6 @@ cookies*.txt
 .impeccable/
 _bmad/
 _bmad-output/
+
+# Order of the local LLM gateway (app/llm_gateway.py); its presence switches the gateway on
+llm_gateway.json
