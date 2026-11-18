@@ -336,7 +336,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 # 安裝 Python 依賴（Windows 會一併安裝自動化 Chrome 登入用的 playwright）
-uv sync
+pip install -r requirements.txt
 
 # 選用：本機語音轉錄（YouTube、Reels、Bilibili、X、Threads），安裝後約多 213 MB
 pip install -r requirements-stt.txt

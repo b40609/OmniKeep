@@ -484,6 +484,34 @@ def test_a_fresh_install_without_ollama_searches_by_meaning_through_a_no_signup_
     assert rows["search"]["level"] == "basic" and "每分鐘" in rows["search"]["now"]
 
 
+def _fresh_slots(monkeypatch, pulled):
+    monkeypatch.setattr(ai_connections, "STARTER_CARDS", ("flm", "ovh"))
+    monkeypatch.setattr(ai_connections, "ollama_models", lambda url: pulled)
+    with TestClient(app) as client:
+        body = client.get("/api/ai/connections", headers=HEADERS).json()
+    cards = {c["id"]: c["card"] for c in body["connections"]}
+    return {s["id"]: [(cards[e["connection_id"]], e["model"]) for e in s["entries"]] for s in body["slots"]}
+
+
+def test_ollama_without_the_search_model_pulled_leaves_search_to_a_no_signup_service(monkeypatch):
+    from app.config import settings
+    slots = _fresh_slots(monkeypatch, {f"{settings.BRAIN_MODEL}:latest"})
+    assert slots["embeddings"] == [("ovh", "Qwen3-Embedding-8B")]
+    assert slots["brain"] == [("ollama", settings.BRAIN_MODEL)]
+
+
+def test_ollama_with_none_of_the_models_pulled_is_not_listed(monkeypatch):
+    slots = _fresh_slots(monkeypatch, {"llama3.2:latest"})
+    assert all(card != "ollama" for rows in slots.values() for card, _ in rows)
+    assert slots["embeddings"] == [("ovh", "Qwen3-Embedding-8B")]
+
+
+def test_ollama_with_the_search_model_pulled_searches_locally(monkeypatch):
+    from app.config import settings
+    slots = _fresh_slots(monkeypatch, {settings.EMBEDDING_MODEL, settings.BRAIN_MODEL})
+    assert slots["embeddings"] == [("ollama", settings.EMBEDDING_MODEL)]
+
+
 async def test_a_keyless_embedding_service_gets_its_query_format_and_no_key(monkeypatch):
     from app import vector
     sent = {}

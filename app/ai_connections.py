@@ -671,6 +671,31 @@ def ollama_answers(base_url: str) -> bool:
         return False
 
 
+def ollama_models(base_url: str) -> Optional[set]:
+    """Names of the models pulled into the Ollama runner at `base_url`; None when it cannot be asked.
+
+    Unit tests (OMNIKEEP_TESTING=1) never ask a real runner, so they get None: nothing is ruled out.
+    """
+    if os.environ.get("OMNIKEEP_TESTING") == "1":
+        return None
+    try:
+        import httpx
+        with httpx.Client(timeout=1.5, trust_env=False) as client:
+            res = client.get(f"{base_url.rstrip('/')}/api/tags")
+        if res.status_code != 200:
+            return None
+        return {m.get("name", "") for m in res.json().get("models", [])}
+    except Exception:
+        return None
+
+
+def _pulled(models: Optional[set], name: str) -> bool:
+    """Whether `name` is among the pulled models (Ollama lists a bare name as name:latest)."""
+    if models is None or not name:
+        return True
+    return name in models or f"{name}:latest" in models
+
+
 def _ollama_expected(base_url: str, field: str) -> bool:
     """Whether to list an Ollama connection for this address when migrating.
 
@@ -722,6 +747,16 @@ def migrate_legacy() -> bool:
                 ollama_url = ""
             if brain_local and brain_url and not _ollama_expected(brain_url, "BRAIN_BASE_URL"):
                 brain_local = False
+            # Ollama answering is not enough: a model that was never pulled fails on every call
+            # (2026-11-18 rehearsal: a machine with other models got embeddinggemma-2 for search, so
+            # search fell back to matching words while the settings said it searched by meaning)
+            embed_local = bool(ollama_url) and _pulled(ollama_models(ollama_url), settings.EMBEDDING_MODEL)
+            if brain_local and brain_url and not _pulled(ollama_models(brain_url), settings.BRAIN_MODEL):
+                brain_local = False
+            if ollama_url and not embed_local and not (brain_local and brain_url == ollama_url):
+                logger.info("Ollama at %s has neither %s nor %s pulled: no local connection is listed",
+                            ollama_url, settings.EMBEDDING_MODEL, settings.BRAIN_MODEL)
+                ollama_url = ""
             if ollama_url:
                 ids["ollama"] = _insert(db, _ollama_values(ollama_url, settings.BRAIN_MODEL, "本機 Ollama"),
                                         origin="legacy_ollama")
@@ -740,7 +775,7 @@ def migrate_legacy() -> bool:
                 plan["video"].append((ids["gemini"], ""))
             if "brain" in ids:
                 plan["brain"].append((ids["brain"], settings.BRAIN_MODEL))
-            if "ollama" in ids:
+            if "ollama" in ids and embed_local:
                 plan["embeddings"].append((ids["ollama"], settings.EMBEDDING_MODEL))
             if "openai" in ids and settings.OPENAI_API_KEY and _legacy_can_embed(openai_values["card"]):
                 plan["embeddings"].append((ids["openai"], remote_embedding_model()))
