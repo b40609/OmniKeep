@@ -8,6 +8,7 @@ import { useUiStore } from '@/stores/ui'
 import { useExperimentsStore } from '@/stores/experiments'
 import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, checkLocalAuth, redeemPairingCode, type SessionBridgeSnapshot } from '@/lib/api'
 import { asPairingCode } from '@/lib/pairing'
+import { onceAtATime } from '@/lib/localRetry'
 import { linkedPanel, OPEN_LINK_MESSAGE } from '@/lib/push'
 import { readClipRequest } from '@/lib/bookmarklet'
 import { readSettingsLink } from '@/lib/settingsLink'
@@ -285,8 +286,22 @@ async function maybeShowSessionHint() {
 }
 
 let stopUpdateCheck: () => void = () => {}
-function onAuthRequired() {
+// The saved key stopped working: on this machine, sign in again by itself before asking.
+const retryLocalSignIn = onceAtATime(async () => {
+  isCheckingAuth.value = true
+  try {
+    const local = await checkLocalAuth()
+    if (!local.authenticated || !local.api_key) return false
+    rememberKey.value = true
+    return await login(local.api_key, true)
+  } finally {
+    isCheckingAuth.value = false
+  }
+})
+
+async function onAuthRequired() {
   requireLogin(true)
+  await retryLocalSignIn()
 }
 
 onMounted(() => {
