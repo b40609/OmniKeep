@@ -80,6 +80,17 @@
     aspect-ratio: 2 / 1;
     max-height: none;
   }
+  /* Reader: the cover opens the original page. */
+  .item-cover--link {
+    display: block;
+    cursor: pointer;
+  }
+  .item-cover--link img {
+    transition: transform 200ms ease-out;
+  }
+  .item-cover--link:hover img {
+    transform: scale(1.015);
+  }
   .is-read .item-cover--image {
     filter: brightness(var(--cover-dim-read));
   }

@@ -9,7 +9,7 @@ import { coverFit, coverFocus, coverRetryDelay, isIconSized, itemKind, sourceNam
  * to the kind icon (plus the source name on a card) when there is no usable image;
  * `hero` renders nothing at all, so the reader simply has no cover.
  */
-const props = defineProps<{ item: Item; variant?: 'card' | 'thumb' | 'hero' }>()
+const props = defineProps<{ item: Item; variant?: 'card' | 'thumb' | 'hero'; href?: string }>()
 
 const src = computed(() => usableCover(props.item.cover_image))
 const failed = ref(false)
@@ -48,7 +48,9 @@ function onLoad(event: Event) {
 </script>
 
 <template>
-  <div
+  <!-- with an href the whole cover opens that page in a new tab; the reader's button is the keyboard way there -->
+  <component
+    :is="href ? 'a' : 'div'"
     v-if="showImage || variant !== 'hero'"
     class="item-cover"
     :class="{
@@ -56,7 +58,13 @@ function onLoad(event: Event) {
       'item-cover--hero': variant === 'hero',
       'item-cover--image': showImage,
       'item-cover--pad': showImage && coverFit(src) === 'pad',
+      'item-cover--link': !!href,
     }"
+    :href="href || undefined"
+    :target="href ? '_blank' : undefined"
+    :rel="href ? 'noopener noreferrer' : undefined"
+    :tabindex="href ? -1 : undefined"
+    :aria-hidden="href ? 'true' : undefined"
   >
     <img
       v-if="showImage"
@@ -75,5 +83,5 @@ function onLoad(event: Event) {
       <KindIcon :kind="itemKind(item)" />
       <span v-if="variant !== 'thumb'">{{ sourceName(item) }}</span>
     </div>
-  </div>
+  </component>
 </template>

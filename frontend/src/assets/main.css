@@ -1229,6 +1229,16 @@ input, textarea { caret-color: var(--primary); }
 .reader-info__link { all: unset; display: inline-flex; align-items: center; gap: 2px; cursor: pointer; color: var(--foreground); }
 .reader-info__link:hover { color: var(--primary); }
 .reader-info__link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+/* the way back to the original page: one primary button under the title, and the source line as a link */
+.reader-origin { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 12px; padding: 0 16px; border-radius: 10px; background: var(--primary); color: var(--primary-foreground); font-size: 14px; font-weight: 600; text-decoration: none; transition: background-color 150ms ease-out; }
+.reader-origin:hover { background: var(--primary-hover, var(--primary)); }
+.reader-origin:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.reader-origin__icon { width: 16px; height: 16px; flex: none; border-radius: 3px; }
+.reader-source { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: inherit; text-decoration: none; }
+.reader-info .reader-source { color: var(--foreground); }
+.reader-source:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.reader-source:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+.reader-source__icon { width: 14px; height: 14px; flex: none; border-radius: 3px; }
 .reader-info__tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .reader-info__tags span { padding: 1px 8px; border-radius: 6px; background: color-mix(in srgb, var(--foreground) 6%, transparent); font-size: 12px; }
 /* sections moved into the rail read as a compact list */

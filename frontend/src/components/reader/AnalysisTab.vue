@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { toast } from 'vue-sonner'
-import { Link2, Package, ChevronRight, ChevronLeft, Camera, Sparkles, Network, ExternalLink, ArrowRight, List, Hash, FileText, CornerUpLeft, Loader2 } from 'lucide-vue-next'
+import { Link2, Package, ChevronRight, ChevronLeft, Camera, Sparkles, Network, ExternalLink, ArrowRight, ArrowUpRight, List, Hash, FileText, CornerUpLeft, Loader2 } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
 import ItemCover from '@/components/items/ItemCover.vue'
+import OriginIcon from '@/components/reader/OriginIcon.vue'
 import { analyzeItem, getServiceStatus, type Item } from '@/lib/api'
 import { isNotAnalysed, plainSummary } from '@/lib/wall'
+import { originLink } from '@/lib/originLink'
 import { useItemsStore } from '@/stores/items'
 import { cleanHost, formatRelativeTime, estimateReadTime, sourceMeta } from '@/lib/format'
 import { renderMarkdown, useCodeCopy, extractToc } from '@/lib/markdown'
@@ -20,6 +22,8 @@ import { useMutations } from '@/composables/useMutations'
 const ui = useUiStore()
 const itemsStore = useItemsStore()
 const { openSnapshot } = useMutations()
+// the page this item was kept from: the button under the title, the source line and the cover all open it
+const origin = computed(() => originLink(ui.activeItem?.url))
 
 // An item kept while no AI was connected: say so, and offer the next step.
 const notAnalysed = computed(() => !!ui.activeItem && isNotAnalysed(ui.activeItem))
@@ -109,10 +113,27 @@ function openItem(id: number | string) {
       <h1 class="text-xl leading-snug font-bold tracking-tight text-foreground lg:text-2xl">
         {{ ui.activeItem.title_l1 }}
       </h1>
+      <!-- the way back to the page this was kept from, named after where it goes -->
+      <a
+        v-if="origin"
+        :href="origin.href"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="reader-origin"
+        :title="origin.href"
+      >
+        <OriginIcon :origin="origin" class="reader-origin__icon" />
+        <span>{{ origin.action }}</span>
+        <ArrowUpRight class="size-4" aria-hidden="true" />
+        <span class="sr-only">（新分頁）</span>
+      </a>
       <!-- with the details rail open, all of this lives there (the snapshot too), so the title stands alone -->
       <div v-if="!railOn" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-subtle-foreground">
         <template v-if="!railOn">
-        <span>{{ cleanHost(ui.activeItem.url) }}</span>
+        <a v-if="origin" :href="origin.href" target="_blank" rel="noopener noreferrer" class="reader-source">
+          <OriginIcon :origin="origin" class="reader-source__icon" />{{ cleanHost(ui.activeItem.url) }}<ArrowUpRight class="size-3" aria-hidden="true" />
+        </a>
+        <span v-else>{{ cleanHost(ui.activeItem.url) }}</span>
         <span aria-hidden="true">·</span>
         <span>{{ ui.activeItem.published_date || formatRelativeTime(ui.activeItem.created_at) }}</span>
         <template v-if="ui.activeItem.author">
@@ -140,7 +161,7 @@ function openItem(id: number | string) {
     </header>
 
     <!-- Cover: same rules as the wall, and simply absent when there is none -->
-    <ItemCover :item="ui.activeItem" variant="hero" class="reader-cover" />
+    <ItemCover :item="ui.activeItem" variant="hero" class="reader-cover" :href="origin?.href" />
 
     <!-- Cited-in backlinks (in the details rail when it is open) -->
     <Teleport defer to="#reader-rail-slot" :disabled="!railOn">
@@ -469,7 +490,12 @@ function openItem(id: number | string) {
     <section class="reader-info">
       <h2>資訊</h2>
       <dl>
-        <div><dt>來源</dt><dd>{{ cleanHost(ui.activeItem.url) }}</dd></div>
+        <div><dt>來源</dt><dd>
+          <a v-if="origin" :href="origin.href" target="_blank" rel="noopener noreferrer" class="reader-source" :title="origin.href">
+            <OriginIcon :origin="origin" class="reader-source__icon" />{{ cleanHost(ui.activeItem.url) }}<ArrowUpRight class="size-3.5" aria-hidden="true" /><span class="sr-only">（新分頁）</span>
+          </a>
+          <template v-else>{{ cleanHost(ui.activeItem.url) }}</template>
+        </dd></div>
         <div><dt>{{ ui.activeItem.published_date ? '發布' : '收錄' }}</dt><dd>{{ ui.activeItem.published_date || formatRelativeTime(ui.activeItem.created_at) }}</dd></div>
         <div v-if="ui.activeItem.author"><dt>作者</dt><dd>{{ ui.activeItem.author }}</dd></div>
         <div v-if="ui.activeItem.content_raw"><dt>閱讀時間</dt><dd>{{ estimateReadTime(ui.activeItem.content_raw) }} 分鐘</dd></div>
