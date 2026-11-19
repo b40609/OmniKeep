@@ -9,7 +9,7 @@ import { analyzeItem, getServiceStatus, type Item } from '@/lib/api'
 import { isNotAnalysed, plainSummary } from '@/lib/wall'
 import { originLink } from '@/lib/originLink'
 import { useItemsStore } from '@/stores/items'
-import { cleanHost, formatRelativeTime, estimateReadTime, sourceMeta } from '@/lib/format'
+import { cleanHost, displayCategory, formatRelativeTime, estimateReadTime, sourceMeta } from '@/lib/format'
 import { renderMarkdown, useCodeCopy, extractToc } from '@/lib/markdown'
 import { renderMermaidIn } from '@/lib/mermaid'
 import { renderFlowsIn, disposeFlowsIn } from '@/lib/flowchart'
@@ -281,7 +281,7 @@ function openItem(id: number | string) {
                 {{ sub.target_name || sub.title_l1 || '未命名專案' }}
               </span>
               <span v-if="sub.category_name" class="text-xs text-muted-foreground">
-                {{ sub.category_name }}
+                {{ displayCategory(sub.category_name) }}
               </span>
             </div>
             <div class="flex shrink-0 items-center gap-1.5">
@@ -374,26 +374,26 @@ function openItem(id: number | string) {
         <div
           v-for="rel in ui.activeItem.related_items"
           :key="rel.id"
-          class="group flex flex-col justify-between rounded-xl border border-border/60 bg-muted/20 p-3.5 transition hover:border-primary/40 hover:bg-card cursor-pointer focus-visible:outline-2 focus-visible:outline-ring"
+          class="group flex min-w-0 flex-col justify-between overflow-hidden rounded-xl border border-border/60 bg-muted/20 p-3.5 transition hover:border-primary/40 hover:bg-card cursor-pointer focus-visible:outline-2 focus-visible:outline-ring"
           role="button" tabindex="0" :aria-label="`開啟 ${rel.title_l1}`"
           @click="openItem(rel.id)" @keydown.enter.prevent="openItem(rel.id)" @keydown.space.prevent="openItem(rel.id)"
         >
-          <div>
+          <div class="min-w-0">
             <div class="mb-1.5 flex items-center justify-between gap-1.5">
-              <Badge variant="outline" class="text-3xs font-mono">
-                {{ rel.category_name || 'Inbox' }}
+              <Badge variant="outline" class="min-w-0 truncate text-3xs font-mono">
+                {{ displayCategory(rel.category_name) }}
               </Badge>
               <span
                 v-if="rel.similarity"
-                class="rounded-full bg-primary/10 px-2 py-0.5 text-3xs font-mono font-bold text-primary"
+                class="shrink-0 whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-3xs font-mono font-bold text-primary"
               >
                 {{ Math.round(rel.similarity * 100) }}% 相似
               </span>
             </div>
-            <h3 class="line-clamp-2 text-xs font-bold leading-snug text-foreground group-hover:text-primary">
+            <h3 class="line-clamp-2 break-words text-xs font-bold leading-snug text-foreground group-hover:text-primary">
               {{ rel.title_l1 }}
             </h3>
-            <p v-if="rel.summary_l1" class="mt-1 line-clamp-2 text-2xs leading-relaxed text-muted-foreground">
+            <p v-if="rel.summary_l1" class="mt-1 line-clamp-2 break-words text-2xs leading-relaxed text-muted-foreground">
               {{ rel.summary_l1 }}
             </p>
           </div>

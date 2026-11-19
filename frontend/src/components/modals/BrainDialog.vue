@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import Badge from '@/components/ui/badge/Badge.vue'
 import { useUiStore } from '@/stores/ui'
 import { renderMarkdown } from '@/lib/markdown'
+import { displayCategory } from '@/lib/format'
 import { askBrain, getBrainStatus, type BrainCitation, type BrainStatusResponse } from '@/lib/api'
 
 interface ChatEntry {
@@ -246,7 +247,7 @@ function handleKeydown(e: KeyboardEvent) {
                         </span>
                       </div>
                       <Badge variant="outline" class="shrink-0 text-3xs font-mono">
-                        {{ cite.category_name || '收件匣' }}
+                        {{ displayCategory(cite.category_name) }}
                       </Badge>
                     </div>
 

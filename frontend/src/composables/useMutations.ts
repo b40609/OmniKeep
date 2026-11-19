@@ -1,6 +1,7 @@
 import { toast } from 'vue-sonner'
 import * as api from '@/lib/api'
 import type { Item } from '@/lib/api'
+import { displayCategory } from '@/lib/format'
 import { useItemsStore } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
 
@@ -104,7 +105,7 @@ export function useMutations() {
     const prev = item.category_name
     await optimisticPatch(item, { category_name }, {
       undoMsg: '',
-      doneMsg: `分類已改為「${category_name}」`,
+      doneMsg: `分類已改為「${displayCategory(category_name)}」`,
       undo: () => void optimisticPatch(item, { category_name: prev }, { undoMsg: '', doneMsg: '已復原分類' }),
     })
     itemsStore.loadCategories()

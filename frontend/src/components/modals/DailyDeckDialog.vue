@@ -9,6 +9,7 @@ import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
 import { useUiStore } from '@/stores/ui'
 import { useItemsStore } from '@/stores/items'
+import { displayCategory } from '@/lib/format'
 import { getDailyDeck, submitSwipeAction, type DeckCard } from '@/lib/api'
 
 const ui = useUiStore()
@@ -402,7 +403,7 @@ onUnmounted(() => {
           </Badge>
 
           <Badge variant="outline" class="text-xs">
-            {{ currentCard.category_name || '收件匣' }}
+            {{ displayCategory(currentCard.category_name) }}
           </Badge>
 
           <span class="ml-auto text-2xs text-muted-foreground font-mono">

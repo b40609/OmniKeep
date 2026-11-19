@@ -18,6 +18,13 @@ export function cleanHost(url: string | null | undefined): string {
   }
 }
 
+/** Show the default Inbox category in Traditional Chinese across every UI surface. */
+export function displayCategory(name: string | null | undefined, fallback = '收件匣'): string {
+  const trimmed = (name || '').trim()
+  if (!trimmed || trimmed === 'Inbox') return fallback
+  return trimmed
+}
+
 /** Compact relative time in zh-TW. */
 export function formatRelativeTime(timeStr: string | null | undefined): string {
   if (!timeStr) return ''

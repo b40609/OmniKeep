@@ -5,6 +5,7 @@ import { Clock, Compass, ExternalLink, RotateCw, Star, ThumbsDown, ThumbsUp, X }
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import Button from '@/components/ui/button/Button.vue'
 import { getSwipeDeck, recordSwipe, type DeckItem, type SwipeAction } from '@/lib/api'
+import { displayCategory } from '@/lib/format'
 import { useItemsStore } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
 
@@ -252,7 +253,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           >
             <div class="flex flex-wrap items-center gap-1.5 text-2xs">
               <span class="rounded-md bg-muted px-1.5 py-0.5 font-semibold uppercase text-muted-foreground">{{ current.source_type }}</span>
-              <span v-if="current.category_name" class="rounded-md bg-primary-soft px-1.5 py-0.5 font-semibold text-primary-soft-foreground">{{ current.category_name }}</span>
+              <span v-if="current.category_name" class="rounded-md bg-primary-soft px-1.5 py-0.5 font-semibold text-primary-soft-foreground">{{ displayCategory(current.category_name) }}</span>
               <span v-if="current.is_exploration" class="inline-flex items-center gap-1 rounded-md bg-info-soft px-1.5 py-0.5 font-semibold text-info"><Compass class="size-3" />探索</span>
             </div>
 

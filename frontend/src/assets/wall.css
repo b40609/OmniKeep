@@ -18,6 +18,10 @@
     border-radius: 12px;
     background: var(--surface-1);
   }
+  /* No-image placeholder keeps a quiet hairline border so dark/OLED cells still read as cards, not holes. */
+  .item-cover:not(.item-cover--image) {
+    box-shadow: inset 0 0 0 1px var(--hairline);
+  }
   /* Dimmed as a whole (image and backing together) so a white cover does not outshine the page. */
   .item-cover--image {
     filter: brightness(var(--cover-dim));

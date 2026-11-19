@@ -4,7 +4,7 @@ import ItemActions from './ItemActions.vue'
 import ItemCover from './ItemCover.vue'
 import KindIcon from './KindIcon.vue'
 import type { Item } from '@/lib/api'
-import { cleanHost, formatRelativeTime } from '@/lib/format'
+import { cleanHost, displayCategory, formatRelativeTime } from '@/lib/format'
 import { isNotAnalysed, itemKind, plainSummary, splitTitle } from '@/lib/wall'
 import { useUiStore } from '@/stores/ui'
 
@@ -43,7 +43,7 @@ function select() {
         <time>{{ formatRelativeTime(item.created_at) }}</time>
         <template v-if="item.category_name">
           <span class="item-meta__sep" aria-hidden="true" />
-          <span class="item-meta__clip">{{ item.category_name === 'Inbox' ? '收件匣' : item.category_name }}</span>
+          <span class="item-meta__clip">{{ displayCategory(item.category_name) }}</span>
         </template>
         <template v-if="isNotAnalysed(item)">
           <span class="item-meta__sep" aria-hidden="true" />
