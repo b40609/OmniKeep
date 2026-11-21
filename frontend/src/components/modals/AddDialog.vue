@@ -138,7 +138,7 @@ async function saveLinks(urls: string[]) {
   for (const [index, url] of urls.entries()) {
     if (queued) progress.value = `正在送出第 ${index + 1} 個，共 ${urls.length} 個`
     try {
-      const data = await api.ingest(url, { async: queued })
+      const data = await api.ingest(url, { async: queued, category: category.value === AUTO ? null : category.value })
       if (!data.success) throw new Error(data.detail || '')
       saved++
       item = data.item
@@ -264,7 +264,7 @@ function onKeydown(event: KeyboardEvent) {
           </label>
         </div>
 
-        <div v-if="plan.kind === 'note'" class="flex items-center justify-between gap-4 text-sm">
+        <div v-if="plan.kind === 'note' || plan.kind === 'links'" class="flex items-center justify-between gap-4 text-sm">
           <span class="text-muted-foreground">分類</span>
           <Select v-model="category" :options="categoryOptions" :disabled="busy" aria-label="分類" small />
         </div>

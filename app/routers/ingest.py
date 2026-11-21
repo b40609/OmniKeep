@@ -65,7 +65,7 @@ async def ingest_url(
 
     # If async_mode requested (e.g. quick return for iOS shortcut / fast ingestion)
     if req.async_mode:
-        task = create_ingest_task(url=clean_input, source="api")
+        task = create_ingest_task(url=clean_input, source="api", category=req.category)
         return {
             "success": True,
             "status": "queued",
@@ -76,7 +76,7 @@ async def ingest_url(
     if not as_note and not req.page_title and not req.page_description:
         long_video = await _long_video(clean_input)
         if long_video:
-            task = create_ingest_task(url=clean_input, source="api")
+            task = create_ingest_task(url=clean_input, source="api", category=req.category)
             minutes = round(long_video / 60)
             return {
                 "success": True,

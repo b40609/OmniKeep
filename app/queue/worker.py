@@ -401,7 +401,8 @@ class TaskWorker:
 
         try:
             # 3. Execute intelligence pipeline, for a bounded time
-            item = await self._run_with_timeout(run_pipeline(url), float(settings.INGEST_TASK_TIMEOUT_SECONDS))
+            item = await self._run_with_timeout(run_pipeline(url, **({"manual_category": task["category"]} if task.get("category") else {})),
+                                                float(settings.INGEST_TASK_TIMEOUT_SECONDS))
 
             # Mark completed in DB
             update_task_status(task_id, status="completed", item_id=item.get("id"))

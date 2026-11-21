@@ -132,7 +132,7 @@ test('新增 keeps what was typed when sending fails, says why, sends once, and 
     const first = view.state.submit()
     await view.state.submit()                       // a second press while the first is on its way
     assert.equal(sent.length, 1)
-    assert.deepEqual(sent[0], ['https://example.test/article', { async: false }])
+    assert.deepEqual(sent[0], ['https://example.test/article', { async: false, category: null }])
     assert.equal(ctx.ui.isIngesting, true)
     pending.reject(new Error('這個網址連不上。'))
     await first

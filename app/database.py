@@ -254,6 +254,10 @@ def init_db():
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON ingest_tasks(status)")
+    # The category picked when the link was added (新增 panel); NULL lets the AI choose.
+    cursor.execute("PRAGMA table_info(ingest_tasks)")
+    if "category" not in {row[1] for row in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE ingest_tasks ADD COLUMN category TEXT")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON ingest_tasks(created_at ASC)")
 
     # 13. User Settings table (Per-user preference persistence)
@@ -2086,6 +2090,7 @@ def create_ingest_task(
     chat_id: Optional[Any] = None,
     message_id: Optional[int] = None,
     dedupe_key: Optional[str] = None,
+    category: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Persist a task, deduplicating replayed upstream messages without a migration."""
     conn = get_db_connection()
@@ -2094,9 +2099,9 @@ def create_ingest_task(
                if dedupe_key is not None else uuid.uuid4().hex[:12])
     now_iso = datetime.now(timezone.utc).isoformat()
     cursor.execute("""
-        INSERT OR IGNORE INTO ingest_tasks (id, url, source, chat_id, message_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
-    """, (task_id, url.strip(), source, chat_id, message_id, now_iso, now_iso))
+        INSERT OR IGNORE INTO ingest_tasks (id, url, source, chat_id, message_id, status, category, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)
+    """, (task_id, url.strip(), source, chat_id, message_id, (category or None), now_iso, now_iso))
     conn.commit()
     row = conn.execute("SELECT * FROM ingest_tasks WHERE id = ?", (task_id,)).fetchone()
     conn.close()
