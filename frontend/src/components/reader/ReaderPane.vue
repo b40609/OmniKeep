@@ -29,7 +29,11 @@ async function loadFull(id: number) {
   detailError.value = ''
   try {
     const full = await api.getItem(id)
-    if (request === detailRequest && ui.activeItem?.id === id) ui.activeItem = full
+    if (request === detailRequest && ui.activeItem?.id === id) {
+      ui.activeItem = full
+      // J/K or next/previous onto an item with no article text: show its analysis, not an empty reader tab
+      if (ui.detailTab === 'reader' && !full.content_raw) ui.detailTab = 'analysis'
+    }
   } catch {
     if (request === detailRequest && ui.activeItem?.id === id) detailError.value = '完整內容載入失敗，目前顯示已儲存的摘要。'
   } finally {

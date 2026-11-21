@@ -15,6 +15,7 @@ import { useUiStore } from '@/stores/ui'
 import { useExperimentsStore } from '@/stores/experiments'
 import { WATCH_CATEGORIES } from '@/lib/experiments'
 import { useMenuAction } from '@/composables/useMenuAction'
+import { displayCategory } from '@/lib/format'
 
 /**
  * The sidebar is navigation only: views, categories, and the experimental features
@@ -57,7 +58,7 @@ const shownCategories = computed(() => {
   const selected = all.find((c) => c.name === items.currentCategory)
   return selected && !top.includes(selected) ? [...top, selected] : top
 })
-const categoryName = (name: string) => (name === 'Inbox' ? '收件匣' : name)
+const categoryName = (name: string) => displayCategory(name)
 
 /** Picking the selected category again clears the filter. */
 function selectCategory(catName: string) {

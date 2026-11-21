@@ -5,6 +5,7 @@ import { toast } from 'vue-sonner'
 import type { Item } from '@/lib/api'
 import { useMutations } from '@/composables/useMutations'
 import { useSignal } from '@/composables/useSignal'
+import { isWebUrl } from '@/lib/originLink'
 
 /**
  * The actions on one item, as icon buttons: star, archive, and a menu for the rest.
@@ -16,9 +17,12 @@ const { toggleStar, toggleRead, openSnapshot, removeItem } = useMutations()
 const { tuneItem } = useSignal()
 
 async function copyTakeaway() {
+  const summary = (props.item.summary_l1 || '').trim()
+  const link = isWebUrl(props.item.url) ? `\n\n原始連結：${props.item.url}` : ''
   try {
-    await navigator.clipboard.writeText(`${props.item.title_l1}\n\n${props.item.summary_l1}\n\n原始連結：${props.item.url}`)
-    toast.success('已複製重點')
+    // an item not analysed yet has no takeaway: copy the title and link, and say so
+    await navigator.clipboard.writeText(summary ? `${props.item.title_l1}\n\n${summary}${link}` : `${props.item.title_l1}${link}`)
+    toast.success(summary ? '已複製重點' : '已複製標題與連結（尚未分析）')
   } catch {
     toast.error('無法複製，請允許剪貼簿存取後重試。')
   }
@@ -53,8 +57,8 @@ async function copyTakeaway() {
       <DropdownMenuPortal>
         <DropdownMenuContent class="app-menu" align="end" :side-offset="4" :collision-padding="12" @click.stop @keydown.stop>
           <DropdownMenuItem class="app-menu__item" @select="copyTakeaway"><Copy />複製重點</DropdownMenuItem>
-          <DropdownMenuItem class="app-menu__item" @select="openSnapshot(item)"><Camera />開啟離線快照</DropdownMenuItem>
-          <DropdownMenuItem as-child><a :href="item.url" target="_blank" rel="noopener noreferrer" class="app-menu__item"><ExternalLink />開啟原始連結</a></DropdownMenuItem>
+          <DropdownMenuItem v-if="isWebUrl(item.url)" class="app-menu__item" @select="openSnapshot(item)"><Camera />開啟離線快照</DropdownMenuItem>
+          <DropdownMenuItem v-if="isWebUrl(item.url)" as-child><a :href="item.url" target="_blank" rel="noopener noreferrer" class="app-menu__item"><ExternalLink />開啟原始連結</a></DropdownMenuItem>
           <DropdownMenuSeparator class="app-menu__rule" />
           <DropdownMenuItem class="app-menu__item" @select="tuneItem({ item, action: 'boost' })"><ChevronUp />多推薦這類內容</DropdownMenuItem>
           <DropdownMenuItem class="app-menu__item" @select="tuneItem({ item, action: 'dampen' })"><ChevronDown />少推薦這類內容</DropdownMenuItem>

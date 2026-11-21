@@ -24,6 +24,11 @@ const ACTIONS: Record<OriginBrand, string> = {
   x: '在 X 查看',
 }
 
+/** True when the address is a web page the browser can open (not a note:// or other app-only address). */
+export function isWebUrl(url: string | null | undefined): boolean {
+  return originLink(url) !== null
+}
+
 /** null for notes and anything that is not an http(s) address: there is no page to go back to. */
 export function originLink(url: string | null | undefined): OriginLink | null {
   let parsed: URL

@@ -10,6 +10,7 @@ import Badge from '@/components/ui/badge/Badge.vue'
 import { useUiStore } from '@/stores/ui'
 import { renderMarkdown } from '@/lib/markdown'
 import { displayCategory } from '@/lib/format'
+import { isWebUrl } from '@/lib/originLink'
 import { askBrain, getBrainStatus, type BrainCitation, type BrainStatusResponse } from '@/lib/api'
 
 interface ChatEntry {
@@ -266,7 +267,7 @@ function handleKeydown(e: KeyboardEvent) {
                           <BookOpen class="size-2.5" /> 開啟
                         </button>
                         <a
-                          v-if="cite.url"
+                          v-if="isWebUrl(cite.url)"
                           :href="cite.url"
                           target="_blank"
                           rel="noopener noreferrer"

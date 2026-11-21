@@ -5,6 +5,7 @@ import AccountMenu from './AccountMenu.vue'
 import SearchBox from './SearchBox.vue'
 import { useUiStore } from '@/stores/ui'
 import { useItemsStore } from '@/stores/items'
+import { displayCategory } from '@/lib/format'
 
 const emit = defineEmits<{ (e: 'logout'): void }>()
 
@@ -90,7 +91,7 @@ function goInbox() {
             <path d="M8 6h8v12l-4-3-4 3z" fill="var(--primary-foreground)" />
           </svg>
           <span class="max-md:hidden">OmniKeep</span>
-          <span class="truncate md:hidden">{{ viewTitle }}<span v-if="items.currentCategory !== '全部'" class="font-normal text-muted-foreground"> / {{ items.currentCategory }}</span></span>
+          <span class="truncate md:hidden">{{ viewTitle }}<span v-if="items.currentCategory !== '全部' && displayCategory(items.currentCategory) !== viewTitle" class="font-normal text-muted-foreground"> / {{ displayCategory(items.currentCategory) }}</span></span>
         </button>
       </div>
 

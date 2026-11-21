@@ -36,7 +36,7 @@ async function submit() {
   <Dialog :open="ui.showCategoryModal" @update:open="(v) => (ui.showCategoryModal = v)">
     <DialogContent class="max-w-xs">
       <DialogHeader>
-        <DialogTitle>新增分類字典</DialogTitle>
+        <DialogTitle>新增分類</DialogTitle>
       </DialogHeader>
       <input
         v-model="name"

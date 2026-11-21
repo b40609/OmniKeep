@@ -10,6 +10,7 @@ import Badge from '@/components/ui/badge/Badge.vue'
 import { useUiStore } from '@/stores/ui'
 import { useItemsStore } from '@/stores/items'
 import { displayCategory } from '@/lib/format'
+import { isWebUrl } from '@/lib/originLink'
 import { getDailyDeck, submitSwipeAction, type DeckCard } from '@/lib/api'
 
 const ui = useUiStore()
@@ -419,7 +420,7 @@ onUnmounted(() => {
         <div class="mt-1 flex items-center gap-1 text-2xs text-muted-foreground">
           <span class="truncate max-w-sm">{{ currentCard.author || currentCard.url }}</span>
           <a
-            v-if="currentCard.url"
+            v-if="isWebUrl(currentCard.url)"
             :href="currentCard.url"
             target="_blank"
             rel="noopener noreferrer"

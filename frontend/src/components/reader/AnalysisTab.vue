@@ -18,10 +18,12 @@ import DeepDiagram from '@/components/reader/DeepDiagram.vue'
 import ReaderOutline from '@/components/reader/ReaderOutline.vue'
 import { useUiStore } from '@/stores/ui'
 import { useMutations } from '@/composables/useMutations'
+import { useSnapshotAvailable } from '@/composables/useSnapshotAvailable'
 
 const ui = useUiStore()
 const itemsStore = useItemsStore()
 const { openSnapshot } = useMutations()
+const hasSnapshot = useSnapshotAvailable()
 // the page this item was kept from: the button under the title, the source line and the cover all open it
 const origin = computed(() => originLink(ui.activeItem?.url))
 
@@ -149,6 +151,7 @@ function openItem(id: number | string) {
         </span>
         </template>
         <button
+          v-if="hasSnapshot"
           type="button"
           class="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-lg border border-border px-3 text-xs text-muted-foreground transition-colors hover:bg-accent"
           title="開啟收錄時保存的離線網頁"
@@ -499,7 +502,7 @@ function openItem(id: number | string) {
         <div><dt>{{ ui.activeItem.published_date ? '發布' : '收錄' }}</dt><dd>{{ ui.activeItem.published_date || formatRelativeTime(ui.activeItem.created_at) }}</dd></div>
         <div v-if="ui.activeItem.author"><dt>作者</dt><dd>{{ ui.activeItem.author }}</dd></div>
         <div v-if="ui.activeItem.content_raw"><dt>閱讀時間</dt><dd>{{ estimateReadTime(ui.activeItem.content_raw) }} 分鐘</dd></div>
-        <div><dt>離線快照</dt><dd><button type="button" class="reader-info__link" title="開啟收錄時保存的離線網頁" @click="openSnapshot(ui.activeItem)">開啟<ChevronRight class="size-3.5" /></button></dd></div>
+        <div v-if="hasSnapshot"><dt>離線快照</dt><dd><button type="button" class="reader-info__link" title="開啟收錄時保存的離線網頁" @click="openSnapshot(ui.activeItem)">開啟<ChevronRight class="size-3.5" /></button></dd></div>
       </dl>
       <div v-if="ui.activeItem.tech_tags?.length" class="reader-info__tags">
         <span v-for="tag in ui.activeItem.tech_tags" :key="tag">#{{ tag }}</span>
