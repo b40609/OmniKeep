@@ -36,7 +36,8 @@ TOOL_JUDGE_SYSTEM_PROMPT = """你是一位嚴謹的軟體架構、開源生態�
    - >= 0.7：名稱高度吻合，且功能描述、技術棧與貼文所提及的核心完全一致（若為該模型的官方開源實作、主流 C++/推理移植版或核心社群封裝庫，亦屬有效匹配）。
    - 0.4 到 0.7：名稱相似或概念吻合，但貼文資訊有限、無法 100% 確信為作者所指之唯一專案。
    - < 0.4：毫不相干或同名但完全不同領域。
-4. 輸出合法的 JSON 物件：
+4. 領域一致是必要條件：即使候選專案名稱與提及名稱完全相同、星數很高，只要 repo 描述或標籤所屬領域（例如「量化交易／金融回測」）與貼文或演講上下文（例如「定理證明／形式化驗證」）對不上，就必須拒絕匹配（matched_index 設為 null、confidence < 0.4）。
+5. 輸出合法的 JSON 物件：
 {
   "matched_index": 1,
   "confidence": 0.95,
@@ -206,6 +207,73 @@ async def search_huggingface_models(query: str, limit: int = 5) -> List[Dict[str
     return top_candidates
 
 
+_CONTEXT_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into",
+    "is", "it", "of", "on", "or", "that", "the", "this", "to", "with", "your",
+    "tool", "tools", "project", "projects", "repo", "repository", "open", "source",
+}
+
+_LANGUAGE_ONLY_TOKENS = {
+    "python", "javascript", "typescript", "rust", "go", "golang", "java",
+    "c++", "c#", "csharp", "ruby", "php", "swift", "kotlin", "shell", "bash",
+}
+
+_ZH_EN_CONCEPT_HINTS = {
+    "地圖": {"map", "maps", "mapping"},
+    "可視化": {"visual", "visualize", "visualization"},
+    "視覺": {"visual", "vision"},
+    "設計": {"design", "ui", "ux"},
+    "證明": {"prove", "prover", "proof", "theorem", "formal", "verification"},
+    "驗證": {"verify", "verification", "formal", "test", "testing", "check"},
+    "形式化": {"formal", "verification", "theorem", "prover"},
+    "量化": {"quant", "quantitative", "algorithmic", "trading"},
+    "交易": {"trading", "trade", "finance", "backtest", "algorithmic"},
+    "回測": {"backtest", "backtesting", "trading"},
+    "外掛": {"plugin", "plugins", "extension"},
+    "插件": {"plugin", "plugins", "extension"},
+}
+
+
+def _extract_domain_tokens(text: str, exclude_name: str = "") -> set[str]:
+    """Extract normalized domain tokens (plus bilingual concept hints) from text."""
+    lower = (text or "").lower()
+    tokens: set[str] = set()
+    for raw in re.findall(r"[a-z0-9][a-z0-9_+#.-]*", lower):
+        if len(raw) >= 2:
+            tokens.add(raw)
+        for part in re.split(r"[-_./]", raw):
+            if len(part) >= 2:
+                tokens.add(part)
+
+    for zh_term, en_hints in _ZH_EN_CONCEPT_HINTS.items():
+        if zh_term in lower:
+            tokens.update(en_hints)
+
+    excluded = set(_CONTEXT_STOPWORDS)
+    if exclude_name:
+        ex_low = exclude_name.strip().lower()
+        excluded.add(ex_low)
+        excluded.update(p for p in re.split(r"[-_./\s]+", ex_low) if p)
+
+    return tokens - excluded
+
+
+def _context_aligns_with_candidate(target_name: str, mention_context: str, candidate: Dict[str, Any]) -> bool:
+    """Verify mention_context shares non-trivial domain overlap with candidate metadata."""
+    if not (mention_context or "").strip():
+        return False
+
+    ctx_tokens = _extract_domain_tokens(mention_context, exclude_name=target_name)
+    cand_text = " ".join([
+        str(candidate.get("description") or ""),
+        " ".join(str(t) for t in (candidate.get("topics") or [])),
+    ])
+    cand_tokens = _extract_domain_tokens(cand_text, exclude_name=target_name)
+
+    overlap = (ctx_tokens & cand_tokens) - _LANGUAGE_ONLY_TOKENS
+    return bool(overlap)
+
+
 async def judge_best_matching_repo(
     target_name: str,
     mention_context: str,
@@ -216,19 +284,20 @@ async def judge_best_matching_repo(
     if not candidates:
         return {"matched": None, "confidence": 0.0, "reason": "無候選專案"}
 
-    # Exact name fast-path (e.g. repo name equals target_name exactly and has stars)
+    # Exact name fast-path only when candidate metadata actually aligns with mention_context;
+    # otherwise defer to the LLM judge so same-name repos in other domains are not linked blindly.
     clean_target = target_name.strip().lower()
     for idx, c in enumerate(candidates):
         c_name = c["name"].lower()
         if (c_name == clean_target or c["full_name"].lower().endswith("/" + clean_target)) and (c["stars"] >= 20 or c.get("downloads", 0) >= 100):
-            # High-confidence direct match if name is distinct and well-starred
-            p_prefix = "Hugging Face 模型" if c.get("platform") == "huggingface" else "倉庫"
-            score_metric = f"下載 {c.get('downloads', 0):,}" if c.get("platform") == "huggingface" else f"★{c['stars']:,}"
-            return {
-                "matched": c,
-                "confidence": 0.95,
-                "reason": f"{p_prefix} '{c['full_name']}' 與提及名稱完全一致 ({score_metric})"
-            }
+            if _context_aligns_with_candidate(target_name, mention_context, c):
+                p_prefix = "Hugging Face 模型" if c.get("platform") == "huggingface" else "倉庫"
+                score_metric = f"下載 {c.get('downloads', 0):,}" if c.get("platform") == "huggingface" else f"★{c['stars']:,}"
+                return {
+                    "matched": c,
+                    "confidence": 0.95,
+                    "reason": f"{p_prefix} '{c['full_name']}' 與提及名稱及領域上下文一致 ({score_metric})"
+                }
 
     # Format candidates for LLM multiple choice
     candidate_lines = []
@@ -352,17 +421,19 @@ async def resolve_mentioned_tools(
 
             gh_candidates = await search_github_repositories(clean_name, limit=5)
 
+            judge_context = f"{reason} (標題：{default_title})" if default_title and default_title not in reason else reason
+
             # Check Hugging Face match
             matched_hf = None
             if hf_candidates:
-                judge_hf = await judge_best_matching_repo(clean_name, reason, hf_candidates, provider=provider)
+                judge_hf = await judge_best_matching_repo(clean_name, judge_context, hf_candidates, provider=provider)
                 if judge_hf.get("confidence", 0.0) >= 0.7:
                     matched_hf = judge_hf.get("matched")
 
             # Check GitHub match
             matched_gh = None
             if gh_candidates:
-                judge_gh = await judge_best_matching_repo(clean_name, reason, gh_candidates, provider=provider)
+                judge_gh = await judge_best_matching_repo(clean_name, judge_context, gh_candidates, provider=provider)
                 if judge_gh.get("confidence", 0.0) >= 0.7:
                     matched_gh = judge_gh.get("matched")
 
@@ -407,7 +478,7 @@ async def resolve_mentioned_tools(
             else:
                 candidates = hf_candidates + gh_candidates
                 if candidates:
-                    judge = await judge_best_matching_repo(clean_name, reason, candidates, provider=provider)
+                    judge = await judge_best_matching_repo(clean_name, judge_context, candidates, provider=provider)
                     confidence = judge.get("confidence", 0.0)
                     matched = judge.get("matched")
                     if matched and confidence >= 0.4:
@@ -420,7 +491,15 @@ async def resolve_mentioned_tools(
                         sub["reason"] = f"[疑似候選] {reason} · {matched['full_name']}"
                         sub["candidate_repos"] = [c["html_url"] for c in candidates[:3]]
                     else:
+                        sub["canonical_url"] = ""
                         sub["status"] = "unverified"
+                        if "[待確認]" not in reason and "[疑似候選]" not in reason:
+                            sub["reason"] = f"[待確認] {reason}".strip()
+                else:
+                    sub["canonical_url"] = ""
+                    sub["status"] = "unverified"
+                    if "[待確認]" not in reason and "[疑似候選]" not in reason:
+                        sub["reason"] = f"[待確認] {reason}".strip()
                 enriched.append(sub)
 
     # 2. Check if any sub_entity was successfully resolved with a concrete URL
@@ -461,8 +540,11 @@ async def resolve_mentioned_tools(
                         "stars": matched["stars"],
                         "matched_name": matched["full_name"]
                     }
-                    # Filter out ghost entries with empty URLs and prepend the discovered concrete entity
-                    enriched = [discovered] + [s for s in enriched if (s.get("canonical_url") or "").startswith("http")]
+                    # Filter out ghost entries unless they were explicitly marked unverified
+                    enriched = [discovered] + [
+                        s for s in enriched
+                        if (s.get("canonical_url") or "").startswith("http") or s.get("status") == "unverified"
+                    ]
                 elif matched and confidence >= 0.4:
                     prefix = "🤗" if matched.get("platform") == "huggingface" else "📦"
                     discovered = {
@@ -474,15 +556,22 @@ async def resolve_mentioned_tools(
                         "matched_name": matched["full_name"],
                         "candidate_repos": [c["html_url"] for c in candidates[:3]]
                     }
-                    enriched = [discovered] + [s for s in enriched if (s.get("canonical_url") or "").startswith("http")]
+                    enriched = [discovered] + [
+                        s for s in enriched
+                        if (s.get("canonical_url") or "").startswith("http") or s.get("status") == "unverified"
+                    ]
 
-    # Clean up enriched list: prioritize entries with real URLs
-    enriched = [s for s in enriched if (s.get("canonical_url") or "").startswith("http")]
+    # Clean up enriched list: keep entries with real URLs or explicitly marked unverified (no fabricated URL)
+    enriched = [
+        s for s in enriched
+        if (s.get("canonical_url") or "").startswith("http") or s.get("status") == "unverified"
+    ]
 
     # 3. Discover Taiwan / localized counterpart for regional projects (e.g. 潤學 / 出海)
-    if enriched:
+    resolved_with_url = [e for e in enriched if (e.get("canonical_url") or "").startswith("http")]
+    if resolved_with_url:
         tw_counterpart = await resolve_taiwan_counterpart(
-            enriched[0].get("name", ""),
+            resolved_with_url[0].get("name", ""),
             content_raw,
             provider=provider
         )

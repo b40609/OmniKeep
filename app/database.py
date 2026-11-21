@@ -1769,12 +1769,24 @@ def save_citation(data: Dict[str, Any]) -> str:
     target_name = data.get("target_name") or ""
     context = data.get("mention_context") or ""
 
-    # Check if this exact relationship already recorded
-    cursor.execute("""
-        SELECT id FROM item_citations 
-        WHERE source_parent_id = ? AND (target_canonical_url = ? OR (target_item_id = ? AND target_item_id IS NOT NULL))
-        LIMIT 1
-    """, (parent_id, canon_url, target_item_id))
+    # Check if this exact relationship already recorded.
+    # When canon_url is empty (unlinked [待確認] mention), match by target_name so
+    # multiple unlinked mentions on the same parent do not overwrite each other.
+    if canon_url:
+        cursor.execute("""
+            SELECT id FROM item_citations 
+            WHERE source_parent_id = ? AND (target_canonical_url = ? OR (target_item_id = ? AND target_item_id IS NOT NULL))
+            LIMIT 1
+        """, (parent_id, canon_url, target_item_id))
+    else:
+        cursor.execute("""
+            SELECT id FROM item_citations 
+            WHERE source_parent_id = ? AND (
+                (target_canonical_url = '' AND LOWER(target_name) = LOWER(?))
+                OR (target_item_id = ? AND target_item_id IS NOT NULL)
+            )
+            LIMIT 1
+        """, (parent_id, target_name, target_item_id))
     existing = cursor.fetchone()
 
     if existing:

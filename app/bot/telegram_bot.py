@@ -520,6 +520,97 @@ class TelegramBot:
             "show_alert": show_alert
         })
 
+    @staticmethod
+    def _render_sub_entities_sections(sub_entities: List[Dict[str, Any]], *, detail_mode: bool = False) -> str:
+        """Partition and format sub-entities so every section count matches its listed items."""
+        if not sub_entities:
+            return ""
+
+        competitor_items: List[str] = []
+        taiwan_items: List[str] = []
+        verified_items: List[str] = []
+        candidate_items: List[str] = []
+
+        for sub in sub_entities:
+            if not isinstance(sub, dict):
+                continue
+            raw_name = (sub.get("target_name") or "").strip()
+            t_url = (sub.get("target_canonical_url") or "").strip()
+            raw_ctx = (sub.get("mention_context") or "").strip()
+            if not raw_name and not t_url and not raw_ctx:
+                continue
+
+            t_name = html.escape(raw_name or "開源專案")
+            ctx = html.escape(raw_ctx)
+            link_markup = f"<a href=\"{html.escape(t_url)}\">{t_name}</a>" if t_url else f"<b>{t_name}</b>"
+
+            if "[庫內競品]" in ctx:
+                ctx_clean = ctx.replace("[庫內競品]", "").strip(" ·-")
+                competitor_items.append(
+                    f"• <b>同賽道競品</b>：{link_markup}" + (f"\n  <i>💡 {ctx_clean}</i>" if ctx_clean else "")
+                )
+            elif "[上位替代]" in ctx:
+                ctx_clean = ctx.replace("[上位替代]", "").strip(" ·-")
+                competitor_items.append(
+                    f"• <b>上位替代</b>：{link_markup}" + (f"\n  <i>💡 {ctx_clean}</i>" if ctx_clean else "")
+                )
+            elif "[庫內重複]" in ctx:
+                ctx_clean = ctx.replace("[庫內重複]", "").strip(" ·-")
+                competitor_items.append(
+                    f"• <b>重複收錄</b>：{link_markup}" + (f"\n  <i>💡 {ctx_clean}</i>" if ctx_clean else "")
+                )
+            elif "[台灣對等資源]" in ctx:
+                ctx_clean = ctx.replace("[台灣對等資源]", "").strip(" ·-")
+                taiwan_items.append(
+                    f"• {link_markup}" + (f" — {ctx_clean}" if ctx_clean else "")
+                )
+            elif "[疑似候選]" in ctx or "[待確認]" in ctx:
+                ctx_clean = ctx.replace("[疑似候選]", "").replace("[待確認]", "").strip(" ·-")
+                candidate_items.append(
+                    f"• {link_markup}" + (f" — {ctx_clean}" if ctx_clean else "")
+                )
+            else:
+                verified_items.append(
+                    f"• {link_markup}" + (f" — {ctx}" if ctx else "")
+                )
+
+        tools_section = ""
+        if competitor_items:
+            shown_comp = competitor_items if detail_mode else competitor_items[:3]
+            tools_section += "\n\n⚖️ <b>庫內競品與關聯提醒</b>\n" + "\n".join(shown_comp)
+
+        if taiwan_items:
+            shown_tw = taiwan_items if detail_mode else taiwan_items[:3]
+            tools_section += "\n\n🇹🇼 <b>台灣/在地對等資源</b>\n" + "\n".join(shown_tw)
+
+        if verified_items:
+            has_hf = any("huggingface.co" in x for x in verified_items)
+            has_gh = any("github.com" in x for x in verified_items)
+            count_suffix = f" ({len(verified_items)})" if (detail_mode or len(verified_items) > 1) else ""
+            list_suffix = "清單" if detail_mode else ""
+            if has_hf and has_gh:
+                section_title = f"📦 🤗 <b>提及專案與 AI 模型{list_suffix}{count_suffix}</b>"
+            elif has_hf:
+                section_title = f"🤗 <b>提及 AI 模型 / 權重{list_suffix}{count_suffix}</b>"
+            else:
+                section_title = f"📦 <b>提及開源專案{list_suffix}{count_suffix}</b>"
+
+            max_verified = len(verified_items) if detail_mode else 8
+            tools_section += f"\n\n{section_title}\n" + "\n".join(verified_items[:max_verified])
+            if not detail_mode and len(verified_items) > max_verified:
+                rem = len(verified_items) - max_verified
+                tools_section += f"\n<i>...以及另外 {rem} 個專案（可點擊「深入剖析」查看全貌）</i>"
+
+        if candidate_items:
+            count_cand = f" ({len(candidate_items)})" if len(candidate_items) > 1 else ""
+            max_cand = len(candidate_items) if detail_mode else 5
+            tools_section += f"\n\n🔍 <b>疑似提及專案（未確認{count_cand}）</b>\n" + "\n".join(candidate_items[:max_cand])
+            if not detail_mode and len(candidate_items) > max_cand:
+                rem_cand = len(candidate_items) - max_cand
+                tools_section += f"\n<i>...以及另外 {rem_cand} 個候選專案</i>"
+
+        return tools_section
+
     def build_item_card_html(self, item: Dict[str, Any]) -> str:
         title = html.escape(item.get("title_l1", "未命名的收藏"))
         category = html.escape(item.get("category_name", "INBOX")).upper()
@@ -565,79 +656,7 @@ class TelegramBot:
         if item_id:
             try:
                 sub_entities = get_sub_entities_for_parent(item_id)
-                if sub_entities:
-                    competitor_items = []
-                    taiwan_items = []
-                    verified_items = []
-                    candidate_items = []
-                    for sub in sub_entities:
-                        t_name = html.escape(sub.get("target_name") or "開源專案")
-                        t_url = sub.get("target_canonical_url") or ""
-                        ctx = html.escape((sub.get("mention_context") or "").strip())
-                        if t_url:
-                            link_markup = f"<a href=\"{html.escape(t_url)}\">{t_name}</a>"
-                        else:
-                            link_markup = f"<b>{t_name}</b>"
-
-                        if "[庫內競品]" in ctx:
-                            ctx_clean = ctx.replace("[庫內競品]", "").strip(" ·-")
-                            competitor_items.append(
-                                f"• <b>同賽道競品</b>：{link_markup}" + (f"\n  <i>💡 {ctx_clean}</i>" if ctx_clean else "")
-                            )
-                        elif "[上位替代]" in ctx:
-                            ctx_clean = ctx.replace("[上位替代]", "").strip(" ·-")
-                            competitor_items.append(
-                                f"• <b>上位替代</b>：{link_markup}" + (f"\n  <i>💡 {ctx_clean}</i>" if ctx_clean else "")
-                            )
-                        elif "[庫內重複]" in ctx:
-                            ctx_clean = ctx.replace("[庫內重複]", "").strip(" ·-")
-                            competitor_items.append(
-                                f"• <b>重複收錄</b>：{link_markup}" + (f"\n  <i>💡 {ctx_clean}</i>" if ctx_clean else "")
-                            )
-                        elif "[台灣對等資源]" in ctx:
-                            ctx_clean = ctx.replace("[台灣對等資源]", "").strip(" ·-")
-                            taiwan_items.append(
-                                f"• {link_markup}" + (f" — {ctx_clean}" if ctx_clean else "")
-                            )
-                        elif "[疑似候選]" in ctx:
-                            ctx_clean = ctx.replace("[疑似候選]", "").strip(" ·-")
-                            candidate_items.append(
-                                f"• {link_markup}" + (f" — {ctx_clean}" if ctx_clean else "")
-                            )
-                        else:
-                            verified_items.append(
-                                f"• {link_markup}" + (f" — {ctx}" if ctx else "")
-                            )
-
-                    if competitor_items:
-                        tools_section += f"\n\n⚖️ <b>庫內競品與關聯提醒</b>\n" + "\n".join(competitor_items[:3])
-
-                    if taiwan_items:
-                        tools_section += f"\n\n🇹🇼 <b>台灣/在地對等資源</b>\n" + "\n".join(taiwan_items[:3])
-
-                    if verified_items:
-                        has_hf = any("huggingface.co" in x for x in verified_items)
-                        has_gh = any("github.com" in x for x in verified_items)
-                        count_suffix = f" ({len(verified_items)})" if len(verified_items) > 1 else ""
-                        if has_hf and has_gh:
-                            section_title = f"📦 🤗 <b>提及專案與 AI 模型{count_suffix}</b>"
-                        elif has_hf:
-                            section_title = f"🤗 <b>提及 AI 模型 / 權重{count_suffix}</b>"
-                        else:
-                            section_title = f"📦 <b>提及開源專案{count_suffix}</b>"
-
-                        max_verified = 8
-                        tools_section += f"\n\n{section_title}\n" + "\n".join(verified_items[:max_verified])
-                        if len(verified_items) > max_verified:
-                            rem = len(verified_items) - max_verified
-                            tools_section += f"\n<i>...以及另外 {rem} 個專案（可點擊「深入剖析」查看全貌）</i>"
-                    if candidate_items:
-                        count_cand = f" ({len(candidate_items)})" if len(candidate_items) > 1 else ""
-                        max_cand = 5
-                        tools_section += f"\n\n🔍 <b>疑似提及專案（未確認{count_cand}）</b>\n" + "\n".join(candidate_items[:max_cand])
-                        if len(candidate_items) > max_cand:
-                            rem_cand = len(candidate_items) - max_cand
-                            tools_section += f"\n<i>...以及另外 {rem_cand} 個候選專案</i>"
+                tools_section = self._render_sub_entities_sections(sub_entities, detail_mode=False)
             except Exception as e:
                 logger.debug(f"[Telegram Card] Error getting sub-entities: {e}")
 
@@ -701,7 +720,7 @@ class TelegramBot:
                     t_url = sub.get("target_canonical_url") or ""
                     t_name = sub.get("target_name") or ""
                     ctx = sub.get("mention_context") or ""
-                    if t_url.startswith("http") and "[疑似候選]" not in ctx:
+                    if t_url.startswith("http") and "[疑似候選]" not in ctx and "[待確認]" not in ctx:
                         clean_name = re.sub(r'^[📦🤗\s]+', '', t_name).strip()
                         prefix = "🤗" if "huggingface.co" in t_url else "📦"
                         btn_label = f"{prefix} {clean_name[:12]} ↗"
@@ -1219,20 +1238,11 @@ class TelegramBot:
             if item_id:
                 try:
                     sub_entities = get_sub_entities_for_parent(item_id)
-                    if sub_entities:
-                        tool_lines = []
-                        for sub in sub_entities:
-                            t_name = html.escape(sub.get("target_name") or "開源專案")
-                            t_url = sub.get("target_canonical_url") or ""
-                            ctx = html.escape((sub.get("mention_context") or "").strip())
-                            link = f"<a href=\"{html.escape(t_url)}\">{t_name}</a>" if t_url else f"<b>{t_name}</b>"
-                            tool_lines.append(f"• {link}" + (f" — {ctx}" if ctx else ""))
-                        if tool_lines:
-                            tools_block = f"\n\n📦 <b>提及開源專案清單 ({len(tool_lines)})</b>\n" + "\n".join(tool_lines)
+                    tools_block = self._render_sub_entities_sections(sub_entities, detail_mode=True)
                 except Exception as e:
                     logger.debug(f"[Telegram Detail] Error getting sub-entities: {e}")
 
-            max_deep_len = 3800 - len(tools_block)
+            max_deep_len = max(0, 3800 - len(tools_block))
             if len(formatted_deep) > max_deep_len:
                 formatted_deep = formatted_deep[:max_deep_len] + "\n\n<i>...(全文篇幅較長，請於 Web 閱讀完整內容)...</i>"
 
