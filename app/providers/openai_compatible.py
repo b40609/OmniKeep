@@ -97,6 +97,25 @@ def json_part(raw: str) -> str:
     return text
 
 
+# Longest 429 backoff _chat sits out before asking the same service again.
+MAX_INLINE_WAIT = 90.0
+# A 429 that says a free allowance for a whole period is used up (Token Harbor 2026-11-22:
+# "You've used this period's free allowance. Your next rolling 7-day period starts on ...").
+_ALLOWANCE_USED_UP = re.compile(
+    r"(used|exhausted|reached|exceeded)[^.]{0,40}(free )?allowance|next (rolling )?[\w-]+ period starts",
+    re.IGNORECASE)
+
+
+def _not_worth_waiting(exc: Exception, retry_after: Optional[float]) -> bool:
+    """True when retrying the same service within seconds cannot succeed: it asked for a wait
+    longer than _chat sits out, or said its allowance for the period is gone. Both retries
+    used to wait 90 s each (three minutes per analysis) before the chain tried the next
+    connection; the chain pauses this one for its Retry-After instead."""
+    if retry_after is not None and retry_after > MAX_INLINE_WAIT:
+        return True
+    return bool(_ALLOWANCE_USED_UP.search(str(exc)))
+
+
 class OpenAICompatibleProvider(BaseLLMProvider):
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None, model: Optional[str] = None,
                  rate_limiter=None, status_key: str = "llm", label: str = "", json_mode: bool = True,
@@ -151,11 +170,11 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     except Exception:
                         pass
                     self.limiter.on_rate_limited(retry_after)
-                    if attempt == len(waits) - 1:
+                    if attempt == len(waits) - 1 or _not_worth_waiting(e, retry_after):
                         ai_status.record_failure(self.status_key, 429, str(e), self.label)
                         ai_usage.record_failure(self.status_key)
                         break
-                    wait = min(max(retry_after or preset_wait or 5.0, 2.0), 90.0)
+                    wait = min(max(retry_after or preset_wait or 5.0, 2.0), MAX_INLINE_WAIT)
                     logger.warning(
                         f"[{self.label or 'LLM'}] Rate limited — waiting {wait:.0f}s before retry "
                         f"{attempt + 1}/{len(waits) - 1}"

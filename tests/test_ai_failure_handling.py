@@ -541,3 +541,56 @@ async def test_a_state_write_that_never_lands_is_logged_and_the_person_still_hea
         await worker._process_task(task)  # does not raise
     assert "stays 'processing'" in caplog.text and "mark it failed" in caplog.text
     notices[0].assert_awaited_once()
+
+
+# ── 429s not worth waiting out (2026-11-22: two 90 s waits per analysis on a used-up allowance) ──
+
+class _NoPacing:
+    def slot(self):
+        class _Slot:
+            async def __aenter__(self): return None
+            async def __aexit__(self, *exc): return False
+        return _Slot()
+
+    def on_success(self): pass
+
+    def on_rate_limited(self, retry_after=None): pass
+
+
+def _limited(message, retry_after=None):
+    headers = {"retry-after": str(retry_after)} if retry_after is not None else {}
+    response = httpx.Response(429, headers=headers,
+                              request=httpx.Request("POST", "https://provider.example/v1/chat/completions"))
+    return openai.RateLimitError(message, response=response, body=None)
+
+
+def _chat_provider(*outcomes):
+    provider = OpenAICompatibleProvider(api_key="test-only", model="stub", rate_limiter=_NoPacing())
+    provider.client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+        create=AsyncMock(side_effect=list(outcomes)))))
+    return provider
+
+
+@pytest.mark.parametrize("failure", [
+    _limited("Error code: 429 - {'error': {'message': \"You've used this period's free allowance. Your next "
+             "rolling 7-day period starts on 27 Nov 2026 at 03:38 UTC.\"}}"),
+    _limited("Too Many Requests", retry_after=3600),
+])
+async def test_a_429_not_worth_waiting_out_goes_to_the_next_connection_at_once(failure, monkeypatch):
+    sleep = AsyncMock()
+    monkeypatch.setattr("app.providers.openai_compatible.asyncio.sleep", sleep)
+    provider = _chat_provider(failure, _completion("{}"))
+    with pytest.raises(openai.RateLimitError):
+        await provider._chat(model="stub", messages=[])
+    assert provider.client.chat.completions.create.await_count == 1
+    sleep.assert_not_awaited()
+
+
+async def test_a_short_429_is_still_waited_out_and_retried(monkeypatch):
+    sleep = AsyncMock()
+    monkeypatch.setattr("app.providers.openai_compatible.asyncio.sleep", sleep)
+    provider = _chat_provider(_limited("You've hit the rate limit for free models. Retry later.", retry_after=4),
+                              _completion("{}"))
+    await provider._chat(model="stub", messages=[])
+    assert provider.client.chat.completions.create.await_count == 2
+    sleep.assert_awaited_once_with(4.0)
