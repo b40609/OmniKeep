@@ -43,3 +43,6 @@ _bmad-output/
 
 # Order of the local LLM gateway (app/llm_gateway.py); its presence switches the gateway on
 llm_gateway.json
+
+# Completion markers written by dispatched review/fix threads
+docs/reviews/*.done
