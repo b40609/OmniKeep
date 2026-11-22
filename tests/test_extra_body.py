@@ -84,6 +84,15 @@ NV_OFF = {"chat_template_kwargs": {"thinking": False}}
 NV_KEY = "nvapi-test-abcdefghijklmnop"
 
 
+@pytest.fixture(autouse=True)
+def nvidia_preset(monkeypatch):
+    """The NVIDIA card carried the one real per-model preset until DeepSeek V4.1 Flash left its
+    free list (2026-11-22). The mechanism stays, so these tests put the same shape back."""
+    card = provider_catalog.card("nvidia")
+    monkeypatch.setitem(card, "models", [*card["models"], DS])
+    monkeypatch.setitem(card, "model_extra_body", {DS: NV_OFF})
+
+
 def test_every_preset_is_a_valid_extra_body_for_a_listed_model():
     for card in provider_catalog.CARDS:
         for model, extra in (card.get("model_extra_body") or {}).items():
