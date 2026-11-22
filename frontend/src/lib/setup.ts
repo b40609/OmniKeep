@@ -23,6 +23,8 @@ export interface SetupCard {
   no_signup?: boolean
   /** a limited-time free offer that is over */
   ended?: boolean
+  /** the CardGroup it is listed under */
+  group?: string
 }
 
 /**
@@ -33,6 +35,35 @@ export interface SetupCard {
  */
 export function isStarterCard(card: SetupCard): boolean {
   return !card.ended && (card.no_signup === true || card.key_mode === 'none')
+}
+
+/** A kind of free the catalog sorts cards by (app/provider_catalog.py GROUPS). */
+export interface CardGroup {
+  id: string
+  title: string
+  /** how to use services of this kind */
+  how: string
+}
+
+/**
+ * Cards under their group, in the catalog's group order, empty groups left out. A card naming
+ * no known group goes under the last one (付費或自訂) rather than disappearing.
+ */
+export function groupCards<T extends { group?: string }>(cards: T[], groups: CardGroup[]): { group: CardGroup; cards: T[] }[] {
+  if (!groups.length) return cards.length ? [{ group: { id: '', title: '', how: '' }, cards }] : []
+  const known = new Set(groups.map((g) => g.id))
+  const fallback = groups[groups.length - 1].id
+  return groups
+    .map((group) => ({ group, cards: cards.filter((c) => (c.group && known.has(c.group) ? c.group : fallback) === group.id) }))
+    .filter((g) => g.cards.length)
+}
+
+/** What a card can do beyond writing an analysis, from its caps, as short tags. */
+export function cardUses(card: { caps?: { video?: boolean; embeddings?: boolean } }): string[] {
+  const uses: string[] = []
+  if (card.caps?.video) uses.push('能讀 YouTube 影片')
+  if (card.caps?.embeddings) uses.push('能做搜尋向量')
+  return uses
 }
 
 /** Where the first-run guide opens by itself, or null when it stays closed. */

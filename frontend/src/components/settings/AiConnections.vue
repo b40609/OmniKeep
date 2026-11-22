@@ -14,10 +14,10 @@ import { SLOT_TEXT } from '@/lib/settingsText'
 import {
   createAiConnection, deleteAiConnection, getAiCatalog, getAiConnections, saveAiSlots, testAiConnection, testAiDraft,
   updateAiConnection,
-  type AiCard, type AiConnection, type AiConnectionInput, type AiOverview, type AiSlotEntry, type AiSlotId, type AiTestResult,
+  type AiCard, type AiCardGroup, type AiConnection, type AiConnectionInput, type AiOverview, type AiSlotEntry, type AiSlotId, type AiTestResult,
 } from '@/lib/api'
 import { autoExtraBody, extraBodyAfterModelChange, formatExtraBody, parseExtraBody } from '@/lib/extraBody'
-import { formatCooldown, hasPlaceholder } from '@/lib/setup'
+import { cardUses, formatCooldown, groupCards, hasPlaceholder } from '@/lib/setup'
 import { useUiStore } from '@/stores/ui'
 
 /**
@@ -29,6 +29,9 @@ const ui = useUiStore()
 
 const overview = ref<AiOverview | null>(null)
 const cards = ref<AiCard[]>([])
+const cardGroups = ref<AiCardGroup[]>([])
+// The service picker lists cards by kind of free, each kind with a line on how to use it.
+const groupedCards = computed(() => groupCards(cards.value, cardGroups.value))
 const loadError = ref('')
 const busy = ref<string>('')
 const tests = reactive<Record<string, AiTestResult | 'running'>>({})
@@ -61,7 +64,10 @@ async function refresh() {
   loadError.value = ''
   try {
     const [catalog, current] = await Promise.all([cards.value.length ? null : getAiCatalog(), getAiConnections()])
-    if (catalog) cards.value = catalog.cards
+    if (catalog) {
+      cards.value = catalog.cards
+      cardGroups.value = catalog.groups ?? []
+    }
     apply(current)
     focusLinkedCard()
   } catch (e) {
@@ -441,22 +447,28 @@ defineExpose({ refresh })
               <p class="text-base font-semibold">選一個 AI 服務</p>
               <button type="button" class="set-icon" aria-label="關閉" title="關閉" @click="picking = false"><X aria-hidden="true" /></button>
             </div>
-            <ul class="mt-2 grid gap-x-6 sm:grid-cols-2">
-              <li v-for="c in cards" :key="c.id" class="border-t border-hairline">
-                <button type="button" class="w-full cursor-pointer rounded-lg px-2 py-3 text-left transition-colors hover:bg-surface-2" @click="startNew(c)">
-                  <span class="flex items-baseline justify-between gap-3">
-                    <span class="text-sm font-semibold">{{ c.label }}</span>
-                    <span class="shrink-0 text-xs text-muted-foreground">{{ c.cost }}</span>
-                  </span>
-                  <span class="mt-0.5 block text-sm text-muted-foreground">{{ c.limits }}</span>
-                  <span class="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <span v-if="c.no_signup" class="set-tag">不用註冊</span>
-                    <span v-if="c.ended" class="set-tag">活動已結束</span>
-                    <span>{{ c.verified }} 查證</span>
-                  </span>
-                </button>
-              </li>
-            </ul>
+            <section v-for="g in groupedCards" :key="g.group.id" class="mt-5 first-of-type:mt-3">
+              <template v-if="g.group.title">
+                <h4 class="text-sm font-semibold">{{ g.group.title }}</h4>
+                <p class="set-text mt-0.5">{{ g.group.how }}</p>
+              </template>
+              <ul class="mt-2 grid gap-x-6 sm:grid-cols-2">
+                <li v-for="c in g.cards" :key="c.id" class="border-t border-hairline">
+                  <button type="button" class="w-full cursor-pointer rounded-lg px-2 py-3 text-left transition-colors hover:bg-surface-2" @click="startNew(c)">
+                    <span class="flex items-baseline justify-between gap-3">
+                      <span class="text-sm font-semibold">{{ c.label }}</span>
+                      <span class="shrink-0 text-xs text-muted-foreground">{{ c.cost }}</span>
+                    </span>
+                    <span class="mt-0.5 block text-sm text-muted-foreground">{{ c.limits }}</span>
+                    <span class="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      <span v-if="c.ended" class="set-tag">活動已結束</span>
+                      <span v-for="use in cardUses(c)" :key="use" class="set-tag">{{ use }}</span>
+                      <span>{{ c.verified }} 查證</span>
+                    </span>
+                  </button>
+                </li>
+              </ul>
+            </section>
             <p v-if="cards.length" class="set-text mt-3">限額以各服務的後台為準。</p>
           </div>
 

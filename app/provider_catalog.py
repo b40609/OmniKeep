@@ -322,6 +322,35 @@ CARDS: List[Dict[str, Any]] = [
     },
 ]
 
+# How the settings page and the first-run guide sort the cards: by what kind of free the service
+# is, so a person sees which ones need nothing, which refill by themselves and which run out
+# (2026-11-22: 23 cards in one flat list told none of that). `how` is how to use that kind.
+GROUPS: List[Dict[str, str]] = [
+    {"id": "keyless", "title": "不用註冊，馬上能用",
+     "how": "不用帳號也不用金鑰，剛裝好就能分析。速度和穩定度沒有保證，適合先用、之後當保底。"},
+    {"id": "recurring", "title": "註冊就有，額度會自動補回",
+     "how": "用 Google 或 email 註冊、拿一把免費金鑰。每分鐘、每天或每週有上限，用完過一陣子會補回。"
+            "建兩到三條加到「分析」，一條撞到上限就自動換下一條。"},
+    {"id": "grant", "title": "送一筆額度，用完就沒",
+     "how": "註冊送的一次性額度，或有截止日的限時活動。適合一次重跑大量舊收藏；用完或活動結束，就從用途裡拿掉。"},
+    {"id": "subscription", "title": "用你已經付費的方案",
+     "how": "已經訂閱 Google AI Pro 的話，每月的 Google Cloud 抵免額可以拿來分析。一定要在帳單設支出上限，抵免額用完才不會直接扣卡。"},
+    {"id": "local", "title": "在自己電腦上跑",
+     "how": "完全免費、不限次數，資料不出這台電腦。搜尋用的向量建議用它；拿來分析要看電腦效能。"},
+    {"id": "paid", "title": "付費或自訂",
+     "how": "按用量付費的服務，或你自己的 OpenAI 相容端點、閘道。"},
+]
+GROUP_BY_CARD: Dict[str, str] = {
+    "flm": "keyless", "jarvisclaw": "keyless", "kilo": "keyless", "ovh": "keyless",
+    "agnes": "recurring", "gemini": "recurring", "groq": "recurring", "cloudflare": "recurring",
+    "openrouter": "recurring", "zai": "recurring", "tokenharbor": "recurring", "requesty": "recurring",
+    "nvidia": "recurring", "aihubmix": "recurring", "sealion": "recurring",
+    "inception": "grant", "itera": "grant",
+    "vertex": "subscription",
+    "ollama": "local",
+    "omniroute": "paid", "deepseek": "paid", "openai": "paid", "custom": "paid",
+}
+
 CARD_BY_ID: Dict[str, Dict[str, Any]] = {card["id"]: card for card in CARDS}
 KINDS = ("openai", "gemini", "ollama")
 
@@ -362,6 +391,7 @@ def catalog() -> Dict[str, Any]:
             "editable_url": False, "embedding_model": "", "no_signup": False,
             "verified": VERIFIED, "ends": "", "model_extra_body": {},
             **c,  # a card checked later carries its own "verified"
+            "group": GROUP_BY_CARD.get(c["id"], "paid"),
             "ended": ended(c),
         })
-    return {"verified": VERIFIED, "cards": cards}
+    return {"verified": VERIFIED, "cards": cards, "groups": GROUPS}

@@ -8,10 +8,10 @@ import TelegramGuide from '@/components/settings/TelegramGuide.vue'
 import TelegramPairing from '@/components/settings/TelegramPairing.vue'
 import {
   createAiConnection, getAiCatalog, getAiFeatures, getServiceStatus, getStats, getTelegramStatus, saveSettings, testAiDraft,
-  type AiCard, type AiFeature, type AiTestResult, type TelegramStatus,
+  type AiCard, type AiCardGroup, type AiFeature, type AiTestResult, type TelegramStatus,
 } from '@/lib/api'
 import {
-  cardById, connectionDraft, formProblem, guideStart, initialForm, isStarterCard, sameValues, type ConnectionDraft, type SetupForm,
+  cardById, cardUses, connectionDraft, formProblem, groupCards, guideStart, initialForm, isStarterCard, sameValues, type ConnectionDraft, type SetupForm,
 } from '@/lib/setup'
 import { TELEGRAM_TOKEN_EXAMPLE, tokenProblem } from '@/lib/telegramGuide'
 import { useUiStore } from '@/stores/ui'
@@ -33,6 +33,7 @@ const WELCOMED_KEY = 'omnikeep-welcomed'
 type Step = 'welcome' | 'choose' | 'connect' | 'telegram' | 'done'
 const step = ref<Step>('choose')
 const cards = ref<AiCard[]>([])
+const cardGroups = ref<AiCardGroup[]>([])
 const catalogError = ref('')
 const cardId = ref('')
 const showAll = ref(false)
@@ -53,6 +54,8 @@ const shownCards = computed(() => {
   const picked = card.value && !isStarterCard(card.value) ? [card.value] : []
   return [...starterCards.value, ...picked]
 })
+// Listed under their kind of free (不用註冊、會自動補回、用完就沒…), each with how to use it.
+const shownGroups = computed(() => groupCards(shownCards.value, cardGroups.value))
 const hiddenCount = computed(() => cards.value.length - shownCards.value.length)
 const values = computed(() => (card.value ? connectionDraft(card.value, form) : null))
 const problem = computed(() => (card.value ? formProblem(card.value, form) : '請先選一個服務商'))
@@ -110,7 +113,9 @@ async function loadCatalog() {
   if (cards.value.length) return
   catalogError.value = ''
   try {
-    cards.value = (await getAiCatalog()).cards
+    const catalog = await getAiCatalog()
+    cards.value = catalog.cards
+    cardGroups.value = catalog.groups ?? []
   } catch (e) {
     catalogError.value = e instanceof Error ? e.message : String(e)
   }
@@ -361,27 +366,36 @@ onMounted(async () => {
           <p v-else class="set-text">
             AI 用來幫收藏寫摘要和分類。下面幾個不用註冊或不用金鑰就能開始；之後隨時可以在「設定 › AI」換別家或加備援。
           </p>
-          <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="AI 服務商">
-            <button
-              v-for="c in shownCards"
-              :key="c.id"
-              type="button"
-              role="radio"
-              :aria-checked="cardId === c.id"
-              class="flex min-w-0 cursor-pointer flex-col rounded-lg border p-3 text-left transition-colors"
-              :class="cardId === c.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted'"
-              @click="choose(c.id)"
-            >
-              <!-- Name, then cost on a line of its own: a long cost used to squeeze the name into four lines -->
-              <span class="block text-base font-semibold [overflow-wrap:anywhere]">{{ c.label }}</span>
-              <span class="mt-1 flex flex-wrap gap-x-2 text-sm text-muted-foreground [overflow-wrap:anywhere]">
-                <span v-if="c.no_signup" class="text-success">不用註冊</span>
-                <span v-else-if="c.key_mode === 'none'" class="text-success">不用金鑰</span>
-                <span v-if="c.ended" class="text-warning">活動已結束</span>
-                <span>{{ c.cost }}</span>
-              </span>
-              <span class="mt-1 block text-sm text-muted-foreground [overflow-wrap:anywhere]">{{ c.limits }}（{{ c.verified }} 查證）</span>
-            </button>
+          <div class="space-y-4" role="radiogroup" aria-label="AI 服務商">
+            <section v-for="g in shownGroups" :key="g.group.id">
+              <template v-if="g.group.title">
+                <h3 class="text-sm font-semibold">{{ g.group.title }}</h3>
+                <p class="mt-0.5 text-sm text-muted-foreground">{{ g.group.how }}</p>
+              </template>
+              <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                <button
+                  v-for="c in g.cards"
+                  :key="c.id"
+                  type="button"
+                  role="radio"
+                  :aria-checked="cardId === c.id"
+                  class="flex min-w-0 cursor-pointer flex-col rounded-lg border p-3 text-left transition-colors"
+                  :class="cardId === c.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted'"
+                  @click="choose(c.id)"
+                >
+                  <!-- Name, then cost on a line of its own: a long cost used to squeeze the name into four lines -->
+                  <span class="block text-base font-semibold [overflow-wrap:anywhere]">{{ c.label }}</span>
+                  <span class="mt-1 flex flex-wrap gap-x-2 text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                    <span v-if="c.no_signup" class="text-success">不用註冊</span>
+                    <span v-else-if="c.key_mode === 'none'" class="text-success">不用金鑰</span>
+                    <span v-if="c.ended" class="text-warning">活動已結束</span>
+                    <span>{{ c.cost }}</span>
+                    <span v-for="use in cardUses(c)" :key="use">{{ use }}</span>
+                  </span>
+                  <span class="mt-1 block text-sm text-muted-foreground [overflow-wrap:anywhere]">{{ c.limits }}（{{ c.verified }} 查證）</span>
+                </button>
+              </div>
+            </section>
           </div>
           <div v-if="cards.length" class="flex flex-wrap items-center gap-x-3 gap-y-2">
             <button v-if="hiddenCount > 0" type="button" class="set-button" @click="showAll = true">顯示全部 {{ cards.length }} 個服務商</button>

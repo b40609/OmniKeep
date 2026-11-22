@@ -391,3 +391,27 @@ test('the welcome points to the upgrade steps in 設定 › AI', async () => {
     assert.equal(ctx.local.get('omnikeep-welcomed'), '1')
   } finally { view.unmount() }
 })
+
+test('cards are listed under their kind of free, in the catalog order, and none is dropped', () => {
+  const groups = [
+    { id: 'keyless', title: '不用註冊，馬上能用', how: 'a' },
+    { id: 'recurring', title: '註冊就有，額度會自動補回', how: 'b' },
+    { id: 'local', title: '在自己電腦上跑', how: 'c' },
+    { id: 'paid', title: '付費或自訂', how: 'd' },
+  ]
+  const cards = [
+    { id: 'agnes', group: 'recurring' }, { id: 'kilo', group: 'keyless' }, { id: 'ollama', group: 'local' },
+    { id: 'mystery', group: 'not-a-group' }, { id: 'old' },
+  ]
+  const listed = setup.groupCards(cards, groups)
+  assert.deepEqual(listed.map((g) => g.group.id), ['keyless', 'recurring', 'local', 'paid']) // empty groups left out
+  assert.deepEqual(listed.at(-1).cards.map((c) => c.id), ['mystery', 'old'])
+  assert.equal(listed.flatMap((g) => g.cards).length, cards.length)
+  assert.deepEqual(setup.groupCards(cards, []).map((g) => g.cards.length), [cards.length]) // an older server sends no groups
+})
+
+test('a card says what it can do beyond an analysis, from its caps only', () => {
+  assert.deepEqual(setup.cardUses({ caps: { video: true, embeddings: false } }), ['能讀 YouTube 影片'])
+  assert.deepEqual(setup.cardUses({ caps: { embeddings: true } }), ['能做搜尋向量'])
+  assert.deepEqual(setup.cardUses({}), [])
+})

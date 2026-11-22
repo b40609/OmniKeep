@@ -418,6 +418,8 @@ export interface AiCard {
   notes: string
   /** usable with no account at all (Kilo, OVHcloud) */
   no_signup?: boolean
+  /** the AiCardGroup it is listed under */
+  group?: string
   min_interval: number
   max_concurrency: number
   caps: AiCaps
@@ -510,8 +512,15 @@ export interface AiTestResult extends ConnectionCheck {
   fix_url?: string | null
 }
 
-export function getAiCatalog(): Promise<{ verified: string; cards: AiCard[] }> {
-  return request<{ verified: string; cards: AiCard[] }>('/api/ai/catalog')
+/** A kind of free the cards are sorted by (app/provider_catalog.py GROUPS). */
+export interface AiCardGroup {
+  id: string
+  title: string
+  how: string
+}
+
+export function getAiCatalog(): Promise<{ verified: string; cards: AiCard[]; groups?: AiCardGroup[] }> {
+  return request<{ verified: string; cards: AiCard[]; groups?: AiCardGroup[] }>('/api/ai/catalog')
 }
 
 /** 設定 › AI: what works now, how well, and the one step that makes a feature better (app/capabilities.py). */
