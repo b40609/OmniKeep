@@ -1,4 +1,4 @@
-"""把 OmniKeep 的 stdio MCP 與 omnikeep-setup Skill 註冊到這台電腦的 Claude Code、Codex、Antigravity。
+"""把 OmniKeep 的 stdio MCP 與專案內所有 Skill（omnikeep-setup、omnikeep-review 等）註冊到這台電腦的 Claude Code、Codex、Antigravity。
 
 - MCP 一律用 stdio：agent 自己啟動 `<python> <OmniKeep>/mcp_server.py`。存取金鑰由 OmniKeep 自己讀，
   agent 的設定檔裡不放任何金鑰。
@@ -31,6 +31,7 @@ from typing import Callable
 
 SERVER_NAME = "omnikeep"
 SKILL_NAME = "omnikeep-setup"
+SKILL_NAMES = ("omnikeep-setup", "omnikeep-review")
 INSTALL_MARKER = ".omnikeep-installed.json"
 AGENTS = ("claude", "codex", "antigravity")
 AGENT_LABELS = {"claude": "Claude Code", "codex": "Codex", "antigravity": "Antigravity"}
@@ -62,6 +63,14 @@ class Context:
     @property
     def skill_source(self) -> Path:
         return self.project_dir / "skills" / SKILL_NAME
+
+    @property
+    def skill_sources(self) -> list[Path]:
+        skills_root = self.project_dir / "skills"
+        if not skills_root.is_dir():
+            return [self.skill_source]
+        found = sorted(p.parent for p in skills_root.glob("*/SKILL.md") if p.is_file())
+        return found or [self.skill_source]
 
     def report(self, agent: str, item: str, message: str) -> None:
         self.results.append((AGENT_LABELS.get(agent, agent), item, message))
@@ -282,12 +291,13 @@ def _source_files(source: Path) -> dict[str, str]:
             for p in sorted(source.rglob("*")) if p.is_file()}
 
 
-def install_skill(ctx: Context, agent: str) -> None:
-    source = ctx.skill_source
+def _install_single_skill(ctx: Context, agent: str, source: Path) -> None:
+    skill_name = source.name
+    label = f"Skill ({skill_name})"
     if not (source / "SKILL.md").is_file():
-        ctx.report(agent, "Skill", f"找不到 {source / 'SKILL.md'}，略過")
+        ctx.report(agent, label, f"找不到 {source / 'SKILL.md'}，略過")
         return
-    target = ctx.home.joinpath(*SKILL_DIRS[agent]) / SKILL_NAME
+    target = ctx.home.joinpath(*SKILL_DIRS[agent]) / skill_name
     wanted = _source_files(source)
     marker = target / INSTALL_MARKER
 
@@ -295,7 +305,7 @@ def install_skill(ctx: Context, agent: str) -> None:
         current = {p.relative_to(target).as_posix(): _sha256(p)
                    for p in target.rglob("*") if p.is_file() and p.name != INSTALL_MARKER}
         if current == wanted:
-            ctx.report(agent, "Skill", f"已是最新（{target}）")
+            ctx.report(agent, label, f"已是最新（{target}）")
             return
         try:
             recorded = json.loads(marker.read_text(encoding="utf-8")).get("files")
@@ -303,7 +313,7 @@ def install_skill(ctx: Context, agent: str) -> None:
             recorded = None
         untouched = recorded is not None and current == recorded
         if not untouched and not ctx.force:
-            ctx.report(agent, "Skill", f"{target} 被改過或不是這個腳本裝的，沒有覆蓋；要換成新版，加 --force")
+            ctx.report(agent, label, f"{target} 被改過或不是這個腳本裝的，沒有覆蓋；要換成新版，加 --force")
             return
         action = "更新" if untouched else "取代（舊版留在 .bak）"
     else:
@@ -311,7 +321,7 @@ def install_skill(ctx: Context, agent: str) -> None:
         untouched = True
 
     if ctx.dry_run:
-        ctx.report(agent, "Skill", f"會{action}到 {target}")
+        ctx.report(agent, label, f"會{action}到 {target}")
         return
     if target.exists():
         if untouched:
@@ -324,7 +334,13 @@ def install_skill(ctx: Context, agent: str) -> None:
     shutil.copytree(source, target)
     marker.write_text(json.dumps({"source": str(source), "files": wanted}, ensure_ascii=False, indent=2),
                       encoding="utf-8")
-    ctx.report(agent, "Skill", f"已{action}到 {target}")
+    ctx.report(agent, label, f"已{action}到 {target}")
+
+
+def install_skill(ctx: Context, agent: str, skill_name: str | None = None) -> None:
+    sources = [ctx.project_dir / "skills" / skill_name] if skill_name else ctx.skill_sources
+    for source in sources:
+        _install_single_skill(ctx, agent, source)
 
 
 MCP_REGISTRARS = {

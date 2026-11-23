@@ -38,7 +38,7 @@ def _all(ctx):
 def test_dry_run_writes_nothing(home):
     results = _all(_ctx(home, dry_run=True))
     assert list(home.iterdir()) == []
-    assert len(results) == 6
+    assert len(results) == 9
     assert all("會" in message for _, _, message in results)
 
 
@@ -56,9 +56,10 @@ def test_registers_mcp_and_skills_in_fresh_home(home):
     assert not raw.startswith(b"\xef\xbb\xbf")
     assert json.loads(raw)["mcpServers"]["omnikeep"] == {"command": PYTHON, "args": [server]}
 
-    source = (ROOT / "skills" / "omnikeep-setup" / "SKILL.md").read_bytes()
-    for parts in ((".claude", "skills"), (".agents", "skills"), (".gemini", "config", "skills")):
-        assert home.joinpath(*parts, "omnikeep-setup", "SKILL.md").read_bytes() == source
+    for skill_name in ("omnikeep-setup", "omnikeep-review"):
+        source = (ROOT / "skills" / skill_name / "SKILL.md").read_bytes()
+        for parts in ((".claude", "skills"), (".agents", "skills"), (".gemini", "config", "skills")):
+            assert home.joinpath(*parts, skill_name, "SKILL.md").read_bytes() == source
 
 
 def test_second_run_is_idempotent(home):
