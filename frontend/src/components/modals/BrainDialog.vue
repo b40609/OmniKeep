@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import {
-  Send, BookOpen, ExternalLink,
+  ArrowLeft, Send, BookOpen, ExternalLink,
   Bot, User, Loader2,
   RotateCcw, TriangleAlert
 } from 'lucide-vue-next'
@@ -61,7 +61,34 @@ watch(
     }
     void scrollToBottom()
   },
+  { immediate: true },
 )
+
+let inHistory = false
+function closeDialog() {
+  ui.showBrainModal = false
+}
+function onPopState() {
+  if (!inHistory) return
+  inHistory = false
+  ui.showBrainModal = false
+}
+onMounted(() => {
+  if (typeof window !== 'undefined' && typeof window.history?.pushState === 'function') {
+    window.history.pushState({ ...(window.history.state || {}), omnikeepBrain: true }, '')
+    inHistory = true
+    window.addEventListener?.('popstate', onPopState)
+  }
+})
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener?.('popstate', onPopState)
+    if (inHistory && window.history?.state?.omnikeepBrain) {
+      inHistory = false
+      window.history.back()
+    }
+  }
+})
 
 function startOver() {
   conversation++
@@ -151,20 +178,27 @@ function handleKeydown(e: KeyboardEvent) {
 <template>
   <Dialog :open="ui.showBrainModal" @update:open="(v) => (ui.showBrainModal = v)">
     <DialogContent
-      class="flex h-[88vh] max-w-4xl flex-col overflow-hidden p-0 sm:rounded-2xl"
+      class="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col overflow-hidden rounded-none border-0 p-0 sm:h-[88dvh] sm:max-h-[88dvh] sm:w-full sm:max-w-4xl sm:rounded-2xl sm:border"
       show-close
       @open-auto-focus="(e: Event) => { e.preventDefault(); followUp?.focus() }"
     >
-      <!-- Header: the question being answered -->
-      <div class="flex min-h-14 items-center gap-2 border-b border-hairline py-2 pl-5 pr-14">
-        <DialogTitle :class="title ? 'min-w-0 flex-1 truncate text-lg font-semibold leading-[26px] tracking-normal' : 'sr-only'">{{ title || '回答' }}</DialogTitle>
+      <!-- Header: the question being answered (mobile gets an explicit back arrow in safe-top) -->
+      <div class="safe-top flex min-h-14 shrink-0 items-center gap-2 border-b border-hairline px-2 py-2 sm:pl-5 sm:pr-14">
+        <button
+          type="button"
+          class="item-action sm:hidden"
+          aria-label="返回清單"
+          title="返回"
+          @click="closeDialog"
+        ><ArrowLeft class="size-5" /></button>
+        <DialogTitle :class="title ? 'min-w-0 flex-1 truncate pr-10 text-base font-semibold leading-[22px] tracking-normal sm:pr-0 sm:text-lg sm:leading-[26px]' : 'min-w-0 flex-1 text-base font-semibold sm:sr-only'">{{ title || '提問' }}</DialogTitle>
         <DialogDescription class="sr-only">用你收藏的內容回答，並附上引用的收藏。</DialogDescription>
         <button
           v-if="chatHistory.length"
           type="button"
-          class="set-button set-button--text ml-auto"
+          class="set-button set-button--text ml-auto mr-10 sm:mr-0"
           @click="startOver"
-        ><RotateCcw aria-hidden="true" />清空對話</button>
+        ><RotateCcw aria-hidden="true" /><span class="max-sm:hidden">清空對話</span></button>
       </div>
 
       <!-- Messages Stream -->
@@ -314,7 +348,7 @@ function handleKeydown(e: KeyboardEvent) {
       </div>
 
       <!-- Input Area -->
-      <div class="border-t border-border bg-card p-3 sm:p-4">
+      <div class="safe-bottom shrink-0 border-t border-border bg-card p-3 sm:p-4">
         <div class="relative flex items-center rounded-xl border border-border bg-input shadow-sm focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
           <input
             ref="followUp"
@@ -322,21 +356,21 @@ function handleKeydown(e: KeyboardEvent) {
             type="text"
             :placeholder="chatHistory.length ? '接著問' : '問一個和收藏有關的問題'"
             aria-label="問題"
-            class="h-11 w-full bg-transparent px-4 pr-12 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+            class="h-11 w-full bg-transparent px-4 pr-12 text-base text-foreground placeholder:text-muted-foreground focus:outline-none sm:text-sm"
             :disabled="loading"
             @keydown="handleKeydown"
           />
           <button
-            class="absolute right-2 flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition hover:bg-primary-hover disabled:opacity-40 cursor-pointer"
+            class="absolute right-2 flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground transition hover:bg-primary-hover disabled:opacity-40 cursor-pointer sm:size-8"
             :disabled="!inputQuery.trim() || loading"
             aria-label="送出問題"
             @click="sendQuery()"
           >
-            <Send class="size-3.5" />
+            <Send class="size-4 sm:size-3.5" />
           </button>
         </div>
 
-        <div class="mt-2 flex items-center justify-between text-3xs text-muted-foreground px-1">
+        <div class="mt-2 hidden items-center justify-between px-1 text-3xs text-muted-foreground sm:flex">
           <span>按 Enter 送出</span>
         </div>
       </div>

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from app.static_assets import CurrentBuildFiles
 from fastapi.responses import FileResponse
 from app import __version__
@@ -142,6 +143,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
+# Compress JSON/JS/CSS over high-latency mobile/DERP links (SSE, images & woff2 are auto-excluded).
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 
 # App-wide middleware also protects mounted MCP applications.
 app.middleware("http")(verify_api_key)

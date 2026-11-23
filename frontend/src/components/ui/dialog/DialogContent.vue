@@ -25,7 +25,7 @@ const forwarded = useForwardPropsEmits(props, emits)
       v-bind="forwarded"
       :class="
         cn(
-          'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl border border-border bg-background p-6 shadow-2xl text-foreground duration-250 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-bottom-3',
+          'fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-1.5rem)] max-h-[94dvh] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl border border-border bg-background p-5 sm:w-full sm:p-6 shadow-2xl text-foreground duration-250 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-bottom-3',
           props.class,
         )
       "
@@ -33,10 +33,10 @@ const forwarded = useForwardPropsEmits(props, emits)
       <slot />
       <DialogClose
         v-if="showClose !== false"
-        class="absolute right-4 top-4 rounded-full bg-muted p-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-90 focus:outline-none"
+        class="absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-90 focus:outline-none sm:right-4 sm:top-4 sm:size-8"
         aria-label="關閉"
       >
-        <X class="size-3.5" />
+        <X class="size-4 sm:size-3.5" />
       </DialogClose>
     </DialogContent>
   </DialogPortal>

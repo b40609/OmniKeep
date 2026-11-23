@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, defineAsyncComponent, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { toast } from 'vue-sonner'
 import { initTheme } from '@/composables/useTheme'
 import { useKeyboard } from '@/composables/useKeyboard'
@@ -19,25 +19,27 @@ import AppHeader from '@/components/layout/AppHeader.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import MobileBottomBar from '@/components/layout/MobileBottomBar.vue'
 import ItemList from '@/components/items/ItemList.vue'
-import ReaderPane from '@/components/reader/ReaderPane.vue'
 import AddDialog from '@/components/modals/AddDialog.vue'
-import CategoryDialog from '@/components/modals/CategoryDialog.vue'
-import ShortcutsDialog from '@/components/modals/ShortcutsDialog.vue'
-import RadarDialog from '@/components/modals/RadarDialog.vue'
-import WatchDialog from '@/components/modals/WatchDialog.vue'
-import ImportDialog from '@/components/modals/ImportDialog.vue'
 import DeckDialog from '@/components/modals/DeckDialog.vue'
-import SettingsPage from '@/components/settings/SettingsPage.vue'
 import SetupWizard from '@/components/modals/SetupWizard.vue'
 import ServiceStatusBanner from '@/components/layout/ServiceStatusBanner.vue'
 import DailyDeckDialog from '@/components/modals/DailyDeckDialog.vue'
-import BrainDialog from '@/components/modals/BrainDialog.vue'
-import SnapshotDialog from '@/components/modals/SnapshotDialog.vue'
-import EvaluationWorkspace from '@/components/eval/EvaluationWorkspace.vue'
 import * as api from '@/lib/api'
 import { Toaster } from '@/components/ui/sonner'
 import { watchForUpdates } from '@/lib/updateCheck'
 import { useMutations } from '@/composables/useMutations'
+
+// Lazy-load heavy reader, settings, evaluation workspace & secondary modals to keep mobile first paint fast.
+const ReaderPane = defineAsyncComponent(() => import('@/components/reader/ReaderPane.vue'))
+const SettingsPage = defineAsyncComponent(() => import('@/components/settings/SettingsPage.vue'))
+const EvaluationWorkspace = defineAsyncComponent(() => import('@/components/eval/EvaluationWorkspace.vue'))
+const BrainDialog = defineAsyncComponent(() => import('@/components/modals/BrainDialog.vue'))
+const CategoryDialog = defineAsyncComponent(() => import('@/components/modals/CategoryDialog.vue'))
+const ShortcutsDialog = defineAsyncComponent(() => import('@/components/modals/ShortcutsDialog.vue'))
+const RadarDialog = defineAsyncComponent(() => import('@/components/modals/RadarDialog.vue'))
+const WatchDialog = defineAsyncComponent(() => import('@/components/modals/WatchDialog.vue'))
+const ImportDialog = defineAsyncComponent(() => import('@/components/modals/ImportDialog.vue'))
+const SnapshotDialog = defineAsyncComponent(() => import('@/components/modals/SnapshotDialog.vue'))
 
 initTheme()
 
@@ -469,19 +471,19 @@ onUnmounted(() => {
 
     <!-- Modals -->
     <AddDialog />
-    <CategoryDialog />
-    <ShortcutsDialog />
-    <RadarDialog />
-    <WatchDialog />
-    <ImportDialog />
+    <CategoryDialog v-if="ui.showCategoryModal" />
+    <ShortcutsDialog v-if="ui.showShortcutsModal" />
+    <RadarDialog v-if="ui.showRadarModal" />
+    <WatchDialog v-if="ui.showWatchModal" />
+    <ImportDialog v-if="ui.showImportModal" />
     <DeckDialog />
     <!-- Settings are a page over the workspace, not a dialog; dialogs opened from it sit above -->
     <SettingsPage v-if="ui.showSettingsModal" />
     <EvaluationWorkspace v-if="ui.showEvalModal" />
     <SetupWizard />
     <DailyDeckDialog />
-    <BrainDialog />
-    <SnapshotDialog />
+    <BrainDialog v-if="ui.showBrainModal" />
+    <SnapshotDialog v-if="ui.snapshotView" />
 
     <!-- iOS Single-Handed Bottom Bar (Mobile only) -->
     <MobileBottomBar v-if="!ui.activeItem && !ui.showSettingsModal && !ui.showEvalModal" />

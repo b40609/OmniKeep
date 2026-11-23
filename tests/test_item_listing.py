@@ -135,3 +135,34 @@ def test_the_api_takes_kind_and_sort_and_reports_the_total_in_a_header():
 ])
 def test_the_api_rejects_values_it_does_not_know(params):
     assert client.get("/api/items", params=params).status_code == 422
+
+
+def test_list_can_omit_heavy_bodies_while_keeping_summary_fields():
+    item_id = _item(
+        "heavy",
+        "https://example.com/heavy",
+        day=9,
+        title="長文測試",
+        content_raw="x" * 20000,
+        deep_analysis="y" * 8000,
+    )
+    compact = client.get("/api/items", params={"include_body": "false"})
+    assert compact.status_code == 200
+    row = next(r for r in compact.json() if r["id"] == item_id)
+    assert row["title_l1"] == "長文測試"
+    assert row["summary_l1"] == "摘要"
+    assert "content_raw" not in row
+    assert "deep_analysis" not in row
+
+    full = client.get("/api/items", params={"include_body": "true"})
+    assert full.status_code == 200
+    full_row = next(r for r in full.json() if r["id"] == item_id)
+    assert len(full_row["content_raw"]) == 20000
+    assert len(full_row["deep_analysis"]) == 8000
+
+    # Search still matches content_raw even when include_body=false omits it from the response.
+    hit = _item("needle", "https://example.com/needle", day=10, title="普通標題", content_raw="隱藏關鍵詞 UniqueMobilePerfToken")
+    searched = client.get("/api/items", params={"q": "UniqueMobilePerfToken", "include_body": "false"})
+    assert searched.status_code == 200
+    assert [r["id"] for r in searched.json()] == [hit]
+    assert "content_raw" not in searched.json()[0]

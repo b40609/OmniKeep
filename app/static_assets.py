@@ -61,4 +61,7 @@ class CurrentBuildFiles(StaticFiles):
         response = await super().get_response(path, scope)
         if path in ("dist/index.html", "dist/sw.js", "dist/push-sw.js"):
             response.headers["Cache-Control"] = "no-cache"
+        elif path.startswith("dist/assets/") or (path.startswith("dist/workbox-") and path.endswith(".js")):
+            # Vite content-hashed assets never change under the same URL: cache immutably on mobile.
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response

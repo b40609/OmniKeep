@@ -57,14 +57,40 @@ watch(
   { immediate: true },
 )
 
+let inHistory = false
+
+function pushEvalHistory() {
+  if (typeof window === 'undefined' || typeof window.history?.pushState !== 'function') return
+  window.history.pushState({ ...(window.history.state || {}), omnikeepEval: true }, '')
+  inHistory = true
+}
+
+function onPopState() {
+  if (!inHistory) return
+  inHistory = false
+  if (active.value) {
+    backFromDetail()
+    pushEvalHistory()
+  } else {
+    closeWorkspace()
+  }
+}
+
 onMounted(() => {
   void store.loadEvaluations(store.statusFilter)
   if (ui.evalFocusId) void store.openEvaluation(ui.evalFocusId)
-  window.addEventListener('keydown', onKeydown)
+  window.addEventListener?.('keydown', onKeydown)
+  pushEvalHistory()
+  window.addEventListener?.('popstate', onPopState)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener?.('keydown', onKeydown)
+  window.removeEventListener?.('popstate', onPopState)
+  if (inHistory && window.history?.state?.omnikeepEval) {
+    inHistory = false
+    window.history.back()
+  }
 })
 
 function onKeydown(e: KeyboardEvent) {
@@ -175,7 +201,7 @@ function tabCount(id: string): number {
 
 <template>
   <section
-    class="fixed inset-0 z-50 flex flex-col bg-shell text-foreground"
+    class="safe-top fixed inset-0 z-50 flex flex-col bg-shell text-foreground"
     role="dialog"
     aria-modal="true"
     aria-label="工具評估與拍板台"

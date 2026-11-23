@@ -16,6 +16,7 @@ watch(
   (open) => {
     if (open) name.value = ''
   },
+  { immediate: true },
 )
 
 async function submit() {

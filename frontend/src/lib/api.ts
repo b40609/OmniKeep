@@ -311,6 +311,8 @@ function itemsQuery(filters: ItemFilters): string {
   if (filters.sort && filters.sort !== 'newest') params.append('sort', filters.sort)
   if (filters.limit) params.append('limit', String(filters.limit))
   if (filters.offset) params.append('offset', String(filters.offset))
+  // Lists only render title/summary/cover/meta; omit multi-MB raw/deep_analysis bodies until ReaderPane opens.
+  params.append('include_body', 'false')
   const qs = params.toString()
   return `/api/items${qs ? `?${qs}` : ''}`
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onBeforeUnmount, nextTick } from 'vue'
+import { ref, watch, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ArrowLeft, X, Maximize2, Minimize2, PanelLeft, PanelRight } from 'lucide-vue-next'
 import ItemActions from '@/components/items/ItemActions.vue'
 import Skeleton from '@/components/ui/skeleton/Skeleton.vue'
@@ -72,7 +72,30 @@ watch(rootRef, (el) => {
   ro = new ResizeObserver(([e]) => { paneW.value = e.contentRect.width })
   ro.observe(el)
 })
-onBeforeUnmount(() => { ro?.disconnect(); lgQuery?.removeEventListener?.('change', onLg) })
+let inHistory = false
+function onPopState() {
+  if (!inHistory) return
+  inHistory = false
+  closeReader()
+}
+onMounted(() => {
+  if (typeof window !== 'undefined' && !isLg.value && typeof window.history?.pushState === 'function') {
+    window.history.pushState({ ...(window.history.state || {}), omnikeepReader: true }, '')
+    inHistory = true
+    window.addEventListener?.('popstate', onPopState)
+  }
+})
+onBeforeUnmount(() => {
+  ro?.disconnect()
+  lgQuery?.removeEventListener?.('change', onLg)
+  if (typeof window !== 'undefined') {
+    window.removeEventListener?.('popstate', onPopState)
+    if (inHistory && window.history?.state?.omnikeepReader) {
+      inHistory = false
+      window.history.back()
+    }
+  }
+})
 const merged = computed(() => isLg.value && paneW.value >= 840)
 const TABS = [{ id: 'analysis', label: '重點分析' }, { id: 'reader', label: '原文' }] as const
 

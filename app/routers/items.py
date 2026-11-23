@@ -65,13 +65,14 @@ async def list_items(
         "newest", description="Order by the time saved; a search stays ranked by relevance"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    include_body: bool = Query(True, description="Include deep_analysis and content_raw; pass false for compact list views"),
     response: Response = None,
 ):
     filters = dict(category=category, query=q, is_starred=starred, is_read=read, origin=origin, kind=kind)
     # The body stays a plain list for existing clients; the size of the whole result
     # (every page, same filters) travels in a header.
     response.headers["X-Total-Count"] = str(count_items(**filters))
-    return get_items(**filters, sort=sort, limit=limit, offset=offset)
+    return get_items(**filters, sort=sort, limit=limit, offset=offset, include_body=include_body)
 
 @router.get("/export")
 async def export_items(

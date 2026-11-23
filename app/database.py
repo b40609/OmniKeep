@@ -953,7 +953,20 @@ def _item_filters(category, is_starred, is_read, origin, kind=None):
     return conditions, params
 
 
-def _search_statement(words: List[str], require_all: bool, filters, use_fts: bool = True):
+# List views render title/summary/cover/meta and fetch full bodies on demand via get_item_by_id().
+_ITEM_SUMMARY_SELECT = (
+    "i.id, i.url, i.source_type, i.category_name, i.title_l1, i.summary_l1, "
+    "i.tech_tags, i.author, i.published_date, i.cover_image, i.is_starred, i.is_read, "
+    "i.created_at, i.updated_at, i.origin, i.analysis_status, "
+    "i.user_note, i.intent, i.eval_track, i.agent_status, i.merged_into_id, i.community_counterpoints"
+)
+
+
+def _item_select_expr(include_body: bool) -> str:
+    return "i.*" if include_body else _ITEM_SUMMARY_SELECT
+
+
+def _search_statement(words: List[str], require_all: bool, filters, use_fts: bool = True, include_body: bool = True):
     """SQL and named parameters (all but :limit and :offset) of one search, best match first.
 
     Words of three or more characters go through the trigram index and are scored with
@@ -1012,7 +1025,7 @@ def _search_statement(words: List[str], require_all: bool, filters, use_fts: boo
 
     sql = f"""
         {matches}
-        SELECT i.*,
+        SELECT {_item_select_expr(include_body)},
                (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
                (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
         FROM items i {join}
@@ -1023,7 +1036,7 @@ def _search_statement(words: List[str], require_all: bool, filters, use_fts: boo
     return sql, params
 
 
-def _terms_statement(terms: List[str], filters):
+def _terms_statement(terms: List[str], filters, include_body: bool = True):
     """SQL and named parameters for the terms of a query read as a sentence.
 
     Any term finds an item. Each term counts for the best column it is found in, with the
@@ -1041,7 +1054,7 @@ def _terms_statement(terms: List[str], filters):
         weights.append(f"(CASE {cases} ELSE 0 END)")
     total = " + ".join(weights)
     sql = f"""
-        SELECT i.*,
+        SELECT {_item_select_expr(include_body)},
                (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
                (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
         FROM items i
@@ -1052,21 +1065,21 @@ def _terms_statement(terms: List[str], filters):
     return sql, params
 
 
-def _stage_statement(stage, filters, use_fts: bool):
+def _stage_statement(stage, filters, use_fts: bool, include_body: bool = True):
     stage_words, mode = stage
     if mode == _SENTENCE_TERMS:
-        return _terms_statement(stage_words, filters)
-    return _search_statement(stage_words, mode == _ALL_WORDS, filters, use_fts)
+        return _terms_statement(stage_words, filters, include_body=include_body)
+    return _search_statement(stage_words, mode == _ALL_WORDS, filters, use_fts, include_body=include_body)
 
 
-def _search_items(cursor, words: List[str], filters, limit: int, offset: int) -> list:
+def _search_items(cursor, words: List[str], filters, limit: int, offset: int, include_body: bool = True) -> list:
     """Rows for a search, best match first. Every word has to be found; only when no item
     (within the filters) holds them all does the search widen to items holding any of them,
     and after that to the terms of a query typed as a sentence (_search_stages)."""
     stages = _search_stages(words)
 
     def run(stage, use_fts, page_limit=limit, page_offset=offset):
-        sql, params = _stage_statement(stage, filters, use_fts)
+        sql, params = _stage_statement(stage, filters, use_fts, include_body=include_body)
         return cursor.execute(sql, {**params, "limit": page_limit, "offset": page_offset}).fetchall()
 
     def search(use_fts):
@@ -1203,6 +1216,7 @@ def get_items(
     offset: int = 0,
     kind: Optional[str] = None,
     sort: str = "newest",
+    include_body: bool = True,
 ) -> List[Dict[str, Any]]:
     """One page of the item list. `kind` narrows it to one of ITEM_KINDS; `sort` is
     "newest" or "oldest" by the time an item was saved. A search is ranked by
@@ -1218,13 +1232,13 @@ def get_items(
     words = search_words(query)
     if words:
         # Ranked by relevance (see _search_statement); the list below is ordered by date.
-        db_rows = _search_items(cursor, words, filters, limit, offset)
+        db_rows = _search_items(cursor, words, filters, limit, offset, include_body=include_body)
     else:
         conditions, params = filters
         # rowid breaks ties, so items saved in the same instant keep one order across pages.
         direction = "ASC" if sort == "oldest" else "DESC"
         cursor.execute(f"""
-            SELECT i.*,
+            SELECT {_item_select_expr(include_body)},
                    (SELECT COUNT(*) FROM item_citations WHERE target_item_id = i.id) AS citations_count,
                    (SELECT COUNT(*) FROM item_citations WHERE source_parent_id = i.id) AS sub_entities_count
             FROM items i

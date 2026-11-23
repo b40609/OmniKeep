@@ -74,6 +74,18 @@ def test_chunks_the_entry_imports_later_are_served(isolated_runtime):
     (root / "dist/assets/chunk-Q1RSTUVW-Ab3dE-9x.js").write_text("export const a=1")
     (root / "dist/assets/old-Zz999999.js").write_text("// left by an older build")
     with _serve(root) as client:
-        assert client.get("/static/dist/assets/mermaid.core-Xy_z9876.js").status_code == 200
+        r1 = client.get("/static/dist/assets/mermaid.core-Xy_z9876.js")
+        assert r1.status_code == 200
+        assert "immutable" in r1.headers.get("cache-control", "")
         assert client.get("/static/dist/assets/chunk-Q1RSTUVW-Ab3dE-9x.js").status_code == 200
         assert client.get("/static/dist/assets/old-Zz999999.js").status_code == 404
+
+
+def test_app_enables_gzip_for_large_responses():
+    from app.config import settings
+    from app.main import app as main_app
+    with TestClient(main_app, headers={"Authorization": f"Bearer {settings.API_KEY}", "Accept-Encoding": "gzip"}) as c:
+        res = c.get("/static/dist/index.html")
+        assert res.status_code == 200
+        assert res.headers.get("content-encoding") == "gzip"
+        assert res.headers.get("cache-control") == "no-cache"
