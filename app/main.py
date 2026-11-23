@@ -61,6 +61,11 @@ async def _service_lifespan(app: FastAPI):
             "API key to loopback clients. Requests with reverse-proxy headers are refused; turn it "
             "off if another process on this machine forwards traffic to this port."
         )
+    try:
+        from app import catalog_remote
+        catalog_remote.load_cached()
+    except Exception as exc:  # the cards shipped with the code still work
+        logger.warning("Could not load the fetched catalog (%s)", type(exc).__name__)
     if not settings.BACKGROUND_SERVICES_ENABLED:
         yield
         return
@@ -95,6 +100,8 @@ async def _service_lifespan(app: FastAPI):
         # Items saved while the embedding model was down get their vector once it answers.
         from app.reindex import backfill_loop
         tasks.append(asyncio.create_task(backfill_loop()))
+        # Free-service cards stay current without an upgrade (app.catalog_remote).
+        tasks.append(asyncio.create_task(catalog_remote.update_loop()))
         # Telegram polling lives in app.services so a token saved in the app restarts it.
         services.start_telegram()
         yield

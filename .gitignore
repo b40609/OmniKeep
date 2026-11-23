@@ -46,3 +46,4 @@ llm_gateway.json
 
 # Completion markers written by dispatched review/fix threads
 docs/reviews/*.done
+catalog_overlay.json

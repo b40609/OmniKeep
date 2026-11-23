@@ -1,0 +1,434 @@
+{
+ "schema": 1,
+ "revision": 2026112301,
+ "cards": {
+  "agnes": {
+   "label": "Agnes",
+   "cost": "免費（體驗價 0 美元，截止日看官方公告）",
+   "limits": "免費帳號是動態的每分鐘上限（2026-11-05 實測約 10 次），登入 API Console 可看；同類型的多把金鑰共用額度，不會疊加。沒有向量。建議間隔 7 秒。",
+   "notes": "很適合當保底；context 512K。",
+   "model": "agnes-3.0-flash",
+   "models": [
+    "agnes-3.0-flash",
+    "agnes-2.5-flash"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 7.0,
+   "max_concurrency": 1
+  },
+  "gemini": {
+   "label": "Google Gemini（AI Studio）",
+   "cost": "免費層",
+   "limits": "免費層的每分鐘與每日次數依模型不同，以 AI Studio 的 Rate Limit 頁為準，每天太平洋時間午夜重置。gemini-3.5-flash 已自動轉到 gemini-3.6-flash。可以填多把金鑰，用逗號分隔，輪流使用。",
+   "notes": "YouTube 影片解析只有 Gemini 能做。gemini-2.5-flash 對新用戶已停用（2026-12-01 起全面導向新模型）。專案連結付款帳戶後，AI Studio 會改成預付制，要另外儲值，Google AI Pro 的抵免額不能用；要用抵免額請改用 Vertex 卡片。",
+   "model": "gemini-3.5-flash",
+   "models": [
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 12.0,
+   "max_concurrency": 1
+  },
+  "vertex": {
+   "label": "Google Vertex AI（Agent Platform）",
+   "cost": "Google Cloud 計費（Google AI Pro 每月 10 美元抵免額可以用）",
+   "limits": "用量先扣付款帳戶上的抵免額，用完才扣卡。到帳單的 Budgets & caps 為 Vertex AI 設「強制執行支出上限」，金額設得比每月抵免額低。",
+   "notes": "用 Agent Platform 的 API 金鑰（express mode），不必填專案 ID。金鑰的 API 限制要允許 Agent Platform API；機構政策預設只允許 Gemini API，要先放行。不能解析 YouTube 影片（API 金鑰呼叫會回 401，要 OAuth），影片用途請用 AI Studio 的 Gemini 卡片。步驟見 docs/gemini_pro_credit_setup.md。",
+   "model": "gemini-4-hydrogen",
+   "models": [
+    "gemini-4-hydrogen",
+    "gemini-4-carbon",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 1.0,
+   "max_concurrency": 2
+  },
+  "groq": {
+   "label": "Groq",
+   "cost": "免費層",
+   "limits": "每個模型分開算：每分鐘 30 次與 8,000 token（長文容易撞到），每日 1,000 次與 20 萬 token；沒有向量。Llama 模型 2026-11 已移出免費方案。",
+   "notes": "速度快，支援嚴格 JSON schema。",
+   "model": "openai/gpt-oss-120b",
+   "models": [
+    "openai/gpt-oss-120b",
+    "qwen/qwen3.8-27b",
+    "openai/gpt-oss-20b"
+   ],
+   "verified": "2026-11-22",
+   "quota": {
+    "requests": 1000,
+    "period": "day"
+   },
+   "min_interval": 2.5,
+   "max_concurrency": 2
+  },
+  "cloudflare": {
+   "label": "Cloudflare Workers AI",
+   "cost": "免費層",
+   "limits": "每日 10,000 Neurons（推估約 400 則分析）；有 bge-m3 向量。部分模型才支援 JSON 格式。",
+   "notes": "位址裡的 <帳號 ID> 要換成你的 Cloudflare 帳號 ID；API token 要有 Workers AI 權限。",
+   "model": "@cf/openai/gpt-oss-120b",
+   "models": [
+    "@cf/openai/gpt-oss-120b",
+    "@cf/meta/llama-3.1-8b-instruct"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 2.0,
+   "max_concurrency": 2
+  },
+  "openrouter": {
+   "label": "OpenRouter（:free 模型）",
+   "cost": "免費（:free 模型）",
+   "limits": "每分鐘 20 次；每日 50 次，累計儲值滿 10 美元後變每日 1,000 次。",
+   "notes": "免費模型常替換：按「測試」會列出目前可用的模型。",
+   "model": "google/gemma-4-31b-it:free",
+   "models": [
+    "google/gemma-4-31b-it:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "inclusionai/ling-3.2-flash:free",
+    "nvidia/nemotron-3.5-lightning:free"
+   ],
+   "verified": "2026-11-22",
+   "quota": {
+    "requests": 50,
+    "period": "day"
+   },
+   "min_interval": 3.0,
+   "max_concurrency": 1
+  },
+  "zai": {
+   "label": "Z.AI（GLM Flash）",
+   "cost": "免費（Flash 模型）",
+   "limits": "據稱只有 1 個並發（第三方說法）。2026-11-06 實測（關閉推理）：glm-4.7-flash 一篇約 28 秒；不關閉時超過 300 秒逾時。",
+   "notes": "適合單線程的背景工作。用 email 註冊即可。預設關閉推理（thinking disabled）。",
+   "model": "glm-4.7-flash",
+   "models": [
+    "glm-4.7-flash",
+    "glm-4.5-flash"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 2.0,
+   "max_concurrency": 1
+  },
+  "inception": {
+   "label": "Inception（Mercury 3）",
+   "cost": "免費額度（新帳號一次送 100M token，服務 2026-12-28 結束）",
+   "limits": "一次性額度，用完要綁卡；沒有向量。2026-11-06 實測一篇分析約 5 秒、每秒約 430 token。",
+   "notes": "目前實測最快；context 1M。標題偶爾夾簡體。Mercury API 2026-12-28 停止服務，之後要從用途裡拿掉。",
+   "model": "mercury-3",
+   "models": [
+    "mercury-3",
+    "mercury-2.5"
+   ],
+   "ends": "2026-12-28",
+   "verified": "2026-11-22",
+   "quota": {
+    "tokens": 100000000,
+    "period": "once"
+   },
+   "min_interval": 1.0,
+   "max_concurrency": 2
+  },
+  "tokenharbor": {
+   "label": "Token Harbor（:free 模型）",
+   "cost": "免費（:free 模型）",
+   "limits": "每 7 天滾動的免費額度，從第一次免費請求起算、按金額計（金額沒公開）；每個帳號每分鐘 60 次、每小時 1,800 次。免費模型要先在 dashboard 手動開啟。2026-11-06 實測一篇約 19 秒。",
+   "notes": "新加坡公司 TH TECHNOLOGY PTE. LTD.；位址沒有 api. 子網域。",
+   "model": "deepseek-v4.1-flash:free",
+   "models": [
+    "deepseek-v4.1-flash:free",
+    "mimo-v2.6-flash:free"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 1.0,
+   "max_concurrency": 1
+  },
+  "requesty": {
+   "label": "Requesty（免費模型）",
+   "cost": "免費（免費模型）",
+   "limits": "每天 200 次，所有免費模型共用；不限每分鐘次數，改限同時進行的請求數。2026-11-06 實測一篇約 57 秒。",
+   "notes": "有公司實體與 DPA。ling-3.1-flash 不支援 JSON 格式參數，會改用一般請求再解析。",
+   "model": "google/gemma-4-31b-it",
+   "models": [
+    "google/gemma-4-31b-it",
+    "novita/ling-3.1-flash"
+   ],
+   "verified": "2026-11-22",
+   "quota": {
+    "requests": 200,
+    "period": "day"
+   },
+   "min_interval": 3.0,
+   "max_concurrency": 1
+  },
+  "bazaarlink": {
+   "label": "BazaarLink（免費模型）",
+   "cost": "免費（:free 模型）",
+   "limits": "沒儲值：每分鐘 10 次、每天 60 單位；儲值過：每分鐘 20 次、每天 120 單位。所有免費模型共用，長輸入扣比較多單位，每天 UTC 00:00（台灣早上 8 點）重置；同時最多 2 個請求。",
+   "notes": "台灣集聯科技營運。還沒用金鑰實測過分析。",
+   "model": "auto:free",
+   "models": [
+    "auto:free",
+    "qwen/qwen3.7-flash:free",
+    "deepseek/deepseek-v4-flash-0731free:free",
+    "nvidia/nemotron-3.5-lightning-free:free"
+   ],
+   "verified": "2026-11-23",
+   "min_interval": 6.0,
+   "max_concurrency": 1
+  },
+  "cheapllm": {
+   "label": "cheapllm.shop",
+   "cost": "免費（公測中不限量）",
+   "limits": "公測期間每個帳號免費、不限次數。公測結束後保留永久免費層、不用綁卡：每個帳號每滾動一小時至少 5,000 輸入、1,000 輸出 token（所有金鑰合計）。同時只能 1 個請求。",
+   "notes": "公測結束後的額度只夠少量分析，適合當備援。還沒用金鑰實測過分析。",
+   "model": "deepseek-v4.1-flash-1017",
+   "models": [
+    "deepseek-v4.1-flash-1017"
+   ],
+   "verified": "2026-11-23",
+   "min_interval": 2.0,
+   "max_concurrency": 1
+  },
+  "nvidia": {
+   "label": "NVIDIA NIM（Free Endpoint）",
+   "cost": "免費（Free Endpoint 模型）",
+   "limits": "約每分鐘 40 次，整個帳號共用（社群數據）。免費端點很擠：2026-11-06 實測一篇 80 到 190 秒。",
+   "notes": "條款寫明不能用在 production。免費端點很擠，時間波動大；deepseek-ai/deepseek-v4.1-flash 2026-11 已不在免費模型清單。",
+   "model": "minimaxai/minimax-m3.1-flash",
+   "models": [
+    "minimaxai/minimax-m3.1-flash",
+    "mistralai/mistral-large-4-1t-a52b"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 2.0,
+   "max_concurrency": 1
+  },
+  "aihubmix": {
+   "label": "AIHubMix（-free 模型）",
+   "cost": "免費（-free 模型）",
+   "limits": "官方沒有集中的限額表。第三方整理：多數免費模型每分鐘 5 次、每天 100 次，glm-4.7-flash-free 每天 500 次與 100 萬 token。2026-11-06 實測（關閉推理）一篇約 43 秒。",
+   "notes": "免費模型會輪替：按「測試」會列出目前的模型。預設關閉推理（thinking disabled）。",
+   "model": "glm-4.7-flash-free",
+   "models": [
+    "glm-4.7-flash-free"
+   ],
+   "verified": "2026-11-22",
+   "quota": {
+    "requests": 500,
+    "period": "day"
+   },
+   "min_interval": 12.0,
+   "max_concurrency": 1
+  },
+  "sealion": {
+   "label": "SEA-LION（AI Singapore）",
+   "cost": "免費（Trial key）",
+   "limits": "每分鐘 10 次（回應標頭證實），每人一把金鑰。2026-11-06 實測（關閉推理）一篇約 76 秒。",
+   "notes": "用 Google 登入就能申請；強項是東南亞語言。預設關閉推理（enable_thinking false）。",
+   "model": "aisingapore/Qwen-SEA-LION-v4.5-27B-IT",
+   "models": [
+    "aisingapore/Qwen-SEA-LION-v4.5-27B-IT"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 6.0,
+   "max_concurrency": 1
+  },
+  "itera": {
+   "label": "Itera Compute（Qwen3.8 27B）",
+   "cost": "免費（限時活動，到 2026-11-24）",
+   "limits": "每月 30M token，超額回 429，不會自動扣款。推理型，一篇約 9,000 token（每月約 3,300 篇）；2026-11-06 實測一篇約 165 秒。",
+   "notes": "2026-11-24 00:00（太平洋時間）起，沒有儲值過的帳號停止免費額度。試過用 enable_thinking false 關閉推理，反而逾時，所以不帶。",
+   "model": "qwen/qwen3.8-27b",
+   "models": [
+    "qwen/qwen3.8-27b",
+    "Auto"
+   ],
+   "ends": "2026-11-24",
+   "verified": "2026-11-22",
+   "quota": {
+    "tokens": 30000000,
+    "period": "month"
+   },
+   "min_interval": 2.0,
+   "max_concurrency": 1
+  },
+  "flm": {
+   "label": "flm（不用金鑰）",
+   "cost": "免費（不用金鑰）",
+   "limits": "每個 IP 每分鐘 60 次、每天 20,000 次、1,000 萬 token（回應標頭證實）。2026-11-17 實測一篇約 5 秒。",
+   "notes": "auto 由服務自己挑模型。不收圖片（2026-11-17 實測回 400），短影音畫面交給其他連線。",
+   "model": "auto",
+   "models": [
+    "auto"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 1.0,
+   "max_concurrency": 2
+  },
+  "jarvisclaw": {
+   "label": "JarvisClaw（不用金鑰）",
+   "cost": "免費（不用金鑰）",
+   "limits": "依 IP 限流，上限沒有公開。2026-11-17 實測一篇約 6 秒（實際由 nvidia/nemotron-3.5-bolt 回答），分析比較短。",
+   "notes": "帶任何金鑰都會被拒，所以不用填。",
+   "model": "auto/free",
+   "models": [
+    "auto/free"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 3.0,
+   "max_concurrency": 1
+  },
+  "kilo": {
+   "label": "Kilo Gateway（不用金鑰）",
+   "cost": "免費（不用金鑰）",
+   "limits": "每個 IP 每小時 200 次。2026-11-17 實測：kilo-auto/free 一篇約 35 秒；reflection/beam-free 當天下架（回 404 model unavailable），免費路由隨時會換。",
+   "notes": "預設推理設為 low。kilo-auto/free 由 Kilo 指派模型（實測是來源不明的 stealth 模型）。Nemotron 等推理型免費模型太慢，不建議。",
+   "model": "kilo-auto/free",
+   "models": [
+    "kilo-auto/free",
+    "reflection/beam-free"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 18.0,
+   "max_concurrency": 1
+  },
+  "ovh": {
+   "label": "OVHcloud AI Endpoints（不用金鑰）",
+   "cost": "免費（不用金鑰）",
+   "limits": "每個 IP、每個模型每分鐘 2 次（回應標頭證實），適合當備援。2026-11-06 實測 gpt-oss-120b 一篇約 32 秒；語意搜尋的 Qwen3-Embedding-8B 一次查詢約 1.5 秒（2026-11-18）。",
+   "notes": "法國 OVHcloud。帶任何金鑰都會被拒，所以不用填。",
+   "model": "gpt-oss-120b",
+   "models": [
+    "gpt-oss-120b",
+    "Qwen3.8-27B",
+    "DeepSeek-V4.1-Flash-1017",
+    "Meta-Llama-3_3-70B-Instruct"
+   ],
+   "verified": "2026-11-22",
+   "min_interval": 31.0,
+   "max_concurrency": 1
+  },
+  "blockrun": {
+   "label": "BlockRun（不用金鑰）",
+   "cost": "免費（不用金鑰）",
+   "limits": "每個 IP 每分鐘 30 次、每小時 300 次（官方 rate limits 頁）。指定的免費模型滿載時，會自動改用另一個免費模型，回應照樣成功。2026-11-23 實測 nemotron-3-super-120b 一篇約 5 到 9 秒，繁中 JSON 正常。",
+   "notes": "只用 /free 頁列的免費模型；清單上其他模型要付費。這幾個都是推理模型，輸出 token 大多花在思考。",
+   "model": "nvidia/nemotron-3-super-120b",
+   "models": [
+    "nvidia/nemotron-3-super-120b",
+    "nvidia/nemotron-3.5-lightning",
+    "nvidia/nemotron-3-ultra-550b",
+    "nvidia/minimax-m3.1-flash"
+   ],
+   "verified": "2026-11-23",
+   "min_interval": 12.0,
+   "max_concurrency": 1
+  },
+  "omniroute": {
+   "label": "OmniRoute 閘道",
+   "cost": "0（看你接的服務商）",
+   "limits": "把多家 API key 的免費層併成一個端點並自動備援。",
+   "notes": "只接 API key 類服務商，不要接 OAuth 或 cookie 類來源；OmniRoute 要只綁本機（OMNIROUTE_SERVER_HOST=127.0.0.1）。",
+   "model": "",
+   "models": [],
+   "min_interval": 1.0,
+   "max_concurrency": 2
+  },
+  "ollama": {
+   "label": "本機 Ollama",
+   "cost": "0",
+   "limits": "沒有額度上限、可以離線；速度看顯示卡。",
+   "notes": "要先安裝 Ollama 並下載模型，例如 ollama pull qwen3:8b。提問與向量都可以用。",
+   "model": "qwen3:8b",
+   "models": [
+    "qwen3:8b"
+   ],
+   "min_interval": 0.1,
+   "max_concurrency": 2
+  },
+  "deepseek": {
+   "label": "DeepSeek",
+   "cost": "付費（便宜）",
+   "limits": "額度充足；每天 500 篇約每月 8 到 40 美元（含其他便宜 API 的估計）。",
+   "notes": "最省事的付費選項之一。",
+   "model": "deepseek-chat",
+   "models": [
+    "deepseek-chat"
+   ],
+   "min_interval": 0.5,
+   "max_concurrency": 2
+  },
+  "openai": {
+   "label": "OpenAI",
+   "cost": "付費",
+   "limits": "依帳號等級。",
+   "notes": "有向量（text-embedding-3-small）。",
+   "model": "gpt-4o-mini",
+   "models": [
+    "gpt-4o-mini"
+   ],
+   "min_interval": 0.5,
+   "max_concurrency": 2
+  },
+  "custom": {
+   "label": "自訂 OpenAI 相容端點",
+   "cost": "看服務商",
+   "limits": "—",
+   "notes": "LM Studio、vLLM、llama.cpp server、自架閘道，或任何 OpenAI 相容服務。",
+   "model": "",
+   "models": [],
+   "min_interval": 1.0,
+   "max_concurrency": 2
+  }
+ },
+ "group_by_card": {
+  "flm": "keyless",
+  "jarvisclaw": "keyless",
+  "kilo": "keyless",
+  "ovh": "keyless",
+  "blockrun": "keyless",
+  "agnes": "recurring",
+  "gemini": "recurring",
+  "groq": "recurring",
+  "cloudflare": "recurring",
+  "openrouter": "recurring",
+  "zai": "recurring",
+  "tokenharbor": "recurring",
+  "requesty": "recurring",
+  "nvidia": "recurring",
+  "aihubmix": "recurring",
+  "sealion": "recurring",
+  "bazaarlink": "recurring",
+  "cheapllm": "recurring",
+  "inception": "grant",
+  "itera": "grant",
+  "vertex": "subscription",
+  "ollama": "local",
+  "omniroute": "paid",
+  "deepseek": "paid",
+  "openai": "paid",
+  "custom": "paid"
+ },
+ "recommended": [
+  {
+   "card": "gemini",
+   "why": "分析最完整，能讀 YouTube 影片"
+  },
+  {
+   "card": "groq",
+   "why": "每日 1,000 次，速度快"
+  },
+  {
+   "card": "flm",
+   "why": "不用註冊，當保底"
+  }
+ ]
+}

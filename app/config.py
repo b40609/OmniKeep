@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # Storage (Always absolute path anchored to Hub root)
     DATABASE_PATH: str = str(BASE_DIR / "omnikeep.db")
 
+    # Free-service cards fetched from the repo twice a day (app/catalog_remote.py); only data fields,
+    # never where a key is sent. False keeps the cards shipped with this version.
+    CATALOG_AUTO_UPDATE: bool = True
+    CATALOG_UPDATE_URL: str = "https://raw.githubusercontent.com/b40609/OmniKeep/main/catalog/omnikeep-catalog.json"
+
     # Browser Session & Cookie Bridge Configuration
     BROWSER_COOKIE_SOURCE: str = "chrome"
     BROWSER_COOKIE_FILE: str = "cookies.txt"

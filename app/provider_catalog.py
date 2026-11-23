@@ -400,6 +400,10 @@ GROUP_BY_CARD: Dict[str, str] = {
     "omniroute": "paid", "deepseek": "paid", "openai": "paid", "custom": "paid",
 }
 
+# Raise it whenever a card's data changes (YYYYMMDDNN), then run `python -m app.catalog_remote --write`:
+# installs fetch catalog/omnikeep-catalog.json and use it only when its revision is higher than theirs.
+CATALOG_REVISION = 2026112301
+
 # The fallback order the picker suggests first (2026-11-23, layout D): a person who does not
 # want to compare 23 services gets three free connections that cover for each other, in order.
 RECOMMENDED: List[Dict[str, str]] = [
@@ -452,4 +456,6 @@ def catalog() -> Dict[str, Any]:
             "group": GROUP_BY_CARD.get(c["id"], "paid"),
             "ended": ended(c),
         })
-    return {"verified": VERIFIED, "cards": cards, "groups": GROUPS, "recommended": RECOMMENDED}
+    from app import catalog_remote  # a fetched catalog may have changed the cards' data fields
+    return {"verified": VERIFIED, "revision": catalog_remote.revision(), "cards": cards, "groups": GROUPS,
+            "recommended": RECOMMENDED}
