@@ -520,7 +520,15 @@ def extract_target_url(text: str) -> Optional[str]:
         return urls[0]
     return None
 
-async def _spawn_child_entity_background(source_parent_id: str, cit_id: str, target_name: str, target_url: str, mention_context: str):
+async def _spawn_child_entity_background(
+    source_parent_id: str,
+    cit_id: str,
+    target_name: str,
+    target_url: str,
+    mention_context: str,
+    user_note: str = "",
+    intent: str = "read",
+):
     """Background worker to ingest an unpacked sub-project into its own standalone entry and link citation"""
     try:
         clean_url = normalize_canonical_url(target_url)
@@ -537,7 +545,13 @@ async def _spawn_child_entity_background(source_parent_id: str, cit_id: str, tar
             })
             return
 
-        child_item = await run_pipeline(clean_url, manual_category="Github" if "github.com" in clean_url else None, is_sub_task=True)
+        child_item = await run_pipeline(
+            clean_url,
+            manual_category="Github" if "github.com" in clean_url else None,
+            is_sub_task=True,
+            user_note=user_note,
+            intent=intent,
+        )
         if child_item and "id" in child_item:
             save_citation({
                 "id": cit_id,
@@ -549,6 +563,81 @@ async def _spawn_child_entity_background(source_parent_id: str, cit_id: str, tar
             })
     except Exception as e:
         logger.warning(f"[Entity Fan-out] Background spawn failed for {target_url}: {e}")
+
+
+def _user_note_prompt_block(user_note: str) -> str:
+    note = (user_note or "").strip()
+    if not note:
+        return ""
+    return (
+        f"\n\n{_wrap_xml('user_note', note[:2000])}\n"
+        "使用者在收錄時附上了上述備註或想驗證的問題；請在摘要、重點分析或「我可以怎麼用」中直接回應這項需求。"
+    )
+
+
+def _is_social_post_url(url: str) -> bool:
+    low = (url or "").strip().lower()
+    return any(host in low for host in ("x.com/", "twitter.com/", "threads.net/", "threads.com/"))
+
+
+def _counterpoints_prompt_block(url: str, content_raw: str) -> str:
+    raw = content_raw or ""
+    if not _is_social_post_url(url) and "留言" not in raw and "回覆" not in raw and "討論" not in raw:
+        return ""
+    return (
+        "\n若貼文留言或討論區中有人指出實測限制、缺點、版本衝突、費用或更好的替代方案，"
+        "請額外萃取最多 5 條填入 JSON 的 community_counterpoints 陣列"
+        "（每條含 point、category [limitation|alternative|bug|cost|security]、source）；無實質反例則填 []。"
+    )
+
+
+def _single_github_sub_entity(sub_entities: Any, is_composite: bool) -> Optional[Dict[str, Any]]:
+    """Return the unique verified/explicit GitHub repo entity when a social post recommends one repo."""
+    if is_composite or not isinstance(sub_entities, list):
+        return None
+    repos: Dict[str, Dict[str, Any]] = {}
+    other_explicit = 0
+    for sub in sub_entities:
+        if not isinstance(sub, dict):
+            continue
+        if str(sub.get("status") or "").lower() == "candidate":
+            continue
+        raw_url = str(sub.get("canonical_url") or "").strip()
+        if not raw_url.startswith(("http://", "https://")):
+            continue
+        if repo_from_url(raw_url):
+            canon = normalize_canonical_url(raw_url)
+            repos.setdefault(canon, {**sub, "canonical_url": canon})
+        else:
+            other_explicit += 1
+    if len(repos) == 1 and other_explicit == 0:
+        return next(iter(repos.values()))
+    return None
+
+
+def _merge_counterpoints(existing: Any, incoming: Any) -> list:
+    merged = []
+    seen = set()
+    for src in (existing or []), (incoming or []):
+        if not isinstance(src, list):
+            continue
+        for entry in src:
+            if isinstance(entry, str):
+                entry = {"point": entry.strip(), "category": "limitation", "source": "community"}
+            if not isinstance(entry, dict):
+                continue
+            pt = str(entry.get("point") or "").strip()
+            if not pt or pt in seen:
+                continue
+            seen.add(pt)
+            merged.append({
+                "point": pt,
+                "category": str(entry.get("category") or "limitation"),
+                "source": str(entry.get("source") or "community"),
+            })
+            if len(merged) >= 8:
+                return merged
+    return merged
 
 async def parse_url(url: str, page_title: str = "", page_description: str = "",
                     light: bool = False) -> Dict[str, Any]:
@@ -647,7 +736,9 @@ async def parse_url(url: str, page_title: str = "", page_description: str = "",
 async def run_pipeline(content_input: str, manual_category: Optional[str] = None,
                        is_sub_task: bool = False, origin: str = "manual",
                        page_title: str = "", page_description: str = "",
-                       as_note: bool = False, saved: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                       as_note: bool = False, saved: Optional[Dict[str, Any]] = None,
+                       user_note: str = "", intent: str = "read",
+                       target_project: str = "") -> Dict[str, Any]:
     """Fetch, analyse and save one link or note.
 
     With no AI connected (a fresh install) nothing is sent to any AI: the item is saved with
@@ -669,12 +760,17 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     # A fresh install has no AI: every analysis below comes back empty without a request.
     no_ai = isinstance(get_primary_provider(), UnconfiguredProvider)
 
-    user_note = ""
+    user_note = (user_note or "").strip()
+    intent = (intent or "read").strip() or "read"
+    target_project = (target_project or "").strip()
+    if saved is not None and not user_note:
+        user_note = (saved.get("user_note") or "").strip()
     if saved is None and not as_note and "#note=" in clean_input:
         from urllib.parse import unquote
         parts = clean_input.split("#note=", 1)
         clean_input = parts[0]
-        user_note = unquote(parts[1]).strip()
+        if not user_note:
+            user_note = unquote(parts[1]).strip()
 
     # 2. Route by input type (Pure URL / Mobile Share Snippet vs Text Note)
     # as_note: the owner chose to keep the text itself, even if it is short and holds one address.
@@ -784,6 +880,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                 "- 若影片畫面（如 Hugging Face Model Card 截圖、開源卡片、論文）或說明中有提及具體開源專案/AI 模型/工具/GitHub 倉庫（如萬物定位大模型 LocateAnything 等），請務必將 is_composite 設為對應值，並於 sub_entities 完整抽離所有專案/模型（支援 Hugging Face 或 GitHub 標準網址）！\n"
                 f"- deep_analysis 的重點要收錄它的架構、規格參數與核心機制；若是 AI 模型，加上收合區「{hardware_label()}」。\n"
                 "- 嚴禁批判內容缺乏技術價值，請專注於內容本體的精華提煉。"
+                f"{_user_note_prompt_block(user_note)}"
             )
             prompt += interest_profile_block()
             ai_result = await _analyze_with_guardrails(primary, prompt)
@@ -806,6 +903,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                         f"{meta_block}\n\n"
                         f"候選分類清單：[{cat_list_str}]\n"
                         "請依據影片內容直接輸出結構化 JSON。"
+                        f"{_user_note_prompt_block(user_note)}"
                     )
                     prompt += interest_profile_block()
                     # An answer with no analysis in it is a failure too (usable_analysis raises):
@@ -847,6 +945,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                     f"{transcript_block}\n"
                     f"{screen_block}\n"
                     f"逐字稿可能有語音辨識的錯字，依上下文判讀；逐字稿沒說到的細節不要補。逐字稿的 [MM:SS] 是該段開始的時間。{screen_rule}"
+                    f"{_user_note_prompt_block(user_note)}"
                 )
                 prompt += interest_profile_block()
                 ai_result = await _analyze_with_guardrails(primary, prompt)
@@ -864,6 +963,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                     f"{meta_block}\n\n"
                     f"影片說明：\n{desc_block}\n\n"
                     f"候選分類清單：[{cat_list_str}]"
+                    f"{_user_note_prompt_block(user_note)}"
                 )
                 prompt += interest_profile_block()
                 ai_result = await _analyze_with_guardrails(primary, prompt)
@@ -881,6 +981,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                 f"可選分類清單：[{cat_list_str}]\n\n"
                 "影片完整資訊（包含簡介與逐字稿）：\n"
                 f"{content_block}"
+                f"{_user_note_prompt_block(user_note)}"
             )
             prompt += interest_profile_block()
             ai_result = await _analyze_with_guardrails(primary, prompt)
@@ -902,6 +1003,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                 "- 若影片畫面中有推薦多個開源專案/工具，請務必將 is_composite 設為 true，並於 sub_entities 完整抽離所有專案！\n"
                 "- 若影片為個人口播、生活短劇或迷因幹話語錄，請務必在 deep_analysis 中完整收錄其精華台詞原話！\n"
                 "- 嚴禁評判內容缺乏技術價值，請專注於內容本體的精華提煉。"
+                f"{_user_note_prompt_block(user_note)}"
             )
             prompt += interest_profile_block()
             ai_result = await _analyze_with_guardrails(primary, prompt)
@@ -920,6 +1022,8 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                 f"候選分類清單：[{cat_list_str}]\n\n"
                 f"{content_block}\n\n"
                 "請依據規範輸出結構化 JSON。若貼文中提及多個開源專案、工具庫、網站或架構，請務必將 is_composite 設為 true，並於 sub_entities 完整抽離所有專案！"
+                f"{_counterpoints_prompt_block(url, content_raw)}"
+                f"{_user_note_prompt_block(user_note)}"
             )
             prompt += interest_profile_block()
             ai_result = await _analyze_with_guardrails(primary, prompt)
@@ -943,6 +1047,8 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                 "請依據規範輸出結構化 JSON。"
                 + ("這是 GitHub 專案，<external_content> 最後附有專案檔案清單；元件看得出 4 個以上時，照「架構圖」規則畫系統架構圖，不畫流程圖。"
                    if repo_from_url(url) else "")
+                + _counterpoints_prompt_block(url, content_raw)
+                + _user_note_prompt_block(user_note)
             )
             prompt += interest_profile_block()
             ai_result = await _analyze_with_guardrails(primary, prompt,
@@ -1018,6 +1124,77 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     if user_note and not content_raw.startswith("## 使用者隨手筆記"):
         content_raw = f"## 使用者隨手筆記/備忘\n{user_note}\n\n" + content_raw
 
+    community_counterpoints = ai_result.get("community_counterpoints") or []
+    eval_track_val = "project" if intent == "project_ref" else ("tool" if intent == "agent_eval" else "")
+    agent_status_val = "queued" if intent == "agent_eval" else "none"
+
+    LIFE_ENTERTAINMENT_CATEGORIES = {"生活娛樂", "迷因語錄", "美食", "旅遊", "隔離區"}
+    has_github_mention = "github" in (content_raw + " " + default_title).lower() or "開源" in (content_raw + " " + default_title)
+    follow_up = not is_sub_task and not blocked and not not_analysed
+
+    # 2.8 Mentioned Open-Source Tool Resolution (before single-card merge so implicit repo links resolve too)
+    if follow_up and "github.com" not in url and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
+        try:
+            from app.research.tool_resolver import resolve_mentioned_tools
+            resolved_subs = await resolve_mentioned_tools(content_raw, default_title, ai_result)
+            if resolved_subs:
+                ai_result["sub_entities"] = resolved_subs
+        except Exception as e:
+            logger.warning(f"[Pipeline] Tool resolution error: {e}")
+
+    sub_entities = ai_result.get("sub_entities", [])
+    single_repo_sub = (
+        _single_github_sub_entity(sub_entities, bool(ai_result.get("is_composite")))
+        if follow_up and _is_social_post_url(url)
+        else None
+    )
+
+    social_appendix_url = ""
+    if single_repo_sub:
+        target_repo_url = normalize_canonical_url(single_repo_sub["canonical_url"])
+        social_url = url
+        social_appendix = (
+            f"\n\n## 原社群貼文與討論附錄\n"
+            f"- 來源貼文：{social_url}\n"
+            f"- 發布作者：{author or '（未知）'}\n\n"
+            f"{content_raw}"
+        )
+        existing_repo = find_item_by_canonical_or_url(target_repo_url)
+        if existing_repo:
+            merged_raw = existing_repo.get("content_raw") or ""
+            if social_url not in merged_raw:
+                merged_raw = f"{merged_raw}{social_appendix}".strip()
+            merged_cp = _merge_counterpoints(existing_repo.get("community_counterpoints"), community_counterpoints)
+            existing_repo["content_raw"] = merged_raw
+            existing_repo["community_counterpoints"] = merged_cp
+            if user_note:
+                existing_repo["user_note"] = user_note
+            if intent != "read":
+                existing_repo["intent"] = intent
+                existing_repo["eval_track"] = eval_track_val or existing_repo.get("eval_track", "")
+                if existing_repo.get("agent_status") in (None, "", "none"):
+                    existing_repo["agent_status"] = agent_status_val
+            saved_existing_id = save_item(existing_repo)
+            existing_repo["id"] = saved_existing_id
+            save_citation({
+                "source_parent_id": saved_existing_id,
+                "target_item_id": saved_existing_id,
+                "target_canonical_url": normalize_canonical_url(social_url),
+                "target_name": f"社群貼文 ({author or 'X'})",
+                "mention_context": single_repo_sub.get("reason") or "社群貼文推薦並合併至既有專案卡",
+            })
+            return existing_repo
+
+        # New single card anchored at the canonical GitHub repository with social appendix intact.
+        social_appendix_url = normalize_canonical_url(social_url)
+        url = target_repo_url
+        source_type = "web"
+        if not manual_category and category_name in ("Inbox", "開源專案", "社群", "其他"):
+            category_name = "Github" if "Github" in category_names else category_name
+        content_raw = f"{content_raw}{social_appendix}" if social_appendix_url not in content_raw else content_raw
+        # Drop the merged repo from sub_entities so we do not spawn a duplicate card.
+        sub_entities = []
+
     item_record = {
         "url": url,
         "source_type": source_type,
@@ -1031,6 +1208,11 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
         "cover_image": cover_image,
         "origin": origin,
         "analysis_status": NOT_ANALYSED if not_analysed else "done",
+        "user_note": user_note,
+        "intent": intent,
+        "eval_track": eval_track_val,
+        "agent_status": agent_status_val,
+        "community_counterpoints": community_counterpoints,
     }
 
     # 2. Hard Rules Engine (Deterministic automation: Karakeep pattern)
@@ -1042,6 +1224,15 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
 
     item_id = save_item(item_record)
     item_record["id"] = item_id
+
+    if social_appendix_url:
+        save_citation({
+            "source_parent_id": item_id,
+            "target_item_id": item_id,
+            "target_canonical_url": social_appendix_url,
+            "target_name": f"來源社群貼文 ({author or '社群'})",
+            "mention_context": (single_repo_sub or {}).get("reason") or "單一專案貼文已合併為單卡",
+        })
 
     # 2.5 Monolith HTML Snapshot & Vector Embedding (B-full)
     if raw_html and not blocked:  # a snapshot of the error page would only mislead
@@ -1060,24 +1251,7 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
     except Exception as e:
         logger.warning(f"[Pipeline] Failed to store vector embedding for {item_id}: {e}")
 
-    # 2.8 Mentioned Open-Source Tool Resolution (Automated Entity Linking for professional domain)
-    LIFE_ENTERTAINMENT_CATEGORIES = {"生活娛樂", "迷因語錄", "美食", "旅遊", "隔離區"}
-    has_github_mention = "github" in (content_raw + " " + default_title).lower() or "開源" in (content_raw + " " + default_title)
-    # An error page names no tools, and projects guessed from a title alone are how
-    # made-up GitHub repos got collected: no tool resolution, fan-out or alternatives.
-    # Nor without an analysis: these steps ask the AI, and there is none.
-    follow_up = not is_sub_task and not blocked and not not_analysed
-    if follow_up and "github.com" not in url and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
-        try:
-            from app.research.tool_resolver import resolve_mentioned_tools
-            resolved_subs = await resolve_mentioned_tools(content_raw, default_title, ai_result)
-            if resolved_subs:
-                ai_result["sub_entities"] = resolved_subs
-        except Exception as e:
-            logger.warning(f"[Pipeline] Tool resolution error: {e}")
-
     # 3. Entity Fan-out & Citation Linking (Deduplication & Unpacking)
-    sub_entities = ai_result.get("sub_entities", [])
     if isinstance(sub_entities, list) and sub_entities and follow_up and (category_name not in LIFE_ENTERTAINMENT_CATEGORIES or has_github_mention):
         for sub in sub_entities:
             if not isinstance(sub, dict):
@@ -1117,8 +1291,10 @@ async def run_pipeline(content_input: str, manual_category: Optional[str] = None
                     if sub.get("status") != "candidate":
                         try:
                             from app.background import follow_up_pool
-                            follow_up_pool.submit(lambda parent=item_id, citation=cit_id, name=raw_name, url=canon_url, why=reason:
-                                                  _spawn_child_entity_background(parent, citation, name, url, why))
+                            follow_up_pool.submit(
+                                lambda parent=item_id, citation=cit_id, name=raw_name, u=canon_url, why=reason, note=user_note, itn=intent:
+                                    _spawn_child_entity_background(parent, citation, name, u, why, user_note=note, intent=itn)
+                            )
                         except Exception as e:
                             logger.warning(f"[Entity Fan-out] Error scheduling child spawn: {e}")
 

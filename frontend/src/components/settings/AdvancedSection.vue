@@ -116,6 +116,10 @@ onMounted(loadAudit)
       <FieldRow field-key="LOCAL_AUTO_LOGIN" auto />
     </SettingBlock>
 
+    <SettingBlock v-if="form.byKey.value.has('OMNIKIT_REPO_PATH')" id="omnikit" title="Agent 工具評估">
+      <FieldRow field-key="OMNIKIT_REPO_PATH" auto />
+    </SettingBlock>
+
     <SettingBlock id="encryption" title="金鑰加密" description="在設定裡輸入的金鑰會先加密才存進資料庫，備份檔裡只有加密後的內容。">
       <SettingRow
         name="主金鑰"

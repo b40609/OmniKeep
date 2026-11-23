@@ -209,6 +209,28 @@ class SubEntitySchema(BaseModel):
         return data
 
 
+class CommunityCounterpointSchema(BaseModel):
+    point: str = Field(default="", description="社群實測限制、缺點、安全疑慮或替代方案")
+    category: str = Field(default="limitation", description="limitation | alternative | bug | cost | security")
+    source: str = Field(default="community", description="來源標籤，例如 x_reply、threads_reply")
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_string(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            return {"point": data.strip(), "category": "limitation", "source": "community"}
+        if not isinstance(data, dict):
+            return {"point": "", "category": "limitation", "source": "community"}
+        cat = str(data.get("category") or "limitation").strip().lower()
+        if cat not in ("limitation", "alternative", "bug", "cost", "security"):
+            cat = "limitation"
+        return {
+            "point": str(data.get("point") or "").strip(),
+            "category": cat,
+            "source": str(data.get("source") or "community").strip() or "community",
+        }
+
+
 class AnalysisOutputSchema(BaseModel):
     category: str = Field(default="Inbox", description="所屬分類名稱")
     # Empty when the model gave none: app.pipeline then falls back to the page/video
@@ -219,6 +241,10 @@ class AnalysisOutputSchema(BaseModel):
     deep_analysis: str = Field(default="", description="Markdown：> 引言、## 最重要的 3 件事、## 我可以怎麼用，其餘放 <details> 收合區")
     is_composite: bool = Field(default=False, description="是否為多專案/多工具集合盤點")
     sub_entities: List[SubEntitySchema] = Field(default_factory=list, description="提及的子實體或開源工具清單")
+    community_counterpoints: List[CommunityCounterpointSchema] = Field(
+        default_factory=list,
+        description="從留言或討論串萃取的實測限制、反例與替代方案（最多 5 條）",
+    )
 
     @field_validator("title_l1", mode="before")
     @classmethod
@@ -294,6 +320,25 @@ class AnalysisOutputSchema(BaseModel):
                     valid_items.append(item)
         return valid_items
 
+    @field_validator("community_counterpoints", mode="before")
+    @classmethod
+    def sanitize_counterpoints(cls, v: Any) -> List[Any]:
+        if not v:
+            return []
+        if isinstance(v, (str, dict)):
+            v = [v]
+        if not isinstance(v, list):
+            return []
+        cleaned = []
+        for entry in v:
+            if isinstance(entry, str) and entry.strip():
+                cleaned.append({"point": entry.strip(), "category": "limitation", "source": "community"})
+            elif isinstance(entry, dict) and str(entry.get("point") or "").strip():
+                cleaned.append(entry)
+            if len(cleaned) >= 5:
+                break
+        return cleaned
+
 
 def sanitize_and_validate_analysis(raw_data: Any) -> AnalysisOutputSchema:
     """
@@ -323,7 +368,8 @@ def sanitize_and_validate_analysis(raw_data: Any) -> AnalysisOutputSchema:
             tech_tags=raw_data.get("tech_tags") or [],
             deep_analysis=str(raw_data.get("deep_analysis") or ""),
             is_composite=bool(raw_data.get("is_composite")),
-            sub_entities=raw_data.get("sub_entities") or []
+            sub_entities=raw_data.get("sub_entities") or [],
+            community_counterpoints=raw_data.get("community_counterpoints") or [],
         )
 
 

@@ -13,3 +13,4 @@ from app.routers.settings import router as settings_router
 from app.routers.brain import router as brain_router
 from app.routers.ai import router as ai_router
 from app.routers.setup import router as setup_router
+from app.routers.evaluations import router as evaluations_router

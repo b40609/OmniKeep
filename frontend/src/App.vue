@@ -6,10 +6,11 @@ import { useKeyboard } from '@/composables/useKeyboard'
 import { useItemsStore } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
 import { useExperimentsStore } from '@/stores/experiments'
+import { useEvaluationsStore } from '@/stores/evaluations'
 import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, checkLocalAuth, redeemPairingCode, exchangeOpenRouterOAuth, type AiCaps, type AiSlotId, type SessionBridgeSnapshot } from '@/lib/api'
 import { asPairingCode } from '@/lib/pairing'
 import { onceAtATime } from '@/lib/localRetry'
-import { linkedPanel, OPEN_LINK_MESSAGE } from '@/lib/push'
+import { linkedTarget, OPEN_LINK_MESSAGE } from '@/lib/push'
 import { readClipRequest } from '@/lib/bookmarklet'
 import { readOpenRouterCallback, takePendingOpenRouterOAuth } from '@/lib/openrouterOAuth'
 import { readSettingsLink } from '@/lib/settingsLink'
@@ -32,6 +33,7 @@ import ServiceStatusBanner from '@/components/layout/ServiceStatusBanner.vue'
 import DailyDeckDialog from '@/components/modals/DailyDeckDialog.vue'
 import BrainDialog from '@/components/modals/BrainDialog.vue'
 import SnapshotDialog from '@/components/modals/SnapshotDialog.vue'
+import EvaluationWorkspace from '@/components/eval/EvaluationWorkspace.vue'
 import * as api from '@/lib/api'
 import { Toaster } from '@/components/ui/sonner'
 import { watchForUpdates } from '@/lib/updateCheck'
@@ -42,6 +44,7 @@ initTheme()
 const items = useItemsStore()
 const ui = useUiStore()
 const experiments = useExperimentsStore()
+const evaluations = useEvaluationsStore()
 const signedIn = ref(false)
 const isCheckingAuth = ref(true)
 const credential = ref('')
@@ -89,6 +92,7 @@ async function login(explicitKey?: string, isAuto = false): Promise<boolean> {
     credential.value = ''
     signedIn.value = true
     void experiments.load()
+    void evaluations.loadEvaluations('needs_decision')
     await items.refreshAll()
     await maybeShowSessionHint()
     await checkOpenRouterOAuthCallback()
@@ -185,12 +189,24 @@ async function checkUrlParamIngest() {
   }
 }
 
-/** Notifications about a new suggestion link to `/?open=proposals`: show 專案監看 on its 建議 tab. */
+/** Notifications deep link to proposals (`/?open=proposals`), evaluations (`/?open=eval:<id>`), or items (`/?open=item:<id>`). */
 function openLinkedPanel(href: string): boolean {
-  if (linkedPanel(href, window.location.origin) !== 'proposals') return false
-  ui.watchTab = 'proposals'
-  ui.showWatchModal = true
-  return true
+  const target = linkedTarget(href, window.location.origin)
+  if (!target) return false
+  if (target.kind === 'proposals') {
+    ui.watchTab = 'proposals'
+    ui.showWatchModal = true
+    return true
+  }
+  if (target.kind === 'eval') {
+    ui.openEvaluations(target.id)
+    return true
+  }
+  if (target.kind === 'item') {
+    window.dispatchEvent(new CustomEvent('open-item', { detail: { itemId: target.id } }))
+    return true
+  }
+  return false
 }
 
 // A notification clicked while this window is already open arrives here instead of as a page load.
@@ -461,13 +477,14 @@ onUnmounted(() => {
     <DeckDialog />
     <!-- Settings are a page over the workspace, not a dialog; dialogs opened from it sit above -->
     <SettingsPage v-if="ui.showSettingsModal" />
+    <EvaluationWorkspace v-if="ui.showEvalModal" />
     <SetupWizard />
     <DailyDeckDialog />
     <BrainDialog />
     <SnapshotDialog />
 
     <!-- iOS Single-Handed Bottom Bar (Mobile only) -->
-    <MobileBottomBar v-if="!ui.activeItem && !ui.showSettingsModal" />
+    <MobileBottomBar v-if="!ui.activeItem && !ui.showSettingsModal && !ui.showEvalModal" />
 
   </div>
 

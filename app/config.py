@@ -132,6 +132,9 @@ class Settings(BaseSettings):
     LINE_CHANNEL_ACCESS_TOKEN: str = ""
     LINE_ALLOWED_USER_IDS_RAW: str = Field(default="", validation_alias="LINE_ALLOWED_USER_IDS")
 
+    # Optional local OmniKit repository path for background L0/L1 tool evaluation
+    OMNIKIT_REPO_PATH: str = ""
+
     @field_validator("DATABASE_PATH")
     @classmethod
     def resolve_db_path(cls, v: str) -> str:

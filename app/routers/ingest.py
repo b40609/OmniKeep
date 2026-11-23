@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
 from app.error_translate import classify, failure_message, is_ai_failure
 from app.network import validate_url, UnsafeURL
 from app.parsers.dead_link import DeadLinkError
@@ -23,6 +23,9 @@ class IngestRequest(BaseModel):
     page_description: Optional[str] = None
     # Keep the text as a note even when it holds an address (the 新增 panel's choice).
     as_note: Optional[bool] = False
+    user_note: Optional[str] = None
+    intent: Literal["read", "agent_eval", "project_ref"] = "read"
+    target_project: Optional[str] = None
 
 
 # A video longer than this is read in the queue even when the caller waits for the result: the
@@ -63,25 +66,45 @@ async def ingest_url(
         except UnsafeURL as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    user_note = (req.user_note or "").strip()
+    intent = req.intent or "read"
+    target_project = (req.target_project or "").strip()
+
     # If async_mode requested (e.g. quick return for iOS shortcut / fast ingestion)
     if req.async_mode:
-        task = create_ingest_task(url=clean_input, source="api", category=req.category)
+        task = create_ingest_task(
+            url=clean_input,
+            source="api",
+            category=req.category,
+            user_note=user_note,
+            intent=intent,
+            target_project=target_project,
+        )
         return {
             "success": True,
             "status": "queued",
             "task_id": task["id"],
+            "intent": intent,
             "message": "Content enqueued in persistent queue for two-stage analysis"
         }
 
     if not as_note and not req.page_title and not req.page_description:
         long_video = await _long_video(clean_input)
         if long_video:
-            task = create_ingest_task(url=clean_input, source="api", category=req.category)
+            task = create_ingest_task(
+                url=clean_input,
+                source="api",
+                category=req.category,
+                user_note=user_note,
+                intent=intent,
+                target_project=target_project,
+            )
             minutes = round(long_video / 60)
             return {
                 "success": True,
                 "status": "queued",
                 "task_id": task["id"],
+                "intent": intent,
                 "message": f"影片約 {minutes} 分鐘，比較長，改在背景讀：讀完會出現在收件匣，通常要幾分鐘。",
             }
 
@@ -90,12 +113,28 @@ async def ingest_url(
         item = await run_pipeline(clean_input, req.category,
                                   page_title=_page_hint(req.page_title, 300),
                                   page_description=_page_hint(req.page_description, 1000),
+                                  user_note=user_note,
+                                  intent=intent,
+                                  target_project=target_project,
                                   **({"as_note": True} if as_note else {}))
-        return {
+        evaluation_id = None
+        if intent == "agent_eval" and item and item.get("id"):
+            from app.eval.runner import enqueue_evaluation_for_item
+            ev = enqueue_evaluation_for_item(
+                item["id"],
+                user_note=user_note,
+                eval_track="project" if target_project else "",
+                run_in_background=True,
+            )
+            evaluation_id = ev["id"]
+        resp = {
             "success": True,
             "status": "completed",
             "item": item
         }
+        if evaluation_id:
+            resp["evaluation_id"] = evaluation_id
+        return resp
     except UnsafeURL as exc:  # a redirect or an embedded link the pipeline refused
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except DeadLinkError as exc:  # 404, no such domain, a removed video: nothing was saved

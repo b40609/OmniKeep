@@ -28,6 +28,33 @@ export function linkedPanel(href: string, base = 'http://localhost'): 'proposals
   }
 }
 
+export type LinkedTarget =
+  | { kind: 'proposals' }
+  | { kind: 'eval'; id: string }
+  | { kind: 'item'; id: string }
+  | null
+
+const SAFE_LINK_ID = /^[A-Za-z0-9_-]{1,64}$/
+
+/** Parse deep links carried by push notifications (`/?open=proposals`, `/?open=eval:<id>`, `/?open=item:<id>`). */
+export function linkedTarget(href: string, base = 'http://localhost'): LinkedTarget {
+  try {
+    const param = new URL(href, base).searchParams.get('open') || ''
+    if (param === 'proposals') return { kind: 'proposals' }
+    if (param.startsWith('eval:')) {
+      const id = param.slice(5)
+      return SAFE_LINK_ID.test(id) ? { kind: 'eval', id } : null
+    }
+    if (param.startsWith('item:')) {
+      const id = param.slice(5)
+      return SAFE_LINK_ID.test(id) ? { kind: 'item', id } : null
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 export interface PushEnvironment {
   supported: boolean
   /** iPhone/iPad Safari only exposes Push to Home Screen web apps (iOS 16.4+). */

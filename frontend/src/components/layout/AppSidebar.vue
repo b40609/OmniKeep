@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useLocalStorage, useMediaQuery } from '@vueuse/core'
 import {
   Inbox, Star, Archive, Layers, Folder, Plus, X, ChevronDown, ChevronUp,
-  Compass, ScanEye, History,
+  Compass, ScanEye, History, Scale,
 } from 'lucide-vue-next'
 import {
   DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuItem,
@@ -13,6 +13,7 @@ import SidebarRow from './SidebarRow.vue'
 import { useItemsStore, type TriageView } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
 import { useExperimentsStore } from '@/stores/experiments'
+import { useEvaluationsStore } from '@/stores/evaluations'
 import { WATCH_CATEGORIES } from '@/lib/experiments'
 import { useMenuAction } from '@/composables/useMenuAction'
 import { displayCategory } from '@/lib/format'
@@ -25,6 +26,7 @@ import { displayCategory } from '@/lib/format'
 const items = useItemsStore()
 const ui = useUiStore()
 const experiments = useExperimentsStore()
+const evaluations = useEvaluationsStore()
 const desktop = useMediaQuery('(min-width: 768px)')
 /** Collapsed on a wide screen is an icon-only rail; the phone drawer is always the full list. */
 const rail = computed(() => desktop.value && !ui.sidebarOpen)
@@ -110,6 +112,15 @@ const menu = useMenuAction()
           @click="setView(v.id)"
         >
           <component :is="v.icon" aria-hidden="true" />
+        </SidebarRow>
+        <SidebarRow
+          label="待決評估"
+          :count="evaluations.counts.needs_decision"
+          :active="ui.showEvalModal"
+          :rail="rail"
+          @click="ui.openEvaluations()"
+        >
+          <Scale aria-hidden="true" />
         </SidebarRow>
 
         <div class="nav-divider" />

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { Inbox, Star, Plus, Search } from 'lucide-vue-next'
+import { Inbox, Scale, Star, Plus, Search } from 'lucide-vue-next'
 import { useItemsStore, type TriageView } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
+import { useEvaluationsStore } from '@/stores/evaluations'
 
 const items = useItemsStore()
 const ui = useUiStore()
+const evaluations = useEvaluationsStore()
 
 function setView(view: TriageView) {
   items.triageView = view
@@ -17,11 +19,17 @@ function setView(view: TriageView) {
     class="safe-bottom fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-hairline bg-shell px-1 md:hidden"
     aria-label="快捷導覽"
   >
-    <button class="bottom-tab" :aria-pressed="items.triageView === 'inbox'" @click="setView('inbox')">
+    <button class="bottom-tab" :aria-pressed="!ui.showEvalModal && items.triageView === 'inbox'" @click="setView('inbox')">
       <Inbox aria-hidden="true" />
       <span>收件匣<span v-if="items.stats.inbox" class="ml-1 tabular-nums">{{ items.stats.inbox }}</span></span>
     </button>
-    <button class="bottom-tab" :aria-pressed="items.triageView === 'starred'" @click="setView('starred')">
+    <button class="bottom-tab" :aria-pressed="ui.showEvalModal" @click="ui.openEvaluations()">
+      <Scale aria-hidden="true" />
+      <span>
+        待決<span v-if="evaluations.counts.needs_decision" class="ml-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground tabular-nums">{{ evaluations.counts.needs_decision }}</span>
+      </span>
+    </button>
+    <button class="bottom-tab" :aria-pressed="!ui.showEvalModal && items.triageView === 'starred'" @click="setView('starred')">
       <Star aria-hidden="true" />
       <span>加星</span>
     </button>

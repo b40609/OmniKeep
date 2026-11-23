@@ -343,6 +343,9 @@ class TaskWorker:
         chat_id = task.get("chat_id")
         message_id = task.get("message_id")
         retry_count = int(task.get("retry_count") or 0)
+        user_note = (task.get("user_note") or "").strip()
+        intent = (task.get("intent") or "read").strip() or "read"
+        target_project = (task.get("target_project") or "").strip()
 
         def _get_current_message_id() -> Optional[int]:
             nonlocal message_id
@@ -365,6 +368,14 @@ class TaskWorker:
         existing_item = find_item_by_canonical_or_url(url)
         if existing_item and not is_empty_reel_metadata(existing_item):
             logger.info(f"[Queue Worker] Idempotency Hit: URL already indexed as item {existing_item.get('id')}")
+            if intent == "agent_eval":
+                from app.eval.runner import enqueue_evaluation_for_item
+                enqueue_evaluation_for_item(
+                    existing_item["id"],
+                    user_note=user_note,
+                    eval_track="project" if target_project else "",
+                    run_in_background=True,
+                )
             update_task_status(task_id, status="completed", item_id=existing_item.get("id"))
             await self._trigger_completion_notification(task_id, existing_item)
             return
@@ -401,8 +412,26 @@ class TaskWorker:
 
         try:
             # 3. Execute intelligence pipeline, for a bounded time
-            item = await self._run_with_timeout(run_pipeline(url, **({"manual_category": task["category"]} if task.get("category") else {})),
-                                                float(settings.INGEST_TASK_TIMEOUT_SECONDS))
+            pipeline_kw: Dict[str, Any] = {
+                "user_note": user_note,
+                "intent": intent,
+                "target_project": target_project,
+            }
+            if task.get("category"):
+                pipeline_kw["manual_category"] = task["category"]
+            item = await self._run_with_timeout(
+                run_pipeline(url, **pipeline_kw),
+                float(settings.INGEST_TASK_TIMEOUT_SECONDS),
+            )
+
+            if intent == "agent_eval" and item and item.get("id"):
+                from app.eval.runner import enqueue_evaluation_for_item
+                enqueue_evaluation_for_item(
+                    item["id"],
+                    user_note=user_note,
+                    eval_track="project" if target_project else "",
+                    run_in_background=True,
+                )
 
             # Mark completed in DB
             update_task_status(task_id, status="completed", item_id=item.get("id"))

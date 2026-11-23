@@ -12,7 +12,7 @@ from app.database import init_db
 from app.routers import (
     items_router, categories_router, ingest_router, line_router,
     radar_router, session_router, watch_router, behavior_router, rules_router, push_router,
-    telegram_router, settings_router, brain_router, ai_router, setup_router,
+    telegram_router, settings_router, brain_router, ai_router, setup_router, evaluations_router,
 )
 from app.mcp_server import mcp
 from app.mcp_http import STREAMABLE_HTTP_PATH, StreamableHTTPEndpoint, streamable_http_session
@@ -162,6 +162,7 @@ app.include_router(settings_router)
 app.include_router(brain_router)
 app.include_router(ai_router)
 app.include_router(setup_router)
+app.include_router(evaluations_router)
 
 # Remote MCP: Streamable HTTP at /mcp-http (agents on another computer, via Tailscale),
 # SSE kept at /mcp. Both sit behind verify_api_key like every other path.

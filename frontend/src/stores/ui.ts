@@ -62,6 +62,8 @@ export const useUiStore = defineStore('ui', () => {
   const showDeckModal = ref(false)
   const showDailyDeckModal = ref(false)
   const showBrainModal = ref(false)
+  const showEvalModal = ref(false)
+  const evalFocusId = ref<string | null>(null)
 
   // Settings: a full page over the workspace (components/settings/SettingsPage.vue).
   const showSettingsModal = ref(false)
@@ -107,6 +109,17 @@ export const useUiStore = defineStore('ui', () => {
     sidebarMobileOpen.value = false
   }
 
+  function openEvaluations(evalId?: string) {
+    evalFocusId.value = evalId ?? null
+    showEvalModal.value = true
+    sidebarMobileOpen.value = false
+  }
+
+  function closeEvaluations() {
+    showEvalModal.value = false
+    evalFocusId.value = null
+  }
+
   /** Answer a question from the saved items: the answer dialog opens and sends it. */
   function ask(question: string) {
     const q = question.trim()
@@ -125,7 +138,7 @@ export const useUiStore = defineStore('ui', () => {
     sidebarOpen, sidebarMobileOpen, searchFocusRequests, pendingQuestion, ask,
     activeItem, cursorId, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode, readerOpen, readerSide, outlineOpen, railOpen, sidesFit, outlineShown, railFits, railShown,
     showAddModal, addDraft, openAdd, showCategoryModal, showShortcutsModal, showRadarModal, showWatchModal, showImportModal, importTab, importFile, openImport, showDeckModal,
-    showDailyDeckModal, showBrainModal,
+    showDailyDeckModal, showBrainModal, showEvalModal, evalFocusId, openEvaluations, closeEvaluations,
     showSettingsModal, settingsTab, settingsBlock, settingsLevel, settingsCloseRequests, settingsCard, settingsVersion, openSettings, showSetupWizard,
     watchTab, snapshotView,
     isIngesting,

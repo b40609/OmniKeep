@@ -90,6 +90,15 @@ test('linkedPanel opens the 提案 tab only for the 新提案 notification link'
   assert.equal(push.OPEN_LINK_MESSAGE, 'omnikeep-open-link')
 })
 
+test('linkedTarget routes proposals, eval:<id>, and item:<id> deep links safely', () => {
+  assert.deepEqual(push.linkedTarget('/?open=proposals'), { kind: 'proposals' })
+  assert.deepEqual(push.linkedTarget('/?open=eval:eval_abc123'), { kind: 'eval', id: 'eval_abc123' })
+  assert.deepEqual(push.linkedTarget('https://host.ts.net/?open=item:123ff88ca810'), { kind: 'item', id: '123ff88ca810' })
+  assert.equal(push.linkedTarget('/?open=eval:bad/id!'), null)
+  assert.equal(push.linkedTarget('/?open=item:../secret'), null)
+  assert.equal(push.linkedTarget('/?open=unknown'), null)
+})
+
 function fakeEnv({ ua, platform = 'Win32', touch = 0, standalone = false, push = true }) {
   const nav = { userAgent: ua, platform, maxTouchPoints: touch, ...(push ? { serviceWorker: {} } : {}) }
   const win = {

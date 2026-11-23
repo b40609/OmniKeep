@@ -935,6 +935,29 @@ class TelegramBot:
             await self.send_message(chat_id, card, reply_markup=build_dreampass_keyboard(prop["id"]))
             return
 
+        if text.startswith("/eval"):
+            raw_arg = text[len("/eval"):].strip()
+            eval_urls = re.findall(r'https?://[^\s<>"\'\)]+', raw_arg)
+            if not eval_urls:
+                await self.send_message(chat_id, "請附上要評估的網址與選填疑問，例如：<code>/eval https://github.com/owner/repo 看是否適合替換搜尋工具</code>")
+                return
+            target_url = eval_urls[0].rstrip(".,;:!?)]}>\"'")
+            note = re.sub(r'\s+', ' ', raw_arg.replace(eval_urls[0], "")).strip()
+            create_ingest_task(
+                url=target_url,
+                source="telegram",
+                chat_id=chat_id,
+                message_id=None,
+                dedupe_key=f"eval:{message.get('message_id') or update.get('update_id')}",
+                user_note=note,
+                intent="agent_eval",
+            )
+            await self.send_message(
+                chat_id,
+                "🤖 已送進背景執行唯讀預研（L0/L1），完成後會推播至 OmniKeep App 請你拍板。"
+            )
+            return
+
         # Normal Content Ingestion (Multi-URL & Note extraction with Emoji Reaction)
         if not text:
             await self.send_message(chat_id, "請發送網址或文字段落。")

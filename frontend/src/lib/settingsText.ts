@@ -38,6 +38,7 @@ export const SETTING_TEXT: Record<string, SettingText> = {
   VAPID_PRIVATE_KEY: { label: '推播私鑰' },
 
   LOCAL_AUTO_LOGIN: { label: '這台電腦免登入', help: '在執行 OmniKeep 的這台電腦上開啟時，不用輸入存取金鑰。手機和其他裝置一律要輸入存取金鑰或配對碼。' },
+  OMNIKIT_REPO_PATH: { label: 'OmniKit 本機路徑', help: '選填：指向本機 OmniKit 倉庫資料夾，用於背景 L0/L1 工具預研；留空會自動偵測，找不到則用輕量本機評估。' },
 
   EXPERIMENT_RADAR: { label: '實驗功能：探索' },
   EXPERIMENT_WATCH: { label: '實驗功能：專案監看' },

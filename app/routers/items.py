@@ -219,6 +219,8 @@ async def get_item(item_id: str):
     item["sub_entities"] = get_sub_entities_for_parent(item_id)
     item["related_items"] = get_related_items(item_id, limit=4)
     item["graph"] = get_item_knowledge_graph(item_id)
+    from app.eval.store import get_latest_evaluation_for_item
+    item["latest_evaluation"] = get_latest_evaluation_for_item(item_id)
     return item
 
 @router.get("/{item_id}/graph")

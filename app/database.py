@@ -491,6 +491,59 @@ def init_db():
     from app.ai_usage import ensure_sources_table
     ensure_sources_table(cursor)
 
+    # 31. Mobile Agent evaluation loop columns and item_evaluations table (2026-11-23).
+    cursor.execute("PRAGMA table_info(items)")
+    item_cols_v2 = {row[1] for row in cursor.fetchall()}
+    for col_name, col_ddl in (
+        ("user_note", "TEXT DEFAULT ''"),
+        ("intent", "TEXT DEFAULT 'read'"),
+        ("eval_track", "TEXT DEFAULT ''"),
+        ("agent_status", "TEXT DEFAULT 'none'"),
+        ("merged_into_id", "TEXT DEFAULT ''"),
+        ("community_counterpoints", "TEXT DEFAULT '[]'"),
+    ):
+        if col_name not in item_cols_v2:
+            cursor.execute(f"ALTER TABLE items ADD COLUMN {col_name} {col_ddl}")
+
+    cursor.execute("PRAGMA table_info(ingest_tasks)")
+    task_cols_v2 = {row[1] for row in cursor.fetchall()}
+    for col_name, col_ddl in (
+        ("user_note", "TEXT DEFAULT ''"),
+        ("intent", "TEXT DEFAULT 'read'"),
+        ("target_project", "TEXT DEFAULT ''"),
+    ):
+        if col_name not in task_cols_v2:
+            cursor.execute(f"ALTER TABLE ingest_tasks ADD COLUMN {col_name} {col_ddl}")
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS item_evaluations (
+            id TEXT PRIMARY KEY,
+            item_id TEXT NOT NULL,
+            eval_track TEXT NOT NULL DEFAULT 'tool',
+            adapter TEXT NOT NULL DEFAULT 'omnikit',
+            status TEXT NOT NULL DEFAULT 'queued',
+            target_repo TEXT DEFAULT '',
+            target_url TEXT DEFAULT '',
+            security_badge TEXT DEFAULT '',
+            l0_json TEXT DEFAULT '{}',
+            l1_json TEXT DEFAULT '{}',
+            l2_request_json TEXT DEFAULT '{}',
+            l2_result_json TEXT DEFAULT '{}',
+            community_counterpoints_json TEXT DEFAULT '[]',
+            decision TEXT DEFAULT '',
+            decision_note TEXT DEFAULT '',
+            trigger_when TEXT DEFAULT '',
+            decided_at TEXT DEFAULT '',
+            error_message TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_item_evaluations_item_id ON item_evaluations(item_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_item_evaluations_status ON item_evaluations(status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_items_agent_status ON items(agent_status)")
+
     conn.commit()
     conn.close()
 
@@ -517,7 +570,7 @@ def get_all_categories() -> List[Dict[str, Any]]:
     cursor.execute("""
         SELECT c.id, c.name, c.icon, c.sort_order, COUNT(i.id) AS item_count
         FROM categories c
-        LEFT JOIN items i ON i.category_name = c.name
+        LEFT JOIN items i ON i.category_name = c.name AND (i.merged_into_id IS NULL OR i.merged_into_id = '')
         GROUP BY c.id
         ORDER BY c.sort_order ASC, c.name ASC
     """)
@@ -576,12 +629,20 @@ def _save_item(conn, item_data: Dict[str, Any]) -> str:
     else:
         tags_str = str(tags)
 
+    counterpoints = item_data.get("community_counterpoints", [])
+    if isinstance(counterpoints, list):
+        counterpoints_str = json.dumps(counterpoints, ensure_ascii=False)
+    else:
+        counterpoints_str = str(counterpoints or "[]")
+
     cursor.execute("""
         INSERT INTO items (
             id, url, source_type, category_name, title_l1, summary_l1,
             tech_tags, deep_analysis, content_raw, author, published_date,
-            cover_image, is_starred, is_read, analysis_status, origin, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            cover_image, is_starred, is_read, analysis_status, origin,
+            user_note, intent, eval_track, agent_status, merged_into_id, community_counterpoints,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(url) DO UPDATE SET
             category_name = excluded.category_name,
             title_l1 = excluded.title_l1,
@@ -593,6 +654,15 @@ def _save_item(conn, item_data: Dict[str, Any]) -> str:
             published_date = COALESCE(NULLIF(excluded.published_date, ''), items.published_date),
             cover_image = COALESCE(NULLIF(excluded.cover_image, ''), items.cover_image),
             analysis_status = excluded.analysis_status,
+            user_note = COALESCE(NULLIF(excluded.user_note, ''), items.user_note),
+            intent = CASE WHEN excluded.intent != 'read' THEN excluded.intent ELSE items.intent END,
+            eval_track = COALESCE(NULLIF(excluded.eval_track, ''), items.eval_track),
+            agent_status = CASE WHEN excluded.agent_status != 'none' THEN excluded.agent_status ELSE items.agent_status END,
+            merged_into_id = COALESCE(NULLIF(excluded.merged_into_id, ''), items.merged_into_id),
+            community_counterpoints = CASE
+                WHEN excluded.community_counterpoints != '[]' AND excluded.community_counterpoints != '' THEN excluded.community_counterpoints
+                ELSE items.community_counterpoints
+            END,
             updated_at = excluded.updated_at
     """, (
         item_id,
@@ -611,6 +681,12 @@ def _save_item(conn, item_data: Dict[str, Any]) -> str:
         item_data.get("is_read", 0),
         item_data.get("analysis_status", "done"),
         item_data.get("origin", "manual"),
+        item_data.get("user_note", "") or "",
+        item_data.get("intent", "read") or "read",
+        item_data.get("eval_track", "") or "",
+        item_data.get("agent_status", "none") or "none",
+        item_data.get("merged_into_id", "") or "",
+        counterpoints_str,
         now,
         now
     ))
@@ -852,7 +928,7 @@ def item_kind(url, source_type) -> str:
 def _item_filters(category, is_starred, is_read, origin, kind=None):
     """The list filters of get_items as SQL conditions on `items i`, with named parameters.
     A `kind` condition calls item_kind(), which the connection must have registered."""
-    conditions, params = [], {}
+    conditions, params = ["(i.merged_into_id IS NULL OR i.merged_into_id = '')"], {}
     if kind:
         if kind not in ITEM_KINDS:
             raise ValueError(f"unknown item kind: {kind!r}")
@@ -1040,6 +1116,25 @@ def _count_search(cursor, words: List[str], filters) -> int:
         return count(use_fts=False)
 
 
+def _hydrate_item_row(row) -> Dict[str, Any]:
+    d = dict(row)
+    try:
+        d["tech_tags"] = json.loads(d.get("tech_tags") or "[]")
+    except Exception:
+        d["tech_tags"] = []
+    try:
+        cp = json.loads(d.get("community_counterpoints") or "[]")
+        d["community_counterpoints"] = cp if isinstance(cp, list) else []
+    except Exception:
+        d["community_counterpoints"] = []
+    d.setdefault("user_note", "")
+    d.setdefault("intent", "read")
+    d.setdefault("eval_track", "")
+    d.setdefault("agent_status", "none")
+    d.setdefault("merged_into_id", "")
+    return d
+
+
 def search_candidates(query: Optional[str], limit: int = 20) -> List[Dict[str, Any]]:
     """Items for the lexical side of hybrid search and of a question, best first.
 
@@ -1074,15 +1169,7 @@ def search_candidates(query: Optional[str], limit: int = 20) -> List[Dict[str, A
             logging.getLogger("omnikeep.database").warning(
                 "Full-text query failed (%s); searching with LIKE instead", exc)
             db_rows = collect(use_fts=False)
-    rows = []
-    for r in db_rows:
-        d = dict(r)
-        try:
-            d["tech_tags"] = json.loads(d["tech_tags"])
-        except Exception:
-            d["tech_tags"] = []
-        rows.append(d)
-    return rows
+    return [_hydrate_item_row(r) for r in db_rows]
 
 
 def count_items(
@@ -1147,14 +1234,7 @@ def get_items(
         """, {**params, "limit": limit, "offset": offset})
         db_rows = cursor.fetchall()
 
-    rows = []
-    for r in db_rows:
-        d = dict(r)
-        try:
-            d["tech_tags"] = json.loads(d["tech_tags"])
-        except Exception:
-            d["tech_tags"] = []
-        rows.append(d)
+    rows = [_hydrate_item_row(r) for r in db_rows]
 
     conn.close()
     return rows
@@ -1173,22 +1253,23 @@ def get_item_by_id(item_id: str) -> Optional[Dict[str, Any]]:
     conn.close()
     if not row:
         return None
-    d = dict(row)
-    try:
-        d["tech_tags"] = json.loads(d["tech_tags"])
-    except Exception:
-        d["tech_tags"] = []
-    return d
+    return _hydrate_item_row(row)
 
 def update_item_field(item_id: str, updates: Dict[str, Any]) -> bool:
     conn = get_db_connection()
     cursor = conn.cursor()
     allowed = {"is_read", "is_starred", "category_name", "title_l1", "summary_l1",
-               "tech_tags", "deep_analysis", "content_raw", "cover_image", "origin"}
+               "tech_tags", "deep_analysis", "content_raw", "cover_image", "origin",
+               "user_note", "intent", "eval_track", "agent_status", "merged_into_id",
+               "community_counterpoints"}
     if not updates or set(updates) - allowed:
         conn.close()
         raise ValueError("Unsupported item field")
-    updates = {**updates, "updated_at": datetime.now(timezone.utc).isoformat()}
+    clean_updates = dict(updates)
+    for json_col in ("tech_tags", "community_counterpoints"):
+        if json_col in clean_updates and isinstance(clean_updates[json_col], list):
+            clean_updates[json_col] = json.dumps(clean_updates[json_col], ensure_ascii=False)
+    updates = {**clean_updates, "updated_at": datetime.now(timezone.utc).isoformat()}
     fields = ", ".join(f"{k} = ?" for k in updates.keys())
     values = list(updates.values()) + [item_id]
     cursor.execute(f"UPDATE items SET {fields} WHERE id = ?", values)
@@ -1213,15 +1294,16 @@ def delete_item(item_id: str) -> bool:
 def get_status_counts() -> Dict[str, int]:
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM items WHERE is_read = 0 AND (origin != 'radar' OR is_starred = 1)")
+    visible = "(merged_into_id IS NULL OR merged_into_id = '')"
+    cursor.execute(f"SELECT COUNT(*) FROM items WHERE {visible} AND is_read = 0 AND (origin != 'radar' OR is_starred = 1)")
     inbox = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM items WHERE is_starred = 1")
+    cursor.execute(f"SELECT COUNT(*) FROM items WHERE {visible} AND is_starred = 1")
     starred = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM items WHERE is_read = 1")
+    cursor.execute(f"SELECT COUNT(*) FROM items WHERE {visible} AND is_read = 1")
     archived = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM items WHERE origin = 'radar' AND is_read = 0 AND is_starred = 0")
+    cursor.execute(f"SELECT COUNT(*) FROM items WHERE {visible} AND origin = 'radar' AND is_read = 0 AND is_starred = 0")
     radar = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM items")
+    cursor.execute(f"SELECT COUNT(*) FROM items WHERE {visible}")
     total = cursor.fetchone()[0]
     conn.close()
     return {"inbox": inbox, "starred": starred, "archived": archived, "radar": radar, "total": total}
@@ -1652,12 +1734,7 @@ def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
     row = cursor.fetchone()
     if row:
         conn.close()
-        d = dict(row)
-        try:
-            d["tech_tags"] = json.loads(d["tech_tags"])
-        except Exception:
-            d["tech_tags"] = []
-        return d
+        return _hydrate_item_row(row)
 
     # 2. Canonical match
     canon = normalize_canonical_url(url)
@@ -1687,12 +1764,7 @@ def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
             )
             if row:
                 conn.close()
-                d = dict(row)
-                try:
-                    d["tech_tags"] = json.loads(d["tech_tags"])
-                except Exception:
-                    d["tech_tags"] = []
-                return d
+                return _hydrate_item_row(row)
         else:
             # Any other link: narrow with a piece every equivalent link contains, then
             # compare canonical forms (tracking parameters, youtu.be vs watch?v=, twitter vs x).
@@ -1708,12 +1780,7 @@ def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
                 )
                 if row:
                     conn.close()
-                    d = dict(row)
-                    try:
-                        d["tech_tags"] = json.loads(d["tech_tags"])
-                    except Exception:
-                        d["tech_tags"] = []
-                    return d
+                    return _hydrate_item_row(row)
 
         # Check if previously cited with this canonical URL
         cursor.execute("SELECT target_item_id FROM item_citations WHERE target_canonical_url = ? AND target_item_id IS NOT NULL LIMIT 1", (canon,))
@@ -1723,12 +1790,7 @@ def find_item_by_canonical_or_url(url: str) -> Optional[Dict[str, Any]]:
             row = cursor.fetchone()
             if row:
                 conn.close()
-                d = dict(row)
-                try:
-                    d["tech_tags"] = json.loads(d["tech_tags"])
-                except Exception:
-                    d["tech_tags"] = []
-                return d
+                return _hydrate_item_row(row)
 
     conn.close()
     return None
@@ -2091,6 +2153,9 @@ def create_ingest_task(
     message_id: Optional[int] = None,
     dedupe_key: Optional[str] = None,
     category: Optional[str] = None,
+    user_note: str = "",
+    intent: str = "read",
+    target_project: str = "",
 ) -> Dict[str, Any]:
     """Persist a task, deduplicating replayed upstream messages without a migration."""
     conn = get_db_connection()
@@ -2099,9 +2164,15 @@ def create_ingest_task(
                if dedupe_key is not None else uuid.uuid4().hex[:12])
     now_iso = datetime.now(timezone.utc).isoformat()
     cursor.execute("""
-        INSERT OR IGNORE INTO ingest_tasks (id, url, source, chat_id, message_id, status, category, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)
-    """, (task_id, url.strip(), source, chat_id, message_id, (category or None), now_iso, now_iso))
+        INSERT OR IGNORE INTO ingest_tasks (
+            id, url, source, chat_id, message_id, status, category,
+            user_note, intent, target_project, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)
+    """, (
+        task_id, url.strip(), source, chat_id, message_id, (category or None),
+        user_note or "", intent or "read", target_project or "", now_iso, now_iso,
+    ))
     conn.commit()
     row = conn.execute("SELECT * FROM ingest_tasks WHERE id = ?", (task_id,)).fetchone()
     conn.close()

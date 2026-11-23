@@ -17,6 +17,7 @@ from app.config import settings
 from app.database import (
     get_items,
     get_item_by_id,
+    get_sub_entities_for_parent,
     save_item,
     save_citation,
     update_item_field,
@@ -163,17 +164,44 @@ async def get_item_architecture(item_id: str) -> str:
     tags = ", ".join(item.get("tech_tags", []))
     status = "已封存" if item.get("is_read") else "待讀 (Inbox)"
     star = "已加星" if item.get("is_starred") else "未加星"
+    agent_st = item.get("agent_status") or "none"
 
     output = [
         f"# {item.get('title_l1')}",
-        f"- **ID**: {item.get('id')} | **分類**: {item.get('category_name')} ({status}, {star})",
+        f"- **ID**: {item.get('id')} | **分類**: {item.get('category_name')} ({status}, {star}, agent={agent_st})",
         f"- **原始連結**: {item.get('url')}",
-        f"- **技術標籤**: #{tags}\n",
-        "## ⚡ L1 白話核心痛點與價值",
+        f"- **技術標籤**: #{tags}",
+    ]
+    if item.get("user_note"):
+        output.append(f"- **使用者備註**: {item.get('user_note')}")
+
+    from app.eval.store import get_latest_evaluation_for_item
+    latest_ev = get_latest_evaluation_for_item(item_id)
+    if latest_ev:
+        badge_lbl = (latest_ev.get("security_badge_meta") or {}).get("label") or latest_ev.get("security_badge") or "未掃描"
+        output.append(f"- **評估狀態**: {latest_ev.get('status')} (`{latest_ev.get('id')}`) | **安全徽章**: {badge_lbl}")
+
+    output.extend([
+        "\n## ⚡ L1 白話核心痛點與價值",
         item.get("summary_l1", ""),
         "\n## 📊 L2 深度技術架構與規格解構",
         item.get("deep_analysis", "無深入分析內容。"),
-    ]
+    ])
+
+    counterpoints = item.get("community_counterpoints") or []
+    if counterpoints:
+        output.append("\n## 💬 社群實測與反例")
+        for cp in counterpoints[:8]:
+            output.append(f"- [{cp.get('category', 'limitation')}] {cp.get('point', '')}")
+
+    subs = get_sub_entities_for_parent(item_id)
+    if subs:
+        output.append("\n## 📦 相關子項目")
+        for s in subs[:10]:
+            output.append(
+                f"- {s.get('target_name') or s.get('title_l1') or '未命名'} "
+                f"({s.get('target_canonical_url') or ''}) — {s.get('mention_context') or ''}"
+            )
     return "\n".join(output)
 
 
@@ -203,10 +231,10 @@ async def get_item_raw(item_id: str, max_chars: int = 2500) -> str:
 # ── 4. Backward-Compatible Full Detail Tool ─────────────────────
 
 @mcp.tool()
-async def get_item_detail(item_id: str, include_raw: bool = False) -> str:
+async def get_item_detail(item_id: str, include_raw: bool = False, raw_limit: int = 8000) -> str:
     """
     Retrieve item details. By default excludes raw snapshots to prevent context explosion.
-    Set include_raw=True if raw text is explicitly required.
+    Set include_raw=True if raw text is explicitly required (adjust raw_limit as needed).
     """
     base = await get_item_architecture(item_id)
     if not include_raw or "錯誤：" in base:
@@ -215,7 +243,8 @@ async def get_item_detail(item_id: str, include_raw: bool = False) -> str:
     item = get_item_by_id(item_id)
     raw = item.get("content_raw", "") if item else ""
     if raw:
-        preview = raw[:2000] + ("\n...(原文已截斷)..." if len(raw) > 2000 else "")
+        limit = max(500, min(int(raw_limit or 8000), 50000))
+        preview = raw[:limit] + (f"\n...(原文超過 {limit} 字已截斷)..." if len(raw) > limit else "")
         return base + f"\n\n## 📖 原文節錄快照\n{preview}"
     return base
 
@@ -291,8 +320,6 @@ async def writeback_insight(
         mode = "✅ 已把這次的結論存進 OmniKeep。"
 
     try:
-        if not existing:
-            saved_id = save_item(item_data)
         cit_msg = ""
         if related_item_id:
             parent_item = get_item_by_id(related_item_id)
@@ -401,9 +428,17 @@ async def list_recent_items(
     for i, item in enumerate(items, 1):
         star = " ⭐" if item.get("is_starred") else ""
         tags = " ".join([f"#{t}" for t in item.get("tech_tags", [])[:3]])
+        extras = []
+        if item.get("agent_status") and item.get("agent_status") != "none":
+            extras.append(f"評估: {item.get('agent_status')}")
+        if (item.get("sub_entities_count") or 0) > 0:
+            extras.append(f"子項目: {item.get('sub_entities_count')}")
+        extra_str = f" | {' · '.join(extras)}" if extras else ""
+        note_line = f"\n   備註: {item.get('user_note')}" if item.get("user_note") else ""
         lines.append(
             f"{i}. [{item.get('id')}] **{item.get('title_l1')}**{star}\n"
-            f"   分類: {item.get('category_name')} | {tags}\n"
+            f"   分類: {item.get('category_name')} | {tags}{extra_str}\n"
+            f"   連結: {item.get('url')}{note_line}\n"
             f"   重點: {item.get('summary_l1')[:80]}..."
         )
     return "\n".join(lines)
@@ -458,6 +493,104 @@ async def attach_item_diagram(item_id: str, path: str = "", html: str = "") -> s
     except DiagramError as exc:
         return f"錯誤：{exc}"
     return f"✅ 已把架構圖存進收藏 [{item_id}]（{info['size_bytes'] // 1024} KB），在分析頁的「agent 架構圖」可以看。"
+
+
+# ── 8c. Mobile Agent Evaluation Closed-Loop Tools ───────────────
+
+@mcp.tool()
+async def list_agent_queue(
+    status: str = "needs_decision",
+    limit: int = 20,
+) -> str:
+    """
+    List OmniKeep items queued for desktop Agent action or mobile decision review.
+    status: 'needs_decision' | 'approved_l2' | 'evaluating' | 'on_demand' | 'adopted' | 'rejected' | 'failed'
+    """
+    from app.eval.store import get_evaluation_counts, list_evaluations
+
+    rows = list_evaluations(status=status, limit=min(max(1, limit), 50))
+    counts = get_evaluation_counts()
+    if not rows:
+        return (
+            f"目前「{status}」佇列沒有項目。"
+            f"（待拍板: {counts['needs_decision']}，待 L2 實測: {counts['approved_l2']}，情境備案: {counts['on_demand']}）"
+        )
+
+    out = [
+        f"### OmniKeep Agent 評估佇列（{status}，共 {len(rows)} 筆｜待拍板 {counts['needs_decision']} · 待 L2 實測 {counts['approved_l2']}）"
+    ]
+    for idx, ev in enumerate(rows, 1):
+        l1 = ev.get("l1") or {}
+        badge = (ev.get("security_badge_meta") or {}).get("label") or ev.get("security_badge") or "待掃描"
+        claims = l1.get("claims") or []
+        claims_text = "；".join(str(c.get("claim") or "") for c in claims[:3]) if claims else "（無）"
+        note = ev.get("user_note") or ev.get("decision_note") or ""
+        out.append(
+            f"{idx}. **[{ev.get('item_id')}] {ev.get('item_title')}** (`{ev.get('id')}`)\n"
+            f"   目標: {ev.get('target_repo') or ev.get('target_url') or ev.get('item_url')} | 安全: {badge}\n"
+            + (f"   使用者備註: {note}\n" if note else "")
+            + f"   L1 判讀: {l1.get('summary') or ev.get('item_summary') or '（無）'}\n"
+            + f"   待驗證點: {claims_text}"
+        )
+    return "\n\n".join(out)
+
+
+@mcp.tool()
+async def record_agent_decision(
+    item_id: str,
+    decision: str,
+    note: str = "",
+    trigger_when: str = "",
+) -> str:
+    """
+    Record a human or post-L2 Agent evaluation verdict on an OmniKeep item.
+    decision: 'approve_l2' | 'adopted' | 'on_demand' | 'rejected' (or 'reject') | 'defer'
+    """
+    from app.eval.runner import decide_item_latest_evaluation
+
+    try:
+        updated, writeback = await decide_item_latest_evaluation(
+            item_id=item_id,
+            decision=decision,
+            note=note,
+            trigger_when=trigger_when,
+        )
+    except ValueError as exc:
+        return f"錯誤：{exc}"
+
+    if not updated:
+        return f"錯誤：找不到 ID 為「{item_id}」的收藏。"
+
+    sync_note = "已同步回寫 OmniKit" if writeback.get("synced") else f"已儲存於 OmniKeep（OmniKit 回寫：{writeback.get('reason', 'local')}）"
+    extra = f" · 觸發情境：{updated.get('trigger_when')}" if updated.get("trigger_when") else ""
+    return (
+        f"✅ 已記錄 [{item_id}] 評估決策為 `{updated.get('agent_status')}`（{updated.get('id')}）{extra}。\n"
+        f"- 狀態：{sync_note}"
+    )
+
+
+@mcp.tool()
+async def search_on_demand_tools(query: str = "", limit: int = 5) -> str:
+    """
+    Progressive Disclosure lookup: search tools saved as 'on_demand' (0-token dormant) by
+    trigger condition, domain keywords, or problem scenario when a specific need arises.
+    """
+    from app.eval.store import search_on_demand_items
+
+    rows = search_on_demand_items(query=query, limit=min(max(1, limit), 20))
+    if not rows:
+        return f"找不到符合「{query}」的情境備案工具（on_demand）。" if query else "目前尚未收錄任何情境備案工具（on_demand）。"
+
+    out = [f"找到 {len(rows)} 個情境備案工具（on_demand）："]
+    for idx, ev in enumerate(rows, 1):
+        out.append(
+            f"{idx}. **[{ev.get('item_id')}] {ev.get('item_title')}**\n"
+            f"   網址: {ev.get('target_url') or ev.get('item_url')}\n"
+            f"   何時啟用: {ev.get('trigger_when') or '（未填寫觸發條件）'}\n"
+            + (f"   備註: {ev.get('decision_note')}\n" if ev.get("decision_note") else "")
+            + f"   摘要: {(ev.get('l1') or {}).get('summary') or ev.get('item_summary') or ''}"
+        )
+    return "\n\n".join(out)
 
 
 # ── 9. Ask Brain Synthesis Tool (Cross-Article Report) ───────────
@@ -809,8 +942,28 @@ async def get_schema_resource() -> str:
                     "is_read": "INTEGER - 1: 已封存/已讀 (Archive), 0: 待讀 (Inbox)",
                     "origin": "TEXT - 'manual': 手動收錄, 'radar': 情報雷達主動捕獲",
                     "analysis_status": "TEXT - 'done': 解析完成, 'processing', 'failed'",
+                    "user_note": "TEXT - 使用者收錄時的備註或提問",
+                    "intent": "TEXT - 'read' | 'agent_eval' | 'project_ref'",
+                    "eval_track": "TEXT - 'tool' | 'rule' | 'project'",
+                    "agent_status": "TEXT - 'none' | 'queued' | 'evaluating' | 'needs_decision' | 'approved_l2' | 'on_demand' | 'adopted' | 'rejected' | 'eval_failed'",
+                    "merged_into_id": "TEXT - 若被單卡合併則指向主卡 ID",
+                    "community_counterpoints": "TEXT (JSON Array) - 社群留言萃取之實測限制與反例",
                     "created_at": "DATETIME - 建立時間",
                     "updated_at": "DATETIME - 更新時間"
+                }
+            },
+            "item_evaluations": {
+                "description": "手機端觸發的 Agent 工具評估報告與拍板紀錄 (L0/L1/L2)",
+                "columns": {
+                    "id": "TEXT PRIMARY KEY",
+                    "item_id": "TEXT - 關聯收藏 ID",
+                    "eval_track": "TEXT - 'tool' | 'rule' | 'project'",
+                    "adapter": "TEXT - 'omnikit' | 'local_lite'",
+                    "status": "TEXT - 'queued' | 'running_l0' | 'running_l1' | 'ready' | 'failed'",
+                    "target_repo": "TEXT - GitHub owner/repo",
+                    "security_badge": "TEXT - 'skill_scan_pass' | 'executable_needs_review' | 'risk_flagged'",
+                    "decision": "TEXT - 'approve_l2' | 'on_demand' | 'reject' | 'defer' | 'adopted'",
+                    "trigger_when": "TEXT - on_demand 情境備案觸發條件"
                 }
             },
             "categories": {

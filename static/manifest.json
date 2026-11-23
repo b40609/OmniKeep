@@ -9,6 +9,15 @@
   "background_color": "#09090b",
   "theme_color": "#09090b",
   "categories": ["productivity", "utilities", "news"],
+  "share_target": {
+    "action": "/",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
   "icons": [
     {
       "src": "/static/dist/pwa-64x64.png",

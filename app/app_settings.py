@@ -156,6 +156,8 @@ SPECS: Tuple[Spec, ...] = (
     Spec("LOCAL_AUTO_LOGIN", "system", "這台電腦免登入", "bool",
          help="開啟時，在執行 OmniKeep 的這台電腦上用瀏覽器打開，不必輸入存取金鑰就能進主畫面。"
               "手機、其他電腦，以及經由 Tailscale 或反向代理連進來的裝置，一律要輸入存取金鑰或配對碼。"),
+    Spec("OMNIKIT_REPO_PATH", "system", "OmniKit 本機路徑", "text",
+         help="選填：指定本機 OmniKit 倉庫資料夾，用於背景 L0/L1 工具評估；留空會自動偵測，找不到則改用輕量本機評估。"),
 
     # Whether a feature that is still being worked on shows in the app, on every device.
     # Display only: nothing in the background reads these (the radar has its own toggle).

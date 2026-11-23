@@ -80,10 +80,100 @@ export interface Item {
   content_raw?: string | null
   /** 'pending' while the item has no analysis yet (kept while no AI was connected). */
   analysis_status?: string | null
+  user_note?: string | null
+  intent?: 'read' | 'agent_eval' | 'project_ref' | string | null
+  eval_track?: 'tool' | 'rule' | 'project' | string | null
+  agent_status?: string | null
+  community_counterpoints?: CommunityCounterpoint[] | null
+  latest_evaluation?: EvaluationRecord | null
   citations?: Citation[]
   sub_entities?: SubEntity[]
   related_items?: RelatedItem[]
   graph?: KnowledgeGraph
+}
+
+export interface CommunityCounterpoint {
+  point: string
+  category: string
+  source?: string
+}
+
+export interface EvaluationClaim {
+  claim: string
+  kind?: string
+  how_to_verify?: string
+}
+
+export interface EvaluationRecord {
+  id: string
+  item_id: string | number
+  eval_track: string
+  adapter: 'omnikit' | 'local_lite' | string
+  status: 'queued' | 'running_l0' | 'running_l1' | 'ready' | 'failed' | string
+  target_repo?: string
+  target_url?: string
+  security_badge?: string
+  security_badge_meta?: { code: string; tone: string; label: string; detail: string }
+  l0?: {
+    github?: {
+      stars?: number
+      forks?: number
+      license?: string
+      archived?: boolean
+      pushed_at?: string
+    }
+    [key: string]: unknown
+  }
+  l1?: {
+    name?: string
+    summary?: string
+    differences?: string
+    slots?: string[]
+    scenarios?: string[]
+    claims?: EvaluationClaim[]
+    recommendation?: string
+    slot_comparison?: {
+      matched_slots?: string[]
+      incumbent_tools?: string[]
+      delta_summary?: string
+    }
+    [key: string]: unknown
+  }
+  community_counterpoints?: CommunityCounterpoint[]
+  decision?: string
+  decision_note?: string
+  trigger_when?: string
+  decided_at?: string
+  error_message?: string
+  item_title?: string
+  item_summary?: string
+  item_url?: string
+  user_note?: string
+  agent_status?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface EvaluationCounts {
+  needs_decision: number
+  evaluating: number
+  approved_l2: number
+  on_demand: number
+  adopted: number
+  rejected: number
+  failed: number
+  total: number
+}
+
+export interface EvaluationListResponse {
+  evaluations: EvaluationRecord[]
+  counts: EvaluationCounts
+}
+
+export interface DecisionPayload {
+  decision: 'approve_l2' | 'on_demand' | 'reject' | 'defer'
+  note?: string
+  trigger_when?: string
 }
 
 export interface Category {
@@ -742,6 +832,7 @@ export interface IngestResult {
   /** "queued": read in the background (several links, or one long video); `message` says so. */
   status?: 'completed' | 'queued'
   item?: Item
+  evaluation_id?: string
   detail?: string
   message?: string
 }
@@ -754,6 +845,8 @@ export interface IngestOptions {
   pageDescription?: string
   /** Save the text as a note even when it holds an address (the server would otherwise save that page). */
   asNote?: boolean
+  userNote?: string
+  intent?: 'read' | 'agent_eval' | 'project_ref'
 }
 
 export function ingest(content: string, opts: IngestOptions = {}): Promise<IngestResult> {
@@ -766,7 +859,45 @@ export function ingest(content: string, opts: IngestOptions = {}): Promise<Inges
       ...(opts.pageTitle ? { page_title: opts.pageTitle } : {}),
       ...(opts.pageDescription ? { page_description: opts.pageDescription } : {}),
       ...(opts.asNote ? { as_note: true } : {}),
+      ...(opts.userNote ? { user_note: opts.userNote } : {}),
+      ...(opts.intent ? { intent: opts.intent } : {}),
     }),
+  })
+}
+
+/* ---------------- Agent Tool Evaluations ---------------- */
+
+export function listEvaluations(status?: string, limit = 50): Promise<EvaluationListResponse> {
+  const params = new URLSearchParams()
+  if (status) params.append('status', status)
+  params.append('limit', String(limit))
+  return request<EvaluationListResponse>(`/api/evaluations?${params.toString()}`)
+}
+
+export function getEvaluation(evalId: string): Promise<EvaluationRecord> {
+  return request<EvaluationRecord>(`/api/evaluations/${encodeURIComponent(evalId)}`)
+}
+
+export function triggerItemEvaluation(
+  itemId: string | number,
+  opts: { user_note?: string; eval_track?: string; sync?: boolean } = {},
+): Promise<{ success: boolean; evaluation: EvaluationRecord }> {
+  return request<{ success: boolean; evaluation: EvaluationRecord }>(
+    `/api/items/${encodeURIComponent(String(itemId))}/evaluate`,
+    {
+      method: 'POST',
+      body: JSON.stringify(opts),
+    },
+  )
+}
+
+export function decideEvaluation(
+  evalId: string,
+  payload: DecisionPayload,
+): Promise<{ success: boolean; evaluation: EvaluationRecord; writeback: Record<string, unknown> }> {
+  return request(`/api/evaluations/${encodeURIComponent(evalId)}/decide`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
   })
 }
 

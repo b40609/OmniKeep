@@ -159,3 +159,43 @@ async def notify_new_proposal(proposal: Dict[str, Any]) -> Dict[str, int]:
     except Exception:
         logger.exception("Web Push for new proposal failed")
         return {"sent": 0, "removed": 0, "failed": 0}
+
+
+_BADGE_PREFIX = {
+    "skill_scan_pass": "🟢",
+    "executable_needs_review": "🟡",
+    "risk_flagged": "🔴",
+}
+
+
+async def notify_evaluation_ready(evaluation: Dict[str, Any], item: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
+    """Push a deep-linked notification straight into OmniKeep's mobile evaluation decision view."""
+    try:
+        card = item or get_item_by_id(evaluation["item_id"]) or {}
+        l1 = evaluation.get("l1") or {}
+        name = (
+            evaluation.get("target_repo")
+            or l1.get("name")
+            or card.get("title_l1")
+            or "待評估項目"
+        )
+        badge = str(evaluation.get("security_badge") or "")
+        tag = f"eval-{evaluation['id']}"[:32]
+        link = f"/?open=eval:{evaluation['id']}"
+
+        if evaluation.get("status") == "failed":
+            err = (evaluation.get("error_message") or "評估過程發生錯誤").strip()
+            return await send_push(f"⚠️ 評估未完成：{name}", err[:240], url=link, tag=tag)
+
+        icon = _BADGE_PREFIX.get(badge, "🤖")
+        slot_cmp = l1.get("slot_comparison") or {}
+        summary = (
+            slot_cmp.get("delta_summary")
+            or l1.get("summary")
+            or evaluation.get("security_badge_meta", {}).get("label")
+            or "評估已完成，點開看結論並拍板"
+        )
+        return await send_push(f"{icon} 待拍板：{name}", str(summary)[:320], url=link, tag=tag)
+    except Exception:
+        logger.exception("Web Push for evaluation ready failed")
+        return {"sent": 0, "removed": 0, "failed": 0}

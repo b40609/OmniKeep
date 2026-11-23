@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { toast } from 'vue-sonner'
-import { Link2, Package, ChevronRight, ChevronLeft, Camera, Sparkles, Network, ExternalLink, ArrowRight, ArrowUpRight, List, Hash, FileText, CornerUpLeft, Loader2 } from 'lucide-vue-next'
+import { Link2, Package, ChevronRight, ChevronLeft, Camera, Sparkles, Network, ExternalLink, ArrowRight, ArrowUpRight, List, Hash, FileText, CornerUpLeft, Loader2, Scale } from 'lucide-vue-next'
 import Badge from '@/components/ui/badge/Badge.vue'
 import ItemCover from '@/components/items/ItemCover.vue'
 import OriginIcon from '@/components/reader/OriginIcon.vue'
@@ -9,6 +9,8 @@ import { analyzeItem, getServiceStatus, type Item } from '@/lib/api'
 import { isNotAnalysed, plainSummary } from '@/lib/wall'
 import { originLink } from '@/lib/originLink'
 import { useItemsStore } from '@/stores/items'
+import { useEvaluationsStore } from '@/stores/evaluations'
+import { AGENT_STATUS_LABELS, resolveBadgeUi } from '@/lib/evalUi'
 import { cleanHost, displayCategory, formatRelativeTime, estimateReadTime, sourceMeta } from '@/lib/format'
 import { renderMarkdown, useCodeCopy, extractToc } from '@/lib/markdown'
 import { renderMermaidIn } from '@/lib/mermaid'
@@ -22,8 +24,29 @@ import { useSnapshotAvailable } from '@/composables/useSnapshotAvailable'
 
 const ui = useUiStore()
 const itemsStore = useItemsStore()
+const evaluationsStore = useEvaluationsStore()
 const { openSnapshot } = useMutations()
 const hasSnapshot = useSnapshotAvailable()
+const requestingEval = ref(false)
+
+async function triggerEvalFromReader() {
+  const item = ui.activeItem
+  if (!item || requestingEval.value) return
+  requestingEval.value = true
+  try {
+    const ev = await evaluationsStore.requestEvaluation(item.id, item.user_note || '', false)
+    if (ui.activeItem?.id === item.id) {
+      ui.activeItem = { ...ui.activeItem, agent_status: 'queued', latest_evaluation: ev }
+    }
+    toast.success('已送出背景評估（L0/L1）', {
+      action: { label: '打開拍板台', onClick: () => ui.openEvaluations(ev.id) },
+    })
+  } catch (e) {
+    toast.error('送出評估失敗', { description: e instanceof Error ? e.message : String(e) })
+  } finally {
+    requestingEval.value = false
+  }
+}
 // the page this item was kept from: the button under the title, the source line and the cover all open it
 const origin = computed(() => originLink(ui.activeItem?.url))
 
@@ -209,6 +232,55 @@ function openItem(id: number | string) {
     </section>
     </Teleport>
 
+    <!-- User note & Agent evaluation bridge -->
+    <section
+      v-if="ui.activeItem.user_note || ui.activeItem.latest_evaluation || (ui.activeItem.agent_status && ui.activeItem.agent_status !== 'none') || isGithubProject"
+      class="border-t border-hairline pt-6 space-y-3"
+      aria-label="備忘與工具評估"
+    >
+      <div v-if="ui.activeItem.user_note" class="rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
+        <div class="text-xs font-semibold text-primary">我的收藏備忘／問題</div>
+        <p class="mt-1 text-sm leading-relaxed text-foreground">{{ ui.activeItem.user_note }}</p>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-hairline bg-card px-4 py-3">
+        <div class="min-w-0 text-xs">
+          <div class="flex flex-wrap items-center gap-2 font-semibold text-foreground">
+            <Scale class="size-3.5 text-primary" aria-hidden="true" />
+            <span>Agent 工具評估</span>
+            <span v-if="ui.activeItem.agent_status && ui.activeItem.agent_status !== 'none'" class="rounded border border-hairline px-1.5 py-0.5 font-normal text-muted-foreground">
+              {{ AGENT_STATUS_LABELS[ui.activeItem.agent_status] || ui.activeItem.agent_status }}
+            </span>
+            <span
+              v-if="ui.activeItem.latest_evaluation?.security_badge"
+              class="rounded border px-1.5 py-0.5 text-[11px] font-medium"
+              :class="resolveBadgeUi(ui.activeItem.latest_evaluation.security_badge).pillClass"
+            >
+              {{ resolveBadgeUi(ui.activeItem.latest_evaluation.security_badge).label }}
+            </span>
+          </div>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <button
+            v-if="ui.activeItem.latest_evaluation"
+            type="button"
+            class="inline-flex min-h-10 cursor-pointer items-center gap-1 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary-hover"
+            @click="ui.openEvaluations(ui.activeItem.latest_evaluation.id)"
+          >
+            開啟拍板報告
+          </button>
+          <button
+            type="button"
+            :disabled="requestingEval"
+            class="inline-flex min-h-10 cursor-pointer items-center gap-1 rounded-lg border border-hairline px-3 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
+            @click="triggerEvalFromReader"
+          >
+            {{ requestingEval ? '排入中…' : ui.activeItem.latest_evaluation ? '重新評估' : '送去評估' }}
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- L1 highlight -->
     <!-- Kept without analysis: what that means, and the one thing to do next -->
     <section v-if="notAnalysed" class="border-t border-hairline pt-6" aria-label="尚未分析">
@@ -352,6 +424,27 @@ function openItem(id: number | string) {
       <div v-else class="py-8 text-center text-sm text-muted-foreground">
         這則收藏還沒有重點分析，可以改看「原文」。
       </div>
+    </section>
+
+    <!-- Community counterpoints extracted from social discussions -->
+    <section
+      v-if="ui.activeItem.community_counterpoints?.length"
+      class="border-t border-hairline pt-6"
+      aria-label="社群實測與反例"
+    >
+      <h2 class="mb-3 text-base font-semibold text-foreground">
+        社群實測與反例（{{ ui.activeItem.community_counterpoints.length }}）
+      </h2>
+      <ul class="space-y-2 text-sm">
+        <li
+          v-for="(cp, idx) in ui.activeItem.community_counterpoints"
+          :key="idx"
+          class="rounded-xl border border-hairline bg-card px-4 py-3 leading-relaxed text-foreground"
+        >
+          <span class="mr-2 font-mono text-xs uppercase text-muted-foreground">[{{ cp.category }}]</span>
+          <span>{{ cp.point }}</span>
+        </li>
+      </ul>
     </section>
 
     <!-- A deeper diagram from the user's own agent (Archify), GitHub projects only -->

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { Star, Archive, ArchiveRestore, MoreHorizontal, Copy, ExternalLink, Camera, ChevronUp, ChevronDown, Ban, Trash2 } from 'lucide-vue-next'
+import { Star, Archive, ArchiveRestore, MoreHorizontal, Copy, ExternalLink, Camera, ChevronUp, ChevronDown, Ban, Trash2, Scale } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from 'reka-ui'
 import { toast } from 'vue-sonner'
 import type { Item } from '@/lib/api'
 import { useMutations } from '@/composables/useMutations'
 import { useSignal } from '@/composables/useSignal'
 import { isWebUrl } from '@/lib/originLink'
+import { useEvaluationsStore } from '@/stores/evaluations'
+import { useUiStore } from '@/stores/ui'
 
 /**
  * The actions on one item, as icon buttons: star, archive, and a menu for the rest.
@@ -15,6 +17,20 @@ import { isWebUrl } from '@/lib/originLink'
 const props = defineProps<{ item: Item; allowDelete?: boolean; compact?: boolean }>()
 const { toggleStar, toggleRead, openSnapshot, removeItem } = useMutations()
 const { tuneItem } = useSignal()
+const evaluations = useEvaluationsStore()
+const ui = useUiStore()
+
+async function sendToEvaluation() {
+  try {
+    const ev = await evaluations.requestEvaluation(props.item.id, props.item.user_note || '', false)
+    toast.success('已送出背景預研', {
+      description: '完成 L0/L1 後會推播通知你，也可現在開啟待決台查看進度。',
+      action: { label: '查看', onClick: () => ui.openEvaluations(ev.id) },
+    })
+  } catch (e) {
+    toast.error('送出評估失敗', { description: e instanceof Error ? e.message : String(e) })
+  }
+}
 
 async function copyTakeaway() {
   const summary = (props.item.summary_l1 || '').trim()
@@ -57,6 +73,7 @@ async function copyTakeaway() {
       <DropdownMenuPortal>
         <DropdownMenuContent class="app-menu" align="end" :side-offset="4" :collision-padding="12" @click.stop @keydown.stop>
           <DropdownMenuItem class="app-menu__item" @select="copyTakeaway"><Copy />複製重點</DropdownMenuItem>
+          <DropdownMenuItem class="app-menu__item" @select="sendToEvaluation"><Scale />送去評估</DropdownMenuItem>
           <DropdownMenuItem v-if="isWebUrl(item.url)" class="app-menu__item" @select="openSnapshot(item)"><Camera />開啟離線快照</DropdownMenuItem>
           <DropdownMenuItem v-if="isWebUrl(item.url)" as-child><a :href="item.url" target="_blank" rel="noopener noreferrer" class="app-menu__item"><ExternalLink />開啟原始連結</a></DropdownMenuItem>
           <DropdownMenuSeparator class="app-menu__rule" />
