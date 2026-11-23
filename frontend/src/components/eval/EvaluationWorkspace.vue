@@ -248,7 +248,7 @@ function tabCount(id: string): number {
 
     <!-- Single evaluation decision sheet -->
     <template v-if="active">
-      <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-36 pt-4 sm:px-6">
+      <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none px-4 pb-36 pt-4 sm:px-6">
         <div class="mx-auto max-w-2xl space-y-5">
           <!-- 1. Top summary + security badge -->
           <div class="space-y-3 rounded-xl border border-hairline bg-card p-4">
@@ -533,7 +533,7 @@ function tabCount(id: string): number {
         </button>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6">
+      <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none px-3 py-4 sm:px-6">
         <div class="mx-auto max-w-2xl space-y-2.5">
           <div v-if="store.loading && !store.evaluations.length" class="flex items-center justify-center py-16 text-sm text-muted-foreground">
             <Loader2 class="mr-2 size-4 animate-spin" />

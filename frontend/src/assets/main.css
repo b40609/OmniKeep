@@ -511,6 +511,11 @@ option {
   html.dark {
     color-scheme: dark;
   }
+  html,
+  body {
+    overflow-x: clip;
+    overscroll-behavior-x: none;
+  }
   body {
     background-color: var(--background);
     color: var(--foreground);
@@ -518,6 +523,9 @@ option {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     overscroll-behavior: none;
+  }
+  #app {
+    overflow-x: clip;
   }
   ::selection {
     background: var(--selection);

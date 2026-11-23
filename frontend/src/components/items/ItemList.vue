@@ -371,7 +371,7 @@ defineExpose({ scrollToIndex, scrollToItem })
     </VList>
 
     <!-- Cover wall: one grid per date section, straight on the page -->
-    <div v-else ref="wall" class="min-h-0 flex-1 overflow-y-auto px-4 pb-24 sm:px-6 md:pb-10" @scroll.passive="loadMoreIfNearEnd">
+    <div v-else ref="wall" class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none px-4 pb-24 sm:px-6 md:pb-10" @scroll.passive="loadMoreIfNearEnd">
       <section v-for="section in sections" :key="section.key" class="wall-section" :aria-label="section.label || '搜尋結果'">
         <h2 v-if="section.label" class="wall-section-title">{{ section.label }}<span v-if="sectionCount(section) != null">{{ sectionCount(section) }} 則</span></h2>
         <div class="wall-grid">

@@ -641,14 +641,14 @@ defineExpose({ refresh })
             <p class="set-row__help">{{ SLOT_TEXT[slot.id]?.help ?? slot.help }}</p>
           </div>
           <ol v-if="(slotDraft[slot.id] ?? []).length" class="space-y-2">
-            <li v-for="(entry, i) in slotDraft[slot.id] ?? []" :key="`${slot.id}-${entry.connection_id}`" class="flex items-center gap-2 text-sm">
+            <li v-for="(entry, i) in slotDraft[slot.id] ?? []" :key="`${slot.id}-${entry.connection_id}`" class="flex flex-wrap items-center gap-2 text-sm sm:flex-nowrap">
               <span class="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{{ i + 1 }}</span>
               <span class="min-w-0 flex-1 truncate">{{ byId.get(entry.connection_id)?.label ?? `連線 #${entry.connection_id}（已刪除）` }}</span>
               <input
                 v-model="entry.model"
                 type="text"
                 spellcheck="false"
-                class="set-input w-60 max-sm:w-28"
+                class="set-input order-last w-full sm:order-none sm:w-60"
                 :placeholder="placeholderModel(slot.id, entry)"
                 :aria-label="`${slotName(slot.id)}第 ${i + 1} 順位的模型`"
               >

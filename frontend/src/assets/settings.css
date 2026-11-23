@@ -12,6 +12,7 @@
     z-index: 40;
     display: flex;
     flex-direction: column;
+    overflow-x: hidden;
     background: var(--shell);
     color: var(--foreground);
   }
@@ -45,12 +46,16 @@
   .settings__main {
     min-width: 0;
     flex: 1;
+    overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
     padding: 12px 24px 96px;
     scroll-padding-top: 24px;
   }
   .settings__content {
     width: 100%;
+    min-width: 0;
     max-width: 760px;
     margin-inline: auto;
   }
@@ -719,10 +724,29 @@
     margin-top: 32px;
   }
   .set-row {
+    min-width: 0;
     gap: 16px;
+  }
+  .set-row:not(.set-row--stacked) > .set-row__control {
+    max-width: 48%;
   }
   .set-row:not(.set-row--stacked) > .set-row__control > .ui-select {
     max-width: 44vw;
+  }
+  .set-status {
+    white-space: normal;
+    line-height: 18px;
+  }
+  .set-fold__head {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    padding: 12px 4px 12px 0;
+  }
+  .set-fold__head .set-status {
+    order: 3;
+    flex-basis: 100%;
+    min-width: 0;
+    font-size: 13px;
   }
 }
 
