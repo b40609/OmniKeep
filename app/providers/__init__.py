@@ -99,7 +99,8 @@ def get_provider(slot: str = "analysis", skip_kinds: Iterable[str] = ()) -> Opti
         entries += [(conn, model) for conn, model in _entries("analysis", ()) if conn.id not in seen]
     if entries:
         provider: Optional[BaseLLMProvider] = ChainProvider(
-            [Member(build_provider(conn, model), conn.status_key, conn.label) for conn, model in entries], slot)
+            [Member(build_provider(conn, model), conn.status_key, conn.label, conn.id, model) for conn, model in entries],
+            slot)
     else:
         provider = _legacy("video" if slot == "video" else "analysis")
     _chains[cache_key] = provider

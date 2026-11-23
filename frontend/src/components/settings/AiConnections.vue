@@ -516,6 +516,7 @@ defineExpose({ refresh })
                 <span v-for="s in conn.used_in" :key="s" class="set-tag">{{ slotName(s) }}</span>
                 <span v-if="!conn.used_in.length" class="text-xs">沒有用在任何用途</span>
               </span>
+              <span v-if="conn.model_switch" class="mt-1 block text-xs text-muted-foreground">{{ conn.model_switch.message }}</span>
             </span>
             <span v-if="todayText(conn)" class="shrink-0 text-xs tabular-nums text-muted-foreground max-sm:hidden" title="只算 OmniKeep 自己送出的請求">{{ todayText(conn) }}</span>
             <span class="set-status" :class="{ 'set-status--ok': light(conn).tone === 'ok', 'set-status--warn': light(conn).tone === 'warn', 'set-status--bad': light(conn).tone === 'bad' }">{{ light(conn).text }}</span>

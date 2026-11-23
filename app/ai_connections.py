@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import threading
+import time
 from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -52,6 +53,8 @@ SLOT_HELP = {
              "裝了畫面 OCR 時再加上畫面文字，交給分析清單。",
 }
 META_MIGRATED = "legacy_settings_migrated"
+MODEL_SWITCH_COOLDOWN = 3600.0
+_MODEL_SWITCH_PREFIX = "model_switch:"
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _lock = threading.RLock()
 _sync_guard = threading.local()
@@ -319,20 +322,30 @@ def validate_extra_body(value: Any) -> Dict[str, Any]:
     return extra or {}
 
 
+def _auto_extra_body(card: Dict[str, Any], model: Optional[str]) -> Dict[str, Any]:
+    """What caps['extra_body'] holds for `model` when nobody typed in it: the model's preset,
+    else the card's default (mirrors frontend/src/lib/extraBody.ts autoExtraBody)."""
+    presets = card.get("model_extra_body") or {}
+    key = (model or "").strip()
+    if key and key in presets:
+        return dict(presets[key])
+    return dict((card.get("caps") or {}).get("extra_body") or {})
+
+
 def apply_model_preset(card: Dict[str, Any], caps: Dict[str, Any], old_model: Optional[str], model: str) -> None:
     """Moving to a model the card has extra fields for brings them along (in place); moving
-    off it puts back the card's default, unless the fields were changed by hand meanwhile."""
+    off it puts back the card's default, unless the fields were changed by hand meanwhile
+    (mirrors frontend/src/lib/extraBody.ts extraBodyAfterModelChange)."""
     if not model or model == old_model:
         return
-    presets = card.get("model_extra_body") or {}
-    if model in presets:
-        caps["extra_body"] = dict(presets[model])
-    elif old_model in presets and caps.get("extra_body") == presets[old_model]:
-        default = card.get("caps", {}).get("extra_body")
-        if default:
-            caps["extra_body"] = dict(default)
-        else:
-            caps.pop("extra_body", None)
+    current = dict(caps.get("extra_body") or {})
+    if current != _auto_extra_body(card, old_model):
+        return
+    next_body = _auto_extra_body(card, model)
+    if next_body:
+        caps["extra_body"] = next_body
+    else:
+        caps.pop("extra_body", None)
 
 
 def _clean_key(raw: Any, kind: str, errors: Dict[str, str]) -> str:
@@ -492,6 +505,8 @@ def update(connection_id: int, data: Dict[str, Any]) -> Connection:
     values = _validate(data, existing)
     with _lock, closing(get_db_connection()) as db, db:
         _write(db, connection_id, values)
+        if values["model"] != existing.model:
+            db.execute("DELETE FROM ai_meta WHERE key = ?", (f"{_MODEL_SWITCH_PREFIX}{int(connection_id)}",))
         _audit(db, f"ai_connection:{connection_id}", "clear" if values.get("key") == "" and existing.key else "set")
     _changed(existing.status_key)
     push_brain_settings()
@@ -501,6 +516,7 @@ def update(connection_id: int, data: Dict[str, Any]) -> Connection:
 def delete(connection_id: int) -> bool:
     with _lock, closing(get_db_connection()) as db, db:
         db.execute("DELETE FROM ai_slots WHERE connection_id = ?", (int(connection_id),))
+        db.execute("DELETE FROM ai_meta WHERE key = ?", (f"{_MODEL_SWITCH_PREFIX}{int(connection_id)}",))
         gone = db.execute("DELETE FROM ai_connections WHERE id = ?", (int(connection_id),)).rowcount
         if gone:
             _audit(db, f"ai_connection:{connection_id}", "delete")
@@ -510,6 +526,110 @@ def delete(connection_id: int) -> bool:
     _changed(f"c{connection_id}")
     push_brain_settings()
     return bool(gone)
+
+
+def _read_model_switch(db, connection_id: int) -> Optional[Dict[str, Any]]:
+    row = db.execute("SELECT value FROM ai_meta WHERE key = ?",
+                     (f"{_MODEL_SWITCH_PREFIX}{int(connection_id)}",)).fetchone()
+    if not row:
+        return None
+    try:
+        data = json.loads(row["value"])
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def model_switch_info(connection_id: int) -> Optional[Dict[str, str]]:
+    """Last automatic switch off a retired model for this connection, if any."""
+    try:
+        with closing(get_db_connection()) as db:
+            data = _read_model_switch(db, connection_id)
+    except Exception:
+        return None
+    if not data or not data.get("message"):
+        return None
+    return {
+        "from": str(data.get("from", "")),
+        "to": str(data.get("to", "")),
+        "date": str(data.get("date", "")),
+        "message": str(data["message"]),
+    }
+
+
+def replace_retired_model(connection_id: int, dead_model: str, *, now: Optional[float] = None) -> Optional[Dict[str, str]]:
+    """Switch a connection (and matching slot overrides) off a retired catalog model on 404.
+
+    Only cards with a fixed `models` list qualify (never custom, omniroute, or local ollama).
+    Switches only when `dead_model` is no longer in the card's current `models`, the card's
+    current default `model` differs, and this connection has not auto-switched within
+    MODEL_SWITCH_COOLDOWN seconds. Clears cooldown and rebuilds cached providers on switch.
+    """
+    dead = (dead_model or "").strip()
+    if not dead:
+        return None
+    ts = time.time() if now is None else float(now)
+    record: Optional[Dict[str, Any]] = None
+    card_id = ""
+    with _lock, closing(get_db_connection()) as db, db:
+        row = db.execute("SELECT * FROM ai_connections WHERE id = ?", (int(connection_id),)).fetchone()
+        if row is None:
+            return None
+        card_id = row["card"]
+        if row["kind"] == "ollama" or card_id in ("custom", "omniroute", "ollama"):
+            return None
+        card = provider_catalog.card(card_id)
+        if card is None:
+            return None
+        models = card.get("models") or []
+        replacement = (card.get("model") or "").strip()
+        if not models or not replacement or dead in models or replacement == dead:
+            return None
+        prev = _read_model_switch(db, connection_id)
+        if prev is not None:
+            try:
+                if (ts - float(prev.get("at", 0.0))) < MODEL_SWITCH_COOLDOWN:
+                    return None
+            except (TypeError, ValueError):
+                pass
+        conn_model = (row["model"] or "").strip()
+        slot_rows = db.execute(
+            "SELECT slot FROM ai_slots WHERE connection_id = ? AND model = ?",
+            (int(connection_id), dead),
+        ).fetchall()
+        if conn_model != dead and not slot_rows:
+            return None
+        if conn_model == dead:
+            try:
+                caps = json.loads(row["caps_json"] or "{}")
+            except ValueError:
+                caps = {}
+            if not isinstance(caps, dict):
+                caps = {}
+            apply_model_preset(card, caps, dead, replacement)
+            db.execute(
+                "UPDATE ai_connections SET model = ?, caps_json = ?, updated_at = ? WHERE id = ?",
+                (replacement, json.dumps(caps, ensure_ascii=False), _now(), int(connection_id)),
+            )
+            _audit(db, f"ai_connection:{int(connection_id)}", "set")
+        if slot_rows:
+            db.execute(
+                "UPDATE ai_slots SET model = ? WHERE connection_id = ? AND model = ?",
+                (replacement, int(connection_id), dead),
+            )
+            for slot_name in sorted({r["slot"] for r in slot_rows}):
+                _audit(db, f"ai_slot:{slot_name}", "set")
+        date_str = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().date().isoformat()
+        message = f"模型 {dead} 已下架，已自動改用 {replacement}（{date_str}）"
+        record = {"from": dead, "to": replacement, "date": date_str, "at": ts, "message": message}
+        db.execute(
+            "INSERT INTO ai_meta (key, value, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            (f"{_MODEL_SWITCH_PREFIX}{int(connection_id)}", json.dumps(record, ensure_ascii=False), _now()),
+        )
+    logger.info("AI connection %s (%s) retired model %s -> %s", connection_id, card_id, dead, replacement)
+    _changed(f"c{int(connection_id)}")
+    return {"from": record["from"], "to": record["to"], "date": record["date"], "message": record["message"]}
 
 
 def _renumber(db) -> None:
@@ -604,6 +724,7 @@ def describe_connection(conn: Connection) -> Dict[str, Any]:
         "origin": conn.origin, "enabled": conn.enabled, "used_in": used_in,
         "status": ai_status.snapshot().get(conn.status_key), "updated_at": conn.updated_at,
         "usage": ai_usage.summary(conn.id, (provider_catalog.card(conn.card) or {}).get("quota")),
+        "model_switch": model_switch_info(conn.id),
     }
 
 

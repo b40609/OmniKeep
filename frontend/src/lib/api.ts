@@ -453,6 +453,8 @@ export interface AiConnection {
   updated_at: string
   /** what OmniKeep itself sent through this connection (app/ai_usage.py); {} when unknown */
   usage?: AiUsage
+  /** Automatic switch off a retired catalog model (app/ai_connections.py replace_retired_model). */
+  model_switch?: { from: string; to: string; date: string; message: string } | null
 }
 
 export interface AiUsageTotals {

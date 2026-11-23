@@ -4,7 +4,7 @@ Every call starts again at the primary connection (position 0). Per member:
   429 / 5xx          the member's own backoff runs first (OpenAICompatibleProvider
                      retries 429 twice honouring Retry-After; the SDK retries 5xx);
                      when that is used up the member cools down and the next one is tried
-  401 / 403 / 404    move on at once
+  401 / 403 / 404    move on at once (on 404 / not_found, see retired-model switch below)
   400 / 422          the member asks once more without response_format; if that fails
                      too, move on at once
   empty answer       (EmptyResponseError, or a member returning None) move on at once
@@ -17,7 +17,15 @@ The order adjusts itself (2026-11-17: free routes come and go, and the owner sho
 notice and reorder by hand). The owner's order is the preference; a member that keeps failing is
 put behind the others for a while, by what went wrong (COOLDOWNS), and comes back by itself: the
 first call after the pause tries it again, and one success clears its record.
-  model gone (404)          6 hours    free routes get retired without notice
+  model gone (not_found)    first checks app/ai_connections.replace_retired_model(): if the
+                            connection belongs to a catalog card with a fixed models list
+                            (not custom/omniroute/ollama), the failing model is no longer in
+                            that list, the card's current default differs, and the connection
+                            has not auto-switched in the past hour, the connection and matching
+                            slot overrides are updated to the card's default (with model_extra_body
+                            presets updated unless edited by hand), cooldown is cleared and a
+                            notice is recorded; this call still moves on to the next member and
+                            the next call uses the new model. Otherwise: 6 hours cooldown
   needs payment (402)       6 hours
   blocked network           30 minutes
   bad answers (not JSON, empty, refused) or refused key (401/403), from the 2nd in a row:
@@ -64,11 +72,29 @@ def _pause_for(member: "Member", info: dict) -> None:
             ai_status.set_cooldown(member.status_key, seconds, f"連續 {streak} 次{BAD_ANSWER_KINDS[kind]}")
 
 
+def _try_replace_retired_model(member: "Member") -> Optional[dict]:
+    if member.connection_id is None:
+        return None
+    dead_model = member.model or getattr(member.provider, "model", "")
+    if not dead_model:
+        return None
+    try:
+        from app import ai_connections
+        return ai_connections.replace_retired_model(member.connection_id, dead_model)
+    except Exception as exc:
+        logger.warning("Could not switch retired model for %s (%s: %s)",
+                       member.label or member.status_key, type(exc).__name__, exc)
+        return None
+
+
 class Member:
-    def __init__(self, provider: Any, status_key: str, label: str):
+    def __init__(self, provider: Any, status_key: str, label: str,
+                 connection_id: Optional[int] = None, model: Optional[str] = None):
         self.provider = provider
         self.status_key = status_key
         self.label = label
+        self.connection_id = connection_id
+        self.model = model
 
 
 class ChainProvider(BaseLLMProvider):
@@ -116,6 +142,17 @@ class ChainProvider(BaseLLMProvider):
                                        member.label or "connection", info["kind"], info["status"],
                                        order[index + 1].label or "the next connection")
                     continue
+                if info["kind"] == "not_found":
+                    switched = _try_replace_retired_model(member)
+                    if switched:
+                        if index + 1 < len(order):
+                            logger.warning("[%s] %s retired model %s -> %s; trying %s for this call", self.slot,
+                                           member.label or "connection", switched["from"], switched["to"],
+                                           order[index + 1].label or "the next connection")
+                        else:
+                            logger.warning("[%s] %s retired model %s -> %s; next call will use the new model",
+                                           self.slot, member.label or "connection", switched["from"], switched["to"])
+                        continue
                 ai_status.bump_streak(member.status_key)
                 if info["kind"] == "rate_limit":
                     rate_limited = rate_limited or exc
