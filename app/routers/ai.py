@@ -10,9 +10,10 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app import ai_connections, ai_status, provider_catalog
+from app import ai_connections, ai_status, openrouter_oauth, provider_catalog
 from app.ai_connections import AIConfigError
 from app.connection_checks import check_connection
+from app.openrouter_oauth import OpenRouterOAuthError
 
 router = APIRouter(prefix="/api/ai", tags=["AI providers"])
 
@@ -191,3 +192,75 @@ async def put_slots(body: SlotsBody):
     first = lambda entries: (entries[0]["connection_id"], entries[0]["model"]) if entries else None  # noqa: E731
     reindex = "embeddings" in body.slots and first(before["embeddings"]) != first(after["embeddings"])
     return {**_overview(), "reindex_hint": reindex}
+
+
+class OpenRouterOAuthStartBody(BaseModel):
+    callback_url: str
+    connection_id: Optional[int] = None
+    slot: Optional[str] = None
+
+
+class OpenRouterOAuthExchangeBody(BaseModel):
+    code: str
+    state: str
+    label: Optional[str] = None
+    model: Optional[str] = None
+    slot: Optional[str] = None
+    min_interval: Optional[float] = None
+    max_concurrency: Optional[int] = None
+    caps: Optional[Dict[str, Any]] = None
+
+
+def _require_openrouter_connection(connection_id: int) -> ai_connections.Connection:
+    saved = ai_connections.get_connection(connection_id)
+    if saved is None:
+        raise HTTPException(404, "找不到這條連線")
+    if saved.card != "openrouter":
+        raise HTTPException(400, "這條連線不是 OpenRouter，無法使用 OpenRouter 一鍵登入")
+    return saved
+
+
+@router.post("/oauth/openrouter/start")
+async def start_openrouter_oauth(body: OpenRouterOAuthStartBody):
+    if body.connection_id is not None:
+        _require_openrouter_connection(body.connection_id)
+    try:
+        return openrouter_oauth.start(
+            body.callback_url,
+            connection_id=body.connection_id,
+            slot=body.slot or "",
+        )
+    except OpenRouterOAuthError as exc:
+        raise HTTPException(exc.status_code, exc.message)
+
+
+@router.post("/oauth/openrouter/exchange")
+async def exchange_openrouter_oauth(body: OpenRouterOAuthExchangeBody):
+    try:
+        key, meta = await openrouter_oauth.exchange(body.code, body.state)
+    except OpenRouterOAuthError as exc:
+        raise HTTPException(exc.status_code, exc.message)
+
+    target_id = meta.get("connection_id")
+    extra: Dict[str, Any] = {}
+    if body.label and body.label.strip():
+        extra["label"] = body.label.strip()
+    if body.model and body.model.strip():
+        extra["model"] = body.model.strip()
+    if body.min_interval is not None:
+        extra["min_interval"] = body.min_interval
+    if body.max_concurrency is not None:
+        extra["max_concurrency"] = body.max_concurrency
+    if body.caps is not None:
+        extra["caps"] = body.caps
+
+    try:
+        if target_id is not None:
+            _require_openrouter_connection(int(target_id))
+            conn = ai_connections.update(int(target_id), {**extra, "key": key})
+        else:
+            slot = (body.slot if body.slot is not None else meta.get("slot")) or None
+            conn = ai_connections.create({"card": "openrouter", **extra, "key": key}, slot=slot)
+    except AIConfigError as exc:
+        return _error(exc)
+    return {"connection": ai_connections.describe_connection(conn), **_overview()}

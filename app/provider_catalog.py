@@ -98,6 +98,7 @@ CARDS: List[Dict[str, Any]] = [
         "models": ["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free", "inclusionai/ling-3.2-flash:free",
                    "nvidia/nemotron-3.5-lightning:free"],
         "key_mode": "required", "key_url": "https://openrouter.ai/keys",
+        "oauth": "openrouter",
         "cost": "免費（:free 模型）",
         "limits": "每分鐘 20 次；每日 50 次，累計儲值滿 10 美元後變每日 1,000 次。",
         "notes": "免費模型常替換：按「測試」會列出目前可用的模型。",
@@ -450,7 +451,7 @@ def catalog() -> Dict[str, Any]:
     cards = []
     for c in CARDS:
         cards.append({
-            "editable_url": False, "embedding_model": "", "no_signup": False,
+            "editable_url": False, "embedding_model": "", "no_signup": False, "oauth": "",
             "verified": VERIFIED, "ends": "", "model_extra_body": {},
             **c,  # a card checked later carries its own "verified"
             "group": GROUP_BY_CARD.get(c["id"], "paid"),

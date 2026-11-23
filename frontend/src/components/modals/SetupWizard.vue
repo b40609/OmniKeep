@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
-import { Sparkles, PlugZap, Loader2, CircleCheck, CircleAlert, ExternalLink, Check } from 'lucide-vue-next'
+import { Sparkles, PlugZap, Loader2, CircleCheck, CircleAlert, ExternalLink, Check, KeyRound } from 'lucide-vue-next'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import Button from '@/components/ui/button/Button.vue'
 import TelegramGuide from '@/components/settings/TelegramGuide.vue'
 import TelegramPairing from '@/components/settings/TelegramPairing.vue'
 import ProviderPicker from '@/components/settings/ProviderPicker.vue'
 import {
-  createAiConnection, getAiCatalog, getAiFeatures, getServiceStatus, getStats, getTelegramStatus, saveSettings, testAiDraft,
+  createAiConnection, getAiCatalog, getAiFeatures, getServiceStatus, getStats, getTelegramStatus, saveSettings,
+  startOpenRouterOAuth, testAiDraft,
   type AiCard, type AiCardGroup, type AiFeature, type AiRecommendation, type AiTestResult, type TelegramStatus,
 } from '@/lib/api'
+import { callbackUrlFromLocation, savePendingOpenRouterOAuth } from '@/lib/openrouterOAuth'
 import {
   cardById, connectionDraft, formProblem, guideStart, initialForm, sameValues, type ConnectionDraft, type SetupForm,
 } from '@/lib/setup'
@@ -41,6 +43,7 @@ const cardId = ref('')
 const form = reactive<SetupForm>({ baseUrl: '', apiKey: '', model: '' })
 const testing = ref(false)
 const saving = ref(false)
+const oauthStarting = ref(false)
 const result = ref<AiTestResult | null>(null)
 const testedValues = ref<ConnectionDraft | null>(null)
 /** An AI connection was saved in this run of the guide. */
@@ -140,6 +143,29 @@ async function save() {
     toast.error('儲存失敗', { description: e instanceof Error ? e.message : String(e) })
   } finally {
     saving.value = false
+  }
+}
+
+async function startOpenRouterLogin() {
+  if (!card.value || card.value.oauth !== 'openrouter' || oauthStarting.value) return
+  oauthStarting.value = true
+  try {
+    const started = await startOpenRouterOAuth({
+      callback_url: callbackUrlFromLocation(window.location),
+      slot: 'analysis',
+    })
+    savePendingOpenRouterOAuth(sessionStorage, {
+      state: started.state,
+      createdAt: Date.now(),
+      source: 'wizard',
+      mode: 'new',
+      model: form.model.trim() || undefined,
+      slot: 'analysis',
+    })
+    window.location.assign(started.auth_url)
+  } catch (e) {
+    toast.error('無法開始 OpenRouter 登入', { description: e instanceof Error ? e.message : String(e) })
+    oauthStarting.value = false
   }
 }
 
@@ -400,6 +426,14 @@ onMounted(async () => {
               >
                 取得金鑰 <ExternalLink class="size-3.5" aria-hidden="true" />
               </a>
+            </div>
+            <div v-if="card.oauth === 'openrouter'" class="mb-2.5 space-y-1.5">
+              <button type="button" class="set-button" :disabled="oauthStarting || saving" @click="startOpenRouterLogin">
+                <Loader2 v-if="oauthStarting" class="animate-spin" aria-hidden="true" />
+                <KeyRound v-else aria-hidden="true" />
+                用 OpenRouter 一鍵登入取得金鑰
+              </button>
+              <p class="set-text">前往 OpenRouter 授權後會自動儲存連線並加到分析，不用手動複製貼上。</p>
             </div>
             <input
               id="setup-key"

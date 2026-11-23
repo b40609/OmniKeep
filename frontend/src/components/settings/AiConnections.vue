@@ -12,11 +12,12 @@ import type { AiEditor } from './aiEditor'
 import { useSettingsForm } from '@/composables/useSettingsForm'
 import { SLOT_TEXT } from '@/lib/settingsText'
 import {
-  createAiConnection, deleteAiConnection, getAiCatalog, getAiConnections, saveAiSlots, testAiConnection, testAiDraft,
-  updateAiConnection,
+  createAiConnection, deleteAiConnection, getAiCatalog, getAiConnections, saveAiSlots, startOpenRouterOAuth,
+  testAiConnection, testAiDraft, updateAiConnection,
   type AiCard, type AiCardGroup, type AiConnection, type AiRecommendation, type AiConnectionInput, type AiOverview, type AiSlotEntry, type AiSlotId, type AiTestResult,
 } from '@/lib/api'
 import { autoExtraBody, extraBodyAfterModelChange, formatExtraBody, parseExtraBody } from '@/lib/extraBody'
+import { callbackUrlFromLocation, savePendingOpenRouterOAuth } from '@/lib/openrouterOAuth'
 import { formatCooldown, hasPlaceholder, recommendedSteps } from '@/lib/setup'
 import ProviderPicker from './ProviderPicker.vue'
 import { useUiStore } from '@/stores/ui'
@@ -314,6 +315,43 @@ async function saveEditor() {
   }
 }
 
+async function startOpenRouterLogin() {
+  const e = editor.value
+  const card = editorCard.value
+  if (!e || !card || card.oauth !== 'openrouter') return
+  if (editorExtra.value && !editorExtra.value.ok) {
+    toast.error('無法開始登入', { description: editorExtra.value.error })
+    return
+  }
+  busy.value = 'oauth'
+  try {
+    const input = editorInput()
+    const started = await startOpenRouterOAuth({
+      callback_url: callbackUrlFromLocation(window.location),
+      connection_id: e.mode === 'edit' ? e.id : undefined,
+      slot: e.mode === 'new' ? (e.slot || undefined) : undefined,
+    })
+    savePendingOpenRouterOAuth(sessionStorage, {
+      state: started.state,
+      createdAt: Date.now(),
+      source: 'settings',
+      mode: e.mode,
+      connectionId: e.mode === 'edit' ? e.id : undefined,
+      label: input.label || undefined,
+      model: input.model || undefined,
+      slot: e.mode === 'new' ? (e.slot || undefined) : undefined,
+      minInterval: input.min_interval,
+      maxConcurrency: input.max_concurrency,
+      caps: input.caps as Record<string, unknown> | undefined,
+    })
+    form.extraDirty.value = false
+    window.location.assign(started.auth_url)
+  } catch (err) {
+    toast.error('無法開始 OpenRouter 登入', { description: err instanceof Error ? err.message : String(err) })
+    busy.value = ''
+  }
+}
+
 async function toggleEnabled(conn: AiConnection) {
   busy.value = `toggle-${conn.id}`
   try {
@@ -494,8 +532,10 @@ defineExpose({ refresh })
             :has-preset="!!editorPreset"
             :test="tests.editor"
             :saving="busy === 'editor'"
+            :oauth-busy="busy === 'oauth'"
             @test="testEditor"
             @save="saveEditor"
+            @oauth="startOpenRouterLogin"
             @cancel="editor = null; comboing = false"
           />
         </template>
@@ -535,8 +575,10 @@ defineExpose({ refresh })
               :has-preset="!!editorPreset"
               :test="tests.editor"
               :saving="busy === 'editor'"
+              :oauth-busy="busy === 'oauth'"
               @test="testEditor"
               @save="saveEditor"
+              @oauth="startOpenRouterLogin"
               @cancel="editor = null"
             />
             <template v-else>

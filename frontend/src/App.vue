@@ -6,11 +6,12 @@ import { useKeyboard } from '@/composables/useKeyboard'
 import { useItemsStore } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
 import { useExperimentsStore } from '@/stores/experiments'
-import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, checkLocalAuth, redeemPairingCode, type SessionBridgeSnapshot } from '@/lib/api'
+import { getSessionStatus, getStats, setApiKey, logBehaviorEvent, checkLocalAuth, redeemPairingCode, exchangeOpenRouterOAuth, type AiCaps, type AiSlotId, type SessionBridgeSnapshot } from '@/lib/api'
 import { asPairingCode } from '@/lib/pairing'
 import { onceAtATime } from '@/lib/localRetry'
 import { linkedPanel, OPEN_LINK_MESSAGE } from '@/lib/push'
 import { readClipRequest } from '@/lib/bookmarklet'
+import { readOpenRouterCallback, takePendingOpenRouterOAuth } from '@/lib/openrouterOAuth'
 import { readSettingsLink } from '@/lib/settingsLink'
 import { WATCH_CATEGORIES } from '@/lib/experiments'
 import AppHeader from '@/components/layout/AppHeader.vue'
@@ -90,6 +91,7 @@ async function login(explicitKey?: string, isAuto = false): Promise<boolean> {
     void experiments.load()
     await items.refreshAll()
     await maybeShowSessionHint()
+    await checkOpenRouterOAuthCallback()
     await checkUrlParamIngest()
     if (openLinkedPanel(window.location.href)) {
       window.history.replaceState({}, document.title, window.location.pathname)
@@ -133,6 +135,34 @@ async function signInWithCode(code: string): Promise<boolean> {
 function submitLogin() {
   const code = asPairingCode(credential.value)
   return code ? signInWithCode(code) : login()
+}
+
+async function checkOpenRouterOAuthCallback() {
+  const cb = readOpenRouterCallback(window.location.search)
+  if (!cb) return
+  const pending = takePendingOpenRouterOAuth(sessionStorage)
+  if (!pending) return
+  window.history.replaceState({}, document.title, window.location.pathname + cb.cleanedSearch + window.location.hash)
+  toast.info('正在從 OpenRouter 取得金鑰…')
+  try {
+    const res = await exchangeOpenRouterOAuth({
+      code: cb.code,
+      state: pending.state,
+      label: pending.label,
+      model: pending.model,
+      slot: (pending.slot || undefined) as AiSlotId | '' | undefined,
+      min_interval: pending.minInterval,
+      max_concurrency: pending.maxConcurrency,
+      caps: pending.caps as AiCaps | undefined,
+    })
+    ui.settingsVersion++
+    const hint = res.connection.key_hint ? `（金鑰 ${res.connection.key_hint}）` : ''
+    toast.success(pending.mode === 'edit' ? `已透過 OpenRouter 更新金鑰${hint}` : `已透過 OpenRouter 新增連線${hint}`)
+    ui.openSettings('ai', '', 'connections')
+  } catch (err) {
+    toast.error('OpenRouter 登入失敗', { description: err instanceof Error ? err.message : String(err) })
+    ui.openSettings('ai', 'openrouter')
+  }
 }
 
 async function checkUrlParamIngest() {

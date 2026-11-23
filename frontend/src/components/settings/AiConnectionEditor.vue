@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ExternalLink, Loader2, PlugZap } from 'lucide-vue-next'
+import { ExternalLink, KeyRound, Loader2, PlugZap } from 'lucide-vue-next'
 import Switch from '@/components/ui/switch/Switch.vue'
 import Select from '@/components/ui/select/Select.vue'
 import type { AiCard, AiSlot, AiTestResult } from '@/lib/api'
@@ -20,8 +20,9 @@ const props = defineProps<{
   hasPreset: boolean
   test: AiTestResult | 'running' | undefined
   saving: boolean
+  oauthBusy?: boolean
 }>()
-const emit = defineEmits<{ (e: 'test'): void; (e: 'save'): void; (e: 'cancel'): void }>()
+const emit = defineEmits<{ (e: 'test'): void; (e: 'save'): void; (e: 'cancel'): void; (e: 'oauth'): void }>()
 
 // The parent's object: fields are edited in place, which is what the parent expects.
 const form = computed(() => props.editor)
@@ -82,6 +83,19 @@ const keyPlaceholder = computed(() => {
         <a v-if="card.key_url" :href="card.key_url" target="_blank" rel="noopener noreferrer" class="set-link inline-flex items-center gap-1 text-sm">
           取得金鑰 <ExternalLink class="size-4" aria-hidden="true" />
         </a>
+      </div>
+      <div v-if="card.oauth === 'openrouter'" class="mb-2.5 space-y-1.5">
+        <button
+          type="button"
+          class="set-button"
+          :disabled="saving || oauthBusy"
+          @click="emit('oauth')"
+        >
+          <Loader2 v-if="oauthBusy" class="animate-spin" aria-hidden="true" />
+          <KeyRound v-else aria-hidden="true" />
+          {{ form.mode === 'edit' ? '用 OpenRouter 重新登入換金鑰' : '用 OpenRouter 一鍵登入取得金鑰' }}
+        </button>
+        <p class="set-text">前往 OpenRouter 授權後會自動加密存回這台伺服器，不用手動複製貼上；也可改在下方手動貼上金鑰。</p>
       </div>
       <div class="flex gap-2">
         <input

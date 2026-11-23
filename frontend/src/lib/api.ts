@@ -430,6 +430,8 @@ export interface AiCard {
   ended?: boolean
   /** extra request fields a particular model needs, by model name */
   model_extra_body?: Record<string, Record<string, unknown>>
+  /** one-click OAuth provider id (e.g. 'openrouter'), '' when manual key entry only */
+  oauth?: string
 }
 
 export interface AiConnection {
@@ -584,6 +586,33 @@ export function testAiDraft(draft: { card: string; base_url?: string; model?: st
 
 export function saveAiSlots(slots: Partial<Record<AiSlotId, AiSlotEntry[]>>): Promise<AiOverview> {
   return request<AiOverview>('/api/ai/slots', { method: 'PUT', body: JSON.stringify({ slots }) })
+}
+
+export function startOpenRouterOAuth(input: {
+  callback_url: string
+  connection_id?: number
+  slot?: AiSlotId | ''
+}): Promise<{ auth_url: string; state: string }> {
+  return request<{ auth_url: string; state: string }>('/api/ai/oauth/openrouter/start', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function exchangeOpenRouterOAuth(input: {
+  code: string
+  state: string
+  label?: string
+  model?: string
+  slot?: AiSlotId | ''
+  min_interval?: number | null
+  max_concurrency?: number | null
+  caps?: AiCaps
+}): Promise<AiOverview & { connection: AiConnection }> {
+  return request<AiOverview & { connection: AiConnection }>('/api/ai/oauth/openrouter/exchange', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
 }
 
 export function getSettings(): Promise<SettingsSnapshot> {
