@@ -71,11 +71,11 @@ CARDS: List[Dict[str, Any]] = [
         "key_mode": "required", "key_url": "https://console.groq.com/keys",
         "cost": "免費層",
         "limits": "每個模型分開算：每分鐘 30 次與 8,000 token（長文容易撞到），每日 1,000 次與 20 萬 token；沒有向量。Llama 模型 2026-11 已移出免費方案。",
-        "notes": "速度快，支援嚴格 JSON schema。",
+        "notes": "速度快，支援嚴格 JSON schema；qwen/qwen3.8-27b 目前為 Preview 模型，可能提前下架。",
         "quota": {"requests": 1000, "period": "day"},
         "min_interval": 2.5, "max_concurrency": 2,
         "caps": {"json_mode": True, "embeddings": False, "context": 131072},
-        "verified": "2026-11-22",
+        "verified": "2026-11-23",
     },
     {
         "id": "cloudflare", "label": "Cloudflare Workers AI", "kind": "openai",
@@ -112,12 +112,12 @@ CARDS: List[Dict[str, Any]] = [
         "models": ["glm-4.7-flash", "glm-4.5-flash"],
         "key_mode": "required", "key_url": "https://z.ai/manage-apikey/apikey-list",
         "cost": "免費（Flash 模型）",
-        "limits": "據稱只有 1 個並發（第三方說法）。2026-11-06 實測（關閉推理）：glm-4.7-flash 一篇約 28 秒；不關閉時超過 300 秒逾時。",
-        "notes": "適合單線程的背景工作。用 email 註冊即可。預設關閉推理（thinking disabled）。",
+        "limits": "官方並發與每分鐘上限須登入控制台查詢（未公開，第三方說法為 1 個並發）。2026-11-06 實測（關閉推理）：glm-4.7-flash 一篇約 28 秒；不關閉時超過 300 秒逾時。",
+        "notes": "適合單線程的背景工作。用 email 註冊即可，建金鑰時請選 Standard API Key。預設關閉推理（thinking disabled）。免費視覺模型另有 glm-4.6v-flash（還沒實測）。",
         "min_interval": 2.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False, "context": 128000,
                  "extra_body": {"thinking": {"type": "disabled"}}},
-        "verified": "2026-11-22",
+        "verified": "2026-11-23",
     },
     # Added 2026-11-06 from docs/free_llm_channels_2026-11.md: each passed the full analysis
     # prompt in a live test (section 2 there). Times are one sample, not a guarantee.
@@ -153,23 +153,23 @@ CARDS: List[Dict[str, Any]] = [
         "models": ["google/gemma-4-31b-it", "novita/ling-3.1-flash"],
         "key_mode": "required", "key_url": "https://www.requesty.ai/free-models",
         "cost": "免費（免費模型）",
-        "limits": "每天 200 次，所有免費模型共用；不限每分鐘次數，改限同時進行的請求數。2026-11-06 實測一篇約 57 秒。",
-        "notes": "有公司實體與 DPA。ling-3.1-flash 不支援 JSON 格式參數，會改用一般請求再解析。",
+        "limits": "新組織每天 200 次、每分鐘 20 次（付費組織每天 1,000 次、每分鐘 60 次），所有免費模型共用；另有依餘額計算的同時請求數上限。2026-11-06 實測一篇約 57 秒。",
+        "notes": "有公司實體與 DPA；/v1/models 目前有 8 個免費模型（只實測過這 2 個，其餘還沒實測）。ling-3.1-flash 不支援 JSON 格式參數，會改用一般請求再解析。",
         "quota": {"requests": 200, "period": "day"},
         "min_interval": 3.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False},
-        "verified": "2026-11-22",
+        "verified": "2026-11-23",
     },
     {
         "id": "bazaarlink", "label": "BazaarLink（免費模型）", "kind": "openai",
         "base_url": "https://api.bazaarlink.ai/v1", "model": "auto:free",
         "models": ["auto:free", "qwen/qwen3.7-flash:free", "deepseek/deepseek-v4-flash-0731free:free",
-                   "nvidia/nemotron-3.5-lightning-free:free"],
+                   "nvidia/nemotron-3.5-lightning-free:free", "stealth/glyph-cluster:free"],
         "key_mode": "required", "key_url": "https://bazaarlink.ai/free",
         "cost": "免費（:free 模型）",
-        "limits": "沒儲值：每分鐘 10 次、每天 60 單位；儲值過：每分鐘 20 次、每天 120 單位。所有免費模型共用，"
+        "limits": "沒儲值：每分鐘 10 次、每天 60 單位；儲值過：每分鐘 20 次、每天 120 單位（全站免費總上限每分鐘 20 次）。所有免費模型共用，"
                   "長輸入扣比較多單位，每天 UTC 00:00（台灣早上 8 點）重置；同時最多 2 個請求。",
-        "notes": "台灣集聯科技營運。還沒用金鑰實測過分析。",
+        "notes": "台灣集聯科技營運。不帶 :free 後綴的直接模型 ID 多為付費，請用列出的 :free 路由或 auto:free。還沒實測。",
         "min_interval": 6.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False},
         "verified": "2026-11-23",
@@ -194,10 +194,10 @@ CARDS: List[Dict[str, Any]] = [
         "key_mode": "required", "key_url": "https://build.nvidia.com/settings/api-keys",
         "cost": "免費（Free Endpoint 模型）",
         "limits": "約每分鐘 40 次，整個帳號共用（社群數據）。免費端點很擠：2026-11-06 實測一篇 80 到 190 秒。",
-        "notes": "條款寫明不能用在 production。免費端點很擠，時間波動大；deepseek-ai/deepseek-v4.1-flash 2026-11 已不在免費模型清單。",
+        "notes": "條款寫明不能用在 production。免費端點很擠，時間波動大；官方模型頁已將 deepseek-ai/deepseek-v4.1-flash 標示為 Deprecated 並移出 /v1/models。",
         "min_interval": 2.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False},
-        "verified": "2026-11-22",
+        "verified": "2026-11-23",
     },
     {
         "id": "aihubmix", "label": "AIHubMix（-free 模型）", "kind": "openai",
@@ -231,13 +231,13 @@ CARDS: List[Dict[str, Any]] = [
         "models": ["qwen/qwen3.8-27b", "Auto"],
         "key_mode": "required", "key_url": "https://platform.iteracompute.com/api-keys",
         "cost": "免費（限時活動，到 2026-11-24）",
-        "limits": "每月 30M token，超額回 429，不會自動扣款。推理型，一篇約 9,000 token（每月約 3,300 篇）；2026-11-06 實測一篇約 165 秒。",
-        "notes": "2026-11-24 00:00（太平洋時間）起，沒有儲值過的帳號停止免費額度。試過用 enable_thinking false 關閉推理，反而逾時，所以不帶。",
+        "limits": "每月 30M token（每月 1 日 UTC 00:00／台灣早上 8 點重置），單次 context 128K、輸出上限 8,192 token，同時限 1 個請求，超額回 429，不會自動扣款。推理型，一篇約 9,000 token（每月約 3,300 篇）；2026-11-06 實測一篇約 165 秒。",
+        "notes": "2026-11-24 00:00 太平洋時間（台灣時間 16:00）起，未曾儲值的帳號停止免費額度；此前有淨儲值的帳號保留共享免費 Auto。試過用 enable_thinking false 關閉推理，反而逾時，所以不帶。",
         "ends": "2026-11-24",
         "quota": {"tokens": 30_000_000, "period": "month"},
         "min_interval": 2.0, "max_concurrency": 1,
         "caps": {"json_mode": True, "embeddings": False},
-        "verified": "2026-11-22",
+        "verified": "2026-11-23",
     },
     {
         "id": "flm", "label": "flm（不用金鑰）", "kind": "openai",
@@ -402,7 +402,7 @@ GROUP_BY_CARD: Dict[str, str] = {
 
 # Raise it whenever a card's data changes (YYYYMMDDNN), then run `python -m app.catalog_remote --write`:
 # installs fetch catalog/omnikeep-catalog.json and use it only when its revision is higher than theirs.
-CATALOG_REVISION = 2026112301
+CATALOG_REVISION = 2026112302
 
 # The fallback order the picker suggests first (2026-11-23, layout D): a person who does not
 # want to compare 23 services gets three free connections that cover for each other, in order.
