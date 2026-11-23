@@ -6,12 +6,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import Button from '@/components/ui/button/Button.vue'
 import TelegramGuide from '@/components/settings/TelegramGuide.vue'
 import TelegramPairing from '@/components/settings/TelegramPairing.vue'
+import ProviderPicker from '@/components/settings/ProviderPicker.vue'
 import {
   createAiConnection, getAiCatalog, getAiFeatures, getServiceStatus, getStats, getTelegramStatus, saveSettings, testAiDraft,
-  type AiCard, type AiCardGroup, type AiFeature, type AiTestResult, type TelegramStatus,
+  type AiCard, type AiCardGroup, type AiFeature, type AiRecommendation, type AiTestResult, type TelegramStatus,
 } from '@/lib/api'
 import {
-  cardById, cardUses, connectionDraft, formProblem, groupCards, guideStart, initialForm, isStarterCard, sameValues, type ConnectionDraft, type SetupForm,
+  cardById, connectionDraft, formProblem, guideStart, initialForm, sameValues, type ConnectionDraft, type SetupForm,
 } from '@/lib/setup'
 import { TELEGRAM_TOKEN_EXAMPLE, tokenProblem } from '@/lib/telegramGuide'
 import { useUiStore } from '@/stores/ui'
@@ -20,7 +21,7 @@ import { useUiStore } from '@/stores/ui'
  * First-run guide: connect an AI service, then Telegram, so the first link can be sent
  * from the phone. Both parts can be skipped: a link is kept without an AI (it is analysed
  * once one is connected), and Telegram can be set up later in 設定 › 收錄管道.
- * Nothing is preselected; the cards that need no account or no key are listed first.
+ * Nothing is preselected; the suggested combo comes first, every service folded under its kind of free.
  *
  * A new install already has the no-signup services connected (app/ai_connections.py STARTER_CARDS),
  * so on a first visit to an empty library the guide opens at a welcome instead: what works now and
@@ -34,9 +35,9 @@ type Step = 'welcome' | 'choose' | 'connect' | 'telegram' | 'done'
 const step = ref<Step>('choose')
 const cards = ref<AiCard[]>([])
 const cardGroups = ref<AiCardGroup[]>([])
+const recommended = ref<AiRecommendation[]>([])
 const catalogError = ref('')
 const cardId = ref('')
-const showAll = ref(false)
 const form = reactive<SetupForm>({ baseUrl: '', apiKey: '', model: '' })
 const testing = ref(false)
 const saving = ref(false)
@@ -46,17 +47,6 @@ const testedValues = ref<ConnectionDraft | null>(null)
 const aiSaved = ref(false)
 
 const card = computed<AiCard | undefined>(() => cardById(cards.value, cardId.value))
-// The easiest ones to start with (no account, or no key at all) are what a newcomer sees first.
-const starterCards = computed(() => cards.value.filter((c) => isStarterCard(c)))
-const shownCards = computed(() => {
-  if (showAll.value || !starterCards.value.length) return [...starterCards.value, ...cards.value.filter((c) => !isStarterCard(c))]
-  // A card picked from the full list stays in view after the list is folded again.
-  const picked = card.value && !isStarterCard(card.value) ? [card.value] : []
-  return [...starterCards.value, ...picked]
-})
-// Listed under their kind of free (不用註冊、會自動補回、用完就沒…), each with how to use it.
-const shownGroups = computed(() => groupCards(shownCards.value, cardGroups.value))
-const hiddenCount = computed(() => cards.value.length - shownCards.value.length)
 const values = computed(() => (card.value ? connectionDraft(card.value, form) : null))
 const problem = computed(() => (card.value ? formProblem(card.value, form) : '請先選一個服務商'))
 const canSave = computed(() => !!result.value?.ok && !!values.value && sameValues(testedValues.value, values.value) && !saving.value)
@@ -116,6 +106,7 @@ async function loadCatalog() {
     const catalog = await getAiCatalog()
     cards.value = catalog.cards
     cardGroups.value = catalog.groups ?? []
+    recommended.value = catalog.recommended ?? []
   } catch (e) {
     catalogError.value = e instanceof Error ? e.message : String(e)
   }
@@ -364,44 +355,12 @@ onMounted(async () => {
           <p v-if="catalogError" class="set-error">無法讀取服務商清單：{{ catalogError }}</p>
           <p v-else-if="!cards.length" class="set-text">讀取中…</p>
           <p v-else class="set-text">
-            AI 用來幫收藏寫摘要和分類。下面幾個不用註冊或不用金鑰就能開始；之後隨時可以在「設定 › AI」換別家或加備援。
+            AI 用來幫收藏寫摘要和分類。先接建議的第 1 條；其他幾條之後到「設定 › AI」加成備援，或從下面的分組挑別家。
           </p>
-          <div class="space-y-4" role="radiogroup" aria-label="AI 服務商">
-            <section v-for="g in shownGroups" :key="g.group.id">
-              <template v-if="g.group.title">
-                <h3 class="text-sm font-semibold">{{ g.group.title }}</h3>
-                <p class="mt-0.5 text-sm text-muted-foreground">{{ g.group.how }}</p>
-              </template>
-              <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                <button
-                  v-for="c in g.cards"
-                  :key="c.id"
-                  type="button"
-                  role="radio"
-                  :aria-checked="cardId === c.id"
-                  class="flex min-w-0 cursor-pointer flex-col rounded-lg border p-3 text-left transition-colors"
-                  :class="cardId === c.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted'"
-                  @click="choose(c.id)"
-                >
-                  <!-- Name, then cost on a line of its own: a long cost used to squeeze the name into four lines -->
-                  <span class="block text-base font-semibold [overflow-wrap:anywhere]">{{ c.label }}</span>
-                  <span class="mt-1 flex flex-wrap gap-x-2 text-sm text-muted-foreground [overflow-wrap:anywhere]">
-                    <span v-if="c.no_signup" class="text-success">不用註冊</span>
-                    <span v-else-if="c.key_mode === 'none'" class="text-success">不用金鑰</span>
-                    <span v-if="c.ended" class="text-warning">活動已結束</span>
-                    <span>{{ c.cost }}</span>
-                    <span v-for="use in cardUses(c)" :key="use">{{ use }}</span>
-                  </span>
-                  <span class="mt-1 block text-sm text-muted-foreground [overflow-wrap:anywhere]">{{ c.limits }}（{{ c.verified }} 查證）</span>
-                </button>
-              </div>
-            </section>
+          <div role="radiogroup" aria-label="AI 服務商">
+            <ProviderPicker radio :cards="cards" :groups="cardGroups" :recommended="recommended" :selected="cardId" @pick="choose" />
           </div>
-          <div v-if="cards.length" class="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <button v-if="hiddenCount > 0" type="button" class="set-button" @click="showAll = true">顯示全部 {{ cards.length }} 個服務商</button>
-            <button v-else-if="showAll && starterCards.length" type="button" class="set-button" @click="showAll = false">只顯示最容易開始的</button>
-            <span class="set-text">限額以服務商後台為準。不確定選哪個，可以請你的 Claude、Codex 或 Antigravity 依你的狀況說明。</span>
-          </div>
+          <p v-if="cards.length" class="set-text">限額以服務商後台為準。不確定選哪個，可以請你的 Claude、Codex 或 Antigravity 依你的狀況說明。</p>
         </template>
 
         <!-- 2. Address, key, model, then test -->

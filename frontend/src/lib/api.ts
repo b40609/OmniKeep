@@ -519,8 +519,21 @@ export interface AiCardGroup {
   how: string
 }
 
-export function getAiCatalog(): Promise<{ verified: string; cards: AiCard[]; groups?: AiCardGroup[] }> {
-  return request<{ verified: string; cards: AiCard[]; groups?: AiCardGroup[] }>('/api/ai/catalog')
+/** One step of the suggested fallback combo (app/provider_catalog.py RECOMMENDED). */
+export interface AiRecommendation {
+  card: string
+  why: string
+}
+
+export interface AiCatalog {
+  verified: string
+  cards: AiCard[]
+  groups?: AiCardGroup[]
+  recommended?: AiRecommendation[]
+}
+
+export function getAiCatalog(): Promise<AiCatalog> {
+  return request<AiCatalog>('/api/ai/catalog')
 }
 
 /** 設定 › AI: what works now, how well, and the one step that makes a feature better (app/capabilities.py). */

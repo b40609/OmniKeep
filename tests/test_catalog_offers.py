@@ -27,6 +27,19 @@ def test_weekly_watch_flags_offers_ending_soon_or_over():
     assert any("Itera" in line and "已在 2026-11-24 結束" in line for line in watch.offer_lines("2026-11-25"))
 
 
+def test_the_suggested_combo_names_live_free_cards_that_refill_or_need_nothing():
+    """The picker's 照這個組合設定 adds these in order; a card that ended or costs money must not be one."""
+    data = provider_catalog.catalog()
+    cards = {c["id"]: c for c in data["cards"]}
+    picks = [r["card"] for r in data["recommended"]]
+    assert len(picks) == len(set(picks)) >= 2
+    for rec in data["recommended"]:
+        card = cards[rec["card"]]
+        assert rec["why"] and not card["ended"]
+        assert card["group"] in {"keyless", "recurring"}
+    assert cards[picks[-1]]["no_signup"]  # the last one is the backstop that needs no account
+
+
 def test_every_card_sits_in_a_group_that_says_how_to_use_it():
     """The service picker sorts cards by kind of free (2026-11-22); a card added without a group
     would fall into 付費或自訂 and look paid."""

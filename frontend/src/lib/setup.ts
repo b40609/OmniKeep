@@ -58,6 +58,26 @@ export function groupCards<T extends { group?: string }>(cards: T[], groups: Car
     .filter((g) => g.cards.length)
 }
 
+/** One step of the suggested fallback combo (app/provider_catalog.py RECOMMENDED). */
+export interface Recommendation {
+  card: string
+  why: string
+}
+
+/**
+ * The suggested combo as steps, in order: a card the catalog no longer has, or whose offer
+ * ended, is left out rather than shown dead. `done` says a connection on that card exists.
+ */
+export function recommendedSteps<T extends { id: string; ended?: boolean }>(
+  cards: T[], recommended: Recommendation[], connected: Iterable<string> = [],
+): { card: T; why: string; done: boolean }[] {
+  const have = new Set(connected)
+  return recommended.flatMap((r) => {
+    const card = cards.find((c) => c.id === r.card)
+    return card && !card.ended ? [{ card, why: r.why, done: have.has(card.id) }] : []
+  })
+}
+
 /** What a card can do beyond writing an analysis, from its caps, as short tags. */
 export function cardUses(card: { caps?: { video?: boolean; embeddings?: boolean } }): string[] {
   const uses: string[] = []

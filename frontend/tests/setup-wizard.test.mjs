@@ -265,22 +265,19 @@ test('saving needs a successful test of exactly the values being saved, then fil
   } finally { view.unmount() }
 })
 
-test('only the easy cards are listed until the owner asks for all of them', async () => {
-  context()
+test('the guide lists every card and hands the picker the suggested combo, with nothing preselected', async () => {
+  const ctx = context()
+  const recommended = [{ card: 'kilo', why: '不用註冊' }]
+  ctx.api.getAiCatalog = async () => ({ verified: '2026-11-05', cards: CARDS, groups: [], recommended })
   const view = await mountWizard()
   try {
     await settle()
     const s = view.state
-    assert.deepEqual(s.shownCards.map((c) => c.id), ['ollama', 'kilo'])
-    assert.equal(s.hiddenCount, CARDS.length - 2)
-    s.showAll = true
-    await nextTick()
-    assert.equal(s.shownCards.length, CARDS.length)
-    assert.deepEqual(s.shownCards.slice(0, 2).map((c) => c.id), ['ollama', 'kilo']) // still first
-    s.choose('agnes')
-    s.showAll = false
-    await nextTick()
-    assert.deepEqual(s.shownCards.map((c) => c.id), ['ollama', 'kilo', 'agnes']) // the picked one stays in view
+    assert.equal(s.cards.length, CARDS.length) // nothing hidden behind 顯示全部 any more; groups fold instead
+    assert.deepEqual(s.recommended, recommended)
+    assert.equal(s.cardId, '')
+    s.choose('kilo')
+    assert.equal(s.cardId, 'kilo')
   } finally { view.unmount() }
 })
 
@@ -414,4 +411,15 @@ test('a card says what it can do beyond an analysis, from its caps only', () => 
   assert.deepEqual(setup.cardUses({ caps: { video: true, embeddings: false } }), ['能讀 YouTube 影片'])
   assert.deepEqual(setup.cardUses({ caps: { embeddings: true } }), ['能做搜尋向量'])
   assert.deepEqual(setup.cardUses({}), [])
+})
+
+test('the suggested combo keeps its order, drops cards that are gone or ended, and marks connected ones', () => {
+  const cards = [{ id: 'gemini' }, { id: 'groq' }, { id: 'flm' }, { id: 'inception', ended: true }]
+  const recs = [
+    { card: 'gemini', why: 'a' }, { card: 'gone', why: 'b' }, { card: 'inception', why: 'c' },
+    { card: 'groq', why: 'd' }, { card: 'flm', why: 'e' },
+  ]
+  const steps = setup.recommendedSteps(cards, recs, ['flm'])
+  assert.deepEqual(steps.map((s) => [s.card.id, s.why, s.done]), [['gemini', 'a', false], ['groq', 'd', false], ['flm', 'e', true]])
+  assert.deepEqual(setup.recommendedSteps(cards, []), []) // an older server sends no combo
 })

@@ -14,10 +14,11 @@ import { SLOT_TEXT } from '@/lib/settingsText'
 import {
   createAiConnection, deleteAiConnection, getAiCatalog, getAiConnections, saveAiSlots, testAiConnection, testAiDraft,
   updateAiConnection,
-  type AiCard, type AiCardGroup, type AiConnection, type AiConnectionInput, type AiOverview, type AiSlotEntry, type AiSlotId, type AiTestResult,
+  type AiCard, type AiCardGroup, type AiConnection, type AiRecommendation, type AiConnectionInput, type AiOverview, type AiSlotEntry, type AiSlotId, type AiTestResult,
 } from '@/lib/api'
 import { autoExtraBody, extraBodyAfterModelChange, formatExtraBody, parseExtraBody } from '@/lib/extraBody'
-import { cardUses, formatCooldown, groupCards, hasPlaceholder } from '@/lib/setup'
+import { formatCooldown, hasPlaceholder, recommendedSteps } from '@/lib/setup'
+import ProviderPicker from './ProviderPicker.vue'
 import { useUiStore } from '@/stores/ui'
 
 /**
@@ -30,8 +31,9 @@ const ui = useUiStore()
 const overview = ref<AiOverview | null>(null)
 const cards = ref<AiCard[]>([])
 const cardGroups = ref<AiCardGroup[]>([])
-// The service picker lists cards by kind of free, each kind with a line on how to use it.
-const groupedCards = computed(() => groupCards(cards.value, cardGroups.value))
+const recommended = ref<AiRecommendation[]>([])
+/** 照這個組合設定 is walking the suggested combo: saving one opens the next. */
+const comboing = ref(false)
 const loadError = ref('')
 const busy = ref<string>('')
 const tests = reactive<Record<string, AiTestResult | 'running'>>({})
@@ -59,6 +61,20 @@ const cardOf = (id: string) => cards.value.find((c) => c.id === id)
 const connections = computed(() => overview.value?.connections ?? [])
 const byId = computed(() => new Map(connections.value.map((c) => [c.id, c])))
 const editorCard = computed(() => (editor.value ? cardOf(editor.value.cardId) : undefined))
+const connectedCards = computed(() => connections.value.map((c) => c.card))
+
+/** Open the next suggested service that has no connection yet, headed for 分析; false when none is left. */
+function nextComboStep(): boolean {
+  const step = recommendedSteps(cards.value, recommended.value, connectedCards.value).find((s) => !s.done)
+  if (!step) return false
+  startNew(step.card)
+  if (editor.value) editor.value.slot = 'analysis'
+  return true
+}
+
+function startCombo() {
+  comboing.value = nextComboStep()
+}
 
 async function refresh() {
   loadError.value = ''
@@ -67,6 +83,7 @@ async function refresh() {
     if (catalog) {
       cards.value = catalog.cards
       cardGroups.value = catalog.groups ?? []
+      recommended.value = catalog.recommended ?? []
     }
     apply(current)
     focusLinkedCard()
@@ -193,6 +210,7 @@ function startNew(card: AiCard) {
 
 function startEdit(conn: AiConnection) {
   picking.value = false
+  comboing.value = false
   expanded.value = new Set([...expanded.value, conn.id])
   editor.value = {
     mode: 'edit', id: conn.id, cardId: conn.card, label: conn.label, baseUrl: conn.base_url, key: '', clearKey: false,
@@ -284,6 +302,10 @@ async function saveEditor() {
     editor.value = null
     ui.settingsVersion++
     toast.success(e.mode === 'edit' ? '連線已更新' : '已新增連線')
+    if (comboing.value && e.mode === 'new') {
+      comboing.value = nextComboStep()
+      if (!comboing.value) toast.success('建議的組合都接好了')
+    }
   } catch (err) {
     e.errors = (err as { fieldErrors?: Record<string, string> }).fieldErrors ?? {}
     toast.error('儲存失敗', { description: err instanceof Error ? err.message : String(err) })
@@ -436,7 +458,7 @@ defineExpose({ refresh })
       <SettingBlock id="connections" title="AI 連線" description="一條連線是一組位址、模型和金鑰。同一個服務有兩把金鑰時各建一條，加到同一個用途就會輪流備援。">
         <template #above>
           <div class="mt-4 flex items-center gap-3">
-            <button type="button" class="set-button" :aria-expanded="picking" @click="picking = !picking; editor = null">
+            <button type="button" class="set-button" :aria-expanded="picking" @click="picking = !picking; editor = null; comboing = false">
               <Plus aria-hidden="true" />新增連線
             </button>
           </div>
@@ -447,28 +469,16 @@ defineExpose({ refresh })
               <p class="text-base font-semibold">選一個 AI 服務</p>
               <button type="button" class="set-icon" aria-label="關閉" title="關閉" @click="picking = false"><X aria-hidden="true" /></button>
             </div>
-            <section v-for="g in groupedCards" :key="g.group.id" class="mt-5 first-of-type:mt-3">
-              <template v-if="g.group.title">
-                <h4 class="text-sm font-semibold">{{ g.group.title }}</h4>
-                <p class="set-text mt-0.5">{{ g.group.how }}</p>
-              </template>
-              <ul class="mt-2 grid gap-x-6 sm:grid-cols-2">
-                <li v-for="c in g.cards" :key="c.id" class="border-t border-hairline">
-                  <button type="button" class="w-full cursor-pointer rounded-lg px-2 py-3 text-left transition-colors hover:bg-surface-2" @click="startNew(c)">
-                    <span class="flex items-baseline justify-between gap-3">
-                      <span class="text-sm font-semibold">{{ c.label }}</span>
-                      <span class="shrink-0 text-xs text-muted-foreground">{{ c.cost }}</span>
-                    </span>
-                    <span class="mt-0.5 block text-sm text-muted-foreground">{{ c.limits }}</span>
-                    <span class="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span v-if="c.ended" class="set-tag">活動已結束</span>
-                      <span v-for="use in cardUses(c)" :key="use" class="set-tag">{{ use }}</span>
-                      <span>{{ c.verified }} 查證</span>
-                    </span>
-                  </button>
-                </li>
-              </ul>
-            </section>
+            <ProviderPicker
+              class="mt-3"
+              :cards="cards"
+              :groups="cardGroups"
+              :recommended="recommended"
+              :connected="connectedCards"
+              combo-label="照這個組合設定"
+              @pick="(id) => { const c = cardOf(id); if (c) startNew(c) }"
+              @combo="startCombo"
+            />
             <p v-if="cards.length" class="set-text mt-3">限額以各服務的後台為準。</p>
           </div>
 
@@ -486,7 +496,7 @@ defineExpose({ refresh })
             :saving="busy === 'editor'"
             @test="testEditor"
             @save="saveEditor"
-            @cancel="editor = null"
+            @cancel="editor = null; comboing = false"
           />
         </template>
 

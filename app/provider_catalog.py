@@ -161,6 +161,33 @@ CARDS: List[Dict[str, Any]] = [
         "verified": "2026-11-22",
     },
     {
+        "id": "bazaarlink", "label": "BazaarLink（免費模型）", "kind": "openai",
+        "base_url": "https://api.bazaarlink.ai/v1", "model": "auto:free",
+        "models": ["auto:free", "qwen/qwen3.7-flash:free", "deepseek/deepseek-v4-flash-0731free:free",
+                   "nvidia/nemotron-3.5-lightning-free:free"],
+        "key_mode": "required", "key_url": "https://bazaarlink.ai/free",
+        "cost": "免費（:free 模型）",
+        "limits": "沒儲值：每分鐘 10 次、每天 60 單位；儲值過：每分鐘 20 次、每天 120 單位。所有免費模型共用，"
+                  "長輸入扣比較多單位，每天 UTC 00:00（台灣早上 8 點）重置；同時最多 2 個請求。",
+        "notes": "台灣集聯科技營運。還沒用金鑰實測過分析。",
+        "min_interval": 6.0, "max_concurrency": 1,
+        "caps": {"json_mode": True, "embeddings": False},
+        "verified": "2026-11-23",
+    },
+    {
+        "id": "cheapllm", "label": "cheapllm.shop", "kind": "openai",
+        "base_url": "https://cheapllm.shop/v1", "model": "deepseek-v4.1-flash-1017",
+        "models": ["deepseek-v4.1-flash-1017"],
+        "key_mode": "required", "key_url": "https://cheapllm.shop/docs",
+        "cost": "免費（公測中不限量）",
+        "limits": "公測期間每個帳號免費、不限次數。公測結束後保留永久免費層、不用綁卡：每個帳號每滾動一小時至少 5,000 輸入、"
+                  "1,000 輸出 token（所有金鑰合計）。同時只能 1 個請求。",
+        "notes": "公測結束後的額度只夠少量分析，適合當備援。還沒用金鑰實測過分析。",
+        "min_interval": 2.0, "max_concurrency": 1,
+        "caps": {"json_mode": True, "embeddings": False},
+        "verified": "2026-11-23",
+    },
+    {
         "id": "nvidia", "label": "NVIDIA NIM（Free Endpoint）", "kind": "openai",
         "base_url": "https://integrate.api.nvidia.com/v1", "model": "minimaxai/minimax-m3.1-flash",
         "models": ["minimaxai/minimax-m3.1-flash", "mistralai/mistral-large-4-1t-a52b"],
@@ -266,6 +293,22 @@ CARDS: List[Dict[str, Any]] = [
         "verified": "2026-11-22",
     },
     {
+        "id": "blockrun", "label": "BlockRun（不用金鑰）", "kind": "openai",
+        "base_url": "https://blockrun.ai/api/v1", "model": "nvidia/nemotron-3-super-120b",
+        "models": ["nvidia/nemotron-3-super-120b", "nvidia/nemotron-3.5-lightning", "nvidia/nemotron-3-ultra-550b",
+                   "nvidia/minimax-m3.1-flash"],
+        "key_mode": "none", "key_url": "", "no_signup": True,
+        "cost": "免費（不用金鑰）",
+        "limits": "每個 IP 每分鐘 30 次、每小時 300 次（官方 rate limits 頁）。指定的免費模型滿載時，會自動改用另一個免費模型，"
+                  "回應照樣成功。2026-11-23 實測 nemotron-3-super-120b 一篇約 5 到 9 秒，繁中 JSON 正常。",
+        "notes": "只用 /free 頁列的免費模型；清單上其他模型要付費。"
+                 "這幾個都是推理模型，輸出 token 大多花在思考。",
+        # 300 an hour per IP is one every 12 s
+        "min_interval": 12.0, "max_concurrency": 1,
+        "caps": {"json_mode": True, "embeddings": False},
+        "verified": "2026-11-23",
+    },
+    {
         "id": "omniroute", "label": "OmniRoute 閘道", "kind": "openai",
         "base_url": "http://127.0.0.1:20128/v1", "model": "",
         "models": [],
@@ -346,15 +389,24 @@ GROUPS: List[Dict[str, str]] = [
      "how": "按用量付費的服務，或你自己的 OpenAI 相容端點、閘道。"},
 ]
 GROUP_BY_CARD: Dict[str, str] = {
-    "flm": "keyless", "jarvisclaw": "keyless", "kilo": "keyless", "ovh": "keyless",
+    "flm": "keyless", "jarvisclaw": "keyless", "kilo": "keyless", "ovh": "keyless", "blockrun": "keyless",
     "agnes": "recurring", "gemini": "recurring", "groq": "recurring", "cloudflare": "recurring",
     "openrouter": "recurring", "zai": "recurring", "tokenharbor": "recurring", "requesty": "recurring",
     "nvidia": "recurring", "aihubmix": "recurring", "sealion": "recurring",
+    "bazaarlink": "recurring", "cheapllm": "recurring",
     "inception": "grant", "itera": "grant",
     "vertex": "subscription",
     "ollama": "local",
     "omniroute": "paid", "deepseek": "paid", "openai": "paid", "custom": "paid",
 }
+
+# The fallback order the picker suggests first (2026-11-23, layout D): a person who does not
+# want to compare 23 services gets three free connections that cover for each other, in order.
+RECOMMENDED: List[Dict[str, str]] = [
+    {"card": "gemini", "why": "分析最完整，能讀 YouTube 影片"},
+    {"card": "groq", "why": "每日 1,000 次，速度快"},
+    {"card": "flm", "why": "不用註冊，當保底"},
+]
 
 CARD_BY_ID: Dict[str, Dict[str, Any]] = {card["id"]: card for card in CARDS}
 KINDS = ("openai", "gemini", "ollama")
@@ -374,7 +426,8 @@ def guess_card(base_url: str, kind: str = "openai") -> str:
                             ("zai", "api.z.ai"), ("inception", "inceptionlabs.ai"), ("tokenharbor", "tokenharbor.ai"),
                             ("requesty", "requesty.ai"), ("nvidia", "integrate.api.nvidia.com"),
                             ("aihubmix", "aihubmix.com"), ("sealion", "api.sea-lion.ai"),
-                            ("itera", "iteracompute.com"), ("kilo", "api.kilo.ai"), ("ovh", "endpoints.kepler.ai.cloud.ovh.net"),
+                            ("itera", "iteracompute.com"), ("kilo", "api.kilo.ai"), ("blockrun", "blockrun.ai"),
+                            ("bazaarlink", "bazaarlink.ai"), ("cheapllm", "cheapllm.shop"), ("ovh", "endpoints.kepler.ai.cloud.ovh.net"),
                             ("omniroute", ":20128"), ("deepseek", "api.deepseek.com"),
                             ("openai", "api.openai.com"), ("ollama", ":11434")):
         if marker in url:
@@ -399,4 +452,4 @@ def catalog() -> Dict[str, Any]:
             "group": GROUP_BY_CARD.get(c["id"], "paid"),
             "ended": ended(c),
         })
-    return {"verified": VERIFIED, "cards": cards, "groups": GROUPS}
+    return {"verified": VERIFIED, "cards": cards, "groups": GROUPS, "recommended": RECOMMENDED}
