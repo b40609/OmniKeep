@@ -552,7 +552,7 @@ defineExpose({ refresh })
             <span class="min-w-0 flex-1" :class="!conn.enabled && 'opacity-60'">
               <span class="block truncate text-base font-semibold">{{ conn.label }}</span>
               <span class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-                <span class="truncate">{{ conn.model }}</span>
+                <span class="max-w-full truncate">{{ conn.model }}</span>
                 <span v-for="s in conn.used_in" :key="s" class="set-tag">{{ slotName(s) }}</span>
                 <span v-if="!conn.used_in.length" class="text-xs">沒有用在任何用途</span>
               </span>

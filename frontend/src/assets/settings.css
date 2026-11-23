@@ -734,8 +734,12 @@
     max-width: 44vw;
   }
   .set-status {
+    align-items: flex-start;
     white-space: normal;
     line-height: 18px;
+  }
+  .set-status::before {
+    margin-top: 5px;
   }
   .set-fold__head {
     flex-wrap: wrap;

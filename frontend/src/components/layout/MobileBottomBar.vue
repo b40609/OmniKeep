@@ -21,7 +21,7 @@ function setView(view: TriageView) {
   >
     <button class="bottom-tab" :aria-pressed="!ui.showEvalModal && items.triageView === 'inbox'" @click="setView('inbox')">
       <Inbox aria-hidden="true" />
-      <span>收件匣<span v-if="items.stats.inbox" class="ml-1 tabular-nums">{{ items.stats.inbox }}</span></span>
+      <span class="truncate">收件匣<span v-if="items.stats.inbox" class="ml-1 tabular-nums">{{ items.stats.inbox > 999 ? '999+' : items.stats.inbox }}</span></span>
     </button>
     <button class="bottom-tab" :aria-pressed="ui.showEvalModal" @click="ui.openEvaluations()">
       <Scale aria-hidden="true" />
