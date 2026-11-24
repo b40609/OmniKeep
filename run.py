@@ -2,6 +2,7 @@ import logging
 import uvicorn
 from app.config import settings
 from app.logging_setup import configure_logging
+from app.runtime_env import ensure_stable_tempdir
 
 if __name__ == "__main__":
     # httpx INFO request lines contain the Telegram Bot API token in the URL.
@@ -9,6 +10,7 @@ if __name__ == "__main__":
     # (app/logging_setup.py protect_http_logs() covers processes not started through this file.)
     logging.getLogger("httpx").setLevel(logging.CRITICAL)
     configure_logging()
+    ensure_stable_tempdir()
     print("=" * 60)
     # ASCII only: a redirected stdout on Windows may not be able to encode anything else.
     print("OmniKeep - send a link, have it read, find it later")

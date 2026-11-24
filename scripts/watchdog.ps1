@@ -18,6 +18,28 @@ if (Test-Path $venvPy -PathType Leaf) {
 $logDir = Join-Path $env:LOCALAPPDATA 'OmniKeep\logs'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
+# Guard against inheriting a short-lived agent runner TEMP/TMP directory (e.g. antigravity-tmp)
+# when watchdog.ps1 is invoked manually from an AI coding agent shell instead of Task Scheduler.
+function Repair-ProcessTempEnv {
+    $needsRepair = $false
+    foreach ($val in @($env:TEMP, $env:TMP)) {
+        if ([string]::IsNullOrWhiteSpace($val) -or $val -match 'antigravity-tmp' -or -not (Test-Path $val -PathType Container)) {
+            $needsRepair = $true
+            break
+        }
+    }
+    if (-not $needsRepair) { return }
+    $fallback = [Environment]::GetEnvironmentVariable('TEMP', 'User')
+    if ([string]::IsNullOrWhiteSpace($fallback) -or $fallback -match 'antigravity-tmp') {
+        $fallback = Join-Path $env:LOCALAPPDATA 'Temp'
+    }
+    New-Item -ItemType Directory -Path $fallback -Force | Out-Null
+    $env:TEMP = $fallback
+    $env:TMP = $fallback
+    if ($env:TMPDIR) { $env:TMPDIR = $fallback }
+}
+Repair-ProcessTempEnv
+
 # The port the service listens on: PORT in .env, 5000 when it is not set there.
 function Get-ServicePort([string]$root) {
     $envFile = Join-Path $root '.env'

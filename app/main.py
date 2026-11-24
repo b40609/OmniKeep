@@ -43,6 +43,8 @@ async def lifespan(app: FastAPI):
 
 @asynccontextmanager
 async def _service_lifespan(app: FastAPI):
+    from app.runtime_env import ensure_stable_tempdir
+    ensure_stable_tempdir()
     init_db()
     try:
         # Once per database: the flat AI settings become connections and task slots.
