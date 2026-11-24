@@ -40,6 +40,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
+          npm run lint
           npm test
           npm run build
 
@@ -62,7 +63,9 @@ jobs:
           python -c "import sqlite3, sqlite_vec; c = sqlite3.connect(':memory:'); c.enable_load_extension(True); sqlite_vec.load(c); print('sqlite-vec', c.execute('select vec_version()').fetchone()[0])"
 
       - name: Backend tests
-        run: python -m pytest -rs
+        run: |
+          python -m ruff check
+          python -m pytest -rs
 
       # After the tests, so they keep exercising the "not installed" path.
       - name: Optional speech-to-text requirements install and import

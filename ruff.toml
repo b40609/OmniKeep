@@ -1,0 +1,16 @@
+target-version = "py312"
+line-length = 120
+extend-exclude = ["scratch", "backups", "snapshots", "tests/.tmp", "node_modules", ".venv"]
+
+[lint]
+# Critical zero-noise bug & async safety rules enforced repo-wide:
+# E9/F63/F7/F82: syntax, undefined names, invalid format strings
+# B006/B012/B023: mutable defaults, jump in finally, loop-variable closure bug
+# RUF006: dangling asyncio.create_task without strong reference
+# S102/S307: exec/eval hazards
+select = ["E9", "F63", "F7", "F82", "B006", "B012", "B023", "RUF006", "S102", "S307"]
+# Traditional Chinese comments/strings legitimately use full-width punctuation:
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[lint.per-file-ignores]
+"tests/**" = ["S101", "S102", "S307", "B012"]

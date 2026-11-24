@@ -212,7 +212,7 @@ function handleKeydown(e: KeyboardEvent) {
       <!-- Messages Stream -->
       <div
         ref="scrollContainer"
-        class="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6 text-sm leading-relaxed"
+        class="mobile-scroll flex-1 space-y-4 overflow-y-auto p-4 sm:p-6 text-sm leading-relaxed"
       >
         <!-- Nothing asked yet (the conversation was cleared) -->
         <p v-if="!chatHistory.length && !loading" class="px-1 py-8 text-center text-sm text-muted-foreground">

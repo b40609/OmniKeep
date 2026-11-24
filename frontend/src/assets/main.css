@@ -562,19 +562,21 @@ option {
   input {
     -webkit-tap-highlight-color: transparent;
   }
-  /* Prevent iOS Safari/Chrome auto-zoom when focusing inputs under 16px on phones. */
-  @media (max-width: 767px) {
-    input:not([type='checkbox']):not([type='radio']):not([type='range']),
-    textarea,
-    select {
-      font-size: max(16px, 1em);
-    }
-  }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
   .no-scrollbar {
     scrollbar-width: none;
+  }
+}
+
+/* Unlayered mobile rule (wins over @layer components and @layer utilities like .text-sm / .set-input)
+   so iOS Safari/WebKit never auto-zooms the viewport when focusing an input or select. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  textarea,
+  select {
+    font-size: max(16px, 1rem) !important;
   }
 }
 

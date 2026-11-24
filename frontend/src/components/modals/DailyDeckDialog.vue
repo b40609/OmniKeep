@@ -314,7 +314,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Completed State -->
-      <div v-else-if="completed" class="px-6 py-10 text-center overflow-y-auto">
+      <div v-else-if="completed" class="mobile-scroll px-6 py-10 text-center overflow-y-auto">
         <div class="mx-auto flex size-12 items-center justify-center rounded-2xl bg-green-500/10 text-green-500">
           <CheckCircle2 class="size-6" />
         </div>
@@ -345,7 +345,7 @@ onUnmounted(() => {
       <!-- Active Card View with Touch Swipe Handlers -->
       <div
         v-else-if="currentCard"
-        class="relative flex flex-1 flex-col overflow-y-auto p-5 sm:p-6 touch-pan-y"
+        class="mobile-scroll relative flex flex-1 flex-col overflow-y-auto p-5 sm:p-6 touch-pan-y"
         :style="cardTransformStyle"
         @touchstart.passive="onTouchStart"
         @touchmove="onTouchMove"

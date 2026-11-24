@@ -300,7 +300,7 @@ function closeDialog() {
       </div>
 
       <!-- Main Body -->
-      <div class="min-h-0 flex-1 overflow-y-auto p-5 space-y-4">
+      <div class="mobile-scroll min-h-0 flex-1 overflow-y-auto p-5 space-y-4">
         <!-- 1. Result summary card (if finished) -->
         <div v-if="importResult" class="rounded-xl border border-primary/30 bg-primary-soft/10 p-4 animate-in fade-in">
           <div class="flex items-center justify-between mb-3">

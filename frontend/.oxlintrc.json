@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "vue", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "no-unused-vars": "off",
+    "no-control-regex": "off",
+    "no-unused-expressions": "warn",
+    "typescript/no-explicit-any": "off"
+  },
+  "ignorePatterns": ["dist/**", "public/**", "tests/**"]
+}

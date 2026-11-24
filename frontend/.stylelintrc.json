@@ -1,0 +1,20 @@
+{
+  "overrides": [
+    {
+      "files": ["**/*.vue"],
+      "customSyntax": "postcss-html"
+    }
+  ],
+  "rules": {
+    "property-disallowed-list": [
+      ["content-visibility"],
+      {
+        "message": "Disallow content-visibility in scrolling views: causes mid-scroll layout stalls and freezes on iOS Safari/WebKit."
+      }
+    ],
+    "declaration-property-value-disallowed-list": {
+      "background-attachment": ["fixed"],
+      "/^(height|min-height|max-height)$/": ["/\\b100vh\\b/"]
+    }
+  }
+}

@@ -352,7 +352,7 @@ onMounted(async () => {
         </li>
       </ol>
 
-      <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 text-sm">
+      <div class="mobile-scroll min-h-0 flex-1 space-y-4 overflow-y-auto p-5 text-sm">
         <!-- 0. The no-signup services are connected already: what works now, and how well -->
         <template v-if="step === 'welcome'">
           <p class="set-notice set-notice--ok flex items-start gap-2">
