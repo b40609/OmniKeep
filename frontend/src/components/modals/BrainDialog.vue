@@ -3,7 +3,7 @@ import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import {
   ArrowLeft, Send, BookOpen, ExternalLink,
   Bot, User, Loader2,
-  RotateCcw, TriangleAlert
+  RotateCcw, TriangleAlert, X
 } from 'lucide-vue-next'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import Badge from '@/components/ui/badge/Badge.vue'
@@ -179,11 +179,11 @@ function handleKeydown(e: KeyboardEvent) {
   <Dialog :open="ui.showBrainModal" @update:open="(v) => (ui.showBrainModal = v)">
     <DialogContent
       class="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col overflow-hidden rounded-none border-0 p-0 sm:h-[88dvh] sm:max-h-[88dvh] sm:w-full sm:max-w-4xl sm:rounded-2xl sm:border"
-      show-close
+      :show-close="false"
       @open-auto-focus="(e: Event) => { e.preventDefault(); followUp?.focus() }"
     >
-      <!-- Header: the question being answered (mobile gets an explicit back arrow in safe-top) -->
-      <div class="safe-top flex min-h-14 shrink-0 items-center gap-2 border-b border-hairline px-2 py-2 sm:pl-5 sm:pr-14">
+      <!-- Header: the question being answered (mobile uses back arrow inside safe-top; desktop gets X in-row) -->
+      <div class="safe-top flex min-h-14 shrink-0 items-center gap-2 border-b border-hairline px-2 py-2 sm:px-5">
         <button
           type="button"
           class="item-action sm:hidden"
@@ -191,14 +191,22 @@ function handleKeydown(e: KeyboardEvent) {
           title="返回"
           @click="closeDialog"
         ><ArrowLeft class="size-5" /></button>
-        <DialogTitle :class="title ? 'min-w-0 flex-1 truncate pr-10 text-base font-semibold leading-[22px] tracking-normal sm:pr-0 sm:text-lg sm:leading-[26px]' : 'min-w-0 flex-1 text-base font-semibold sm:sr-only'">{{ title || '提問' }}</DialogTitle>
+        <DialogTitle :class="title ? 'min-w-0 flex-1 truncate text-base font-semibold leading-[22px] tracking-normal sm:text-lg sm:leading-[26px]' : 'min-w-0 flex-1 text-base font-semibold sm:sr-only'">{{ title || '提問' }}</DialogTitle>
         <DialogDescription class="sr-only">用你收藏的內容回答，並附上引用的收藏。</DialogDescription>
         <button
           v-if="chatHistory.length"
           type="button"
-          class="set-button set-button--text ml-auto mr-10 sm:mr-0"
+          class="set-button set-button--text ml-auto"
           @click="startOver"
         ><RotateCcw aria-hidden="true" /><span class="max-sm:hidden">清空對話</span></button>
+        <button
+          type="button"
+          class="item-action max-sm:hidden"
+          :class="chatHistory.length ? '' : 'ml-auto'"
+          aria-label="關閉"
+          title="關閉（Esc）"
+          @click="closeDialog"
+        ><X class="size-4" /></button>
       </div>
 
       <!-- Messages Stream -->

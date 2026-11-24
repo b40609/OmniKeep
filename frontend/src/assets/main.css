@@ -1212,12 +1212,12 @@ input, textarea { caret-color: var(--primary); }
 .prose-reader .ac-expand:focus-visible, .ac-sheet-x:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .prose-reader .ac-xi { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .prose-reader .ac-cap:has(.ac-expand:not([hidden])) span { order: 3; flex-basis: 100%; }
-.ac-sheet { position: fixed; inset: 0; z-index: 80; overflow: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 56px 32px 40px; display: flex; flex-direction: column; justify-content: safe center; background: var(--background); opacity: 1;
+.ac-sheet { position: fixed; inset: 0; z-index: 80; overflow: auto; overscroll-behavior: contain; box-sizing: border-box; padding: calc(var(--safe-top) + 56px) 32px 40px; display: flex; flex-direction: column; justify-content: safe center; background: var(--background); opacity: 1;
   animation: ac-sheet-in .25s var(--ac-ease, ease-out); }
 @keyframes ac-sheet-in { from { opacity: 0; } }
 .ac-sheet .arch-block { width: 100%; max-width: 1400px; margin: 0 auto; }
 .ac-sheet .ac-root { margin: 0 auto; }
-.ac-sheet-x { all: unset; position: fixed; top: 12px; right: 16px; z-index: 1; padding: 6px 14px; border-radius: 8px; cursor: pointer; color: var(--foreground); font-size: 14px; line-height: 20px;
+.ac-sheet-x { all: unset; position: fixed; top: calc(var(--safe-top) + 12px); right: 16px; z-index: 1; padding: 6px 14px; border-radius: 8px; cursor: pointer; color: var(--foreground); font-size: 14px; line-height: 20px;
   background: color-mix(in srgb, var(--foreground) 6%, var(--background)); }
 .ac-sheet-x:hover { background: color-mix(in srgb, var(--foreground) 10%, var(--background)); }
 
