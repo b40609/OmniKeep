@@ -74,14 +74,14 @@ const cardTransformStyle = computed(() => {
   }
   if (flyOutDirection.value === 'up') {
     return {
-      transform: 'translate3d(0, -90vh, 0)',
+      transform: 'translate3d(0, -90dvh, 0)',
       transition: 'transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.25s',
       opacity: 0,
     }
   }
   if (flyOutDirection.value === 'down') {
     return {
-      transform: 'translate3d(0, 90vh, 0)',
+      transform: 'translate3d(0, 90dvh, 0)',
       transition: 'transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.25s',
       opacity: 0,
     }

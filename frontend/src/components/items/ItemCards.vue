@@ -14,11 +14,14 @@ const props = defineProps<{ item: Item }>()
 const ui = useUiStore()
 
 const title = computed(() => splitTitle(props.item.title_l1))
-// The ring marks the open item, or where J/K currently is while nothing is open.
-const selected = computed(() => (ui.activeItem ? ui.activeItem.id === props.item.id : ui.cursorId === props.item.id))
+// The ring marks the open item beside the wall, or where J/K currently is during keyboard navigation.
+const selected = computed(() =>
+  ui.activeItem ? ui.activeItem.id === props.item.id : Boolean(ui.cursorVisible && ui.cursorId === props.item.id),
+)
 
 function open() {
   ui.cursorId = props.item.id
+  ui.cursorVisible = false
   ui.activeItem = props.item
   ui.detailTab = 'analysis'
 }

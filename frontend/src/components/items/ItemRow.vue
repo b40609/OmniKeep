@@ -15,6 +15,7 @@ const title = computed(() => splitTitle(props.item.title_l1))
 
 function select() {
   ui.cursorId = props.item.id
+  ui.cursorVisible = false
   ui.activeItem = props.item
   ui.detailTab = 'analysis'
 }
@@ -42,8 +43,8 @@ function select() {
         <span class="item-meta__sep" aria-hidden="true" />
         <time>{{ formatRelativeTime(item.created_at) }}</time>
         <template v-if="item.category_name">
-          <span class="item-meta__sep" aria-hidden="true" />
-          <span class="item-meta__clip">{{ displayCategory(item.category_name) }}</span>
+          <span class="item-meta__sep list-row__cat" aria-hidden="true" />
+          <span class="item-meta__clip list-row__cat">{{ displayCategory(item.category_name) }}</span>
         </template>
         <template v-if="isNotAnalysed(item)">
           <span class="item-meta__sep" aria-hidden="true" />

@@ -29,8 +29,8 @@ const PROFILE_KEYS = ['USER_BACKGROUND', 'LOCAL_HARDWARE']
     <SettingRow name="側邊預覽的位置" help="選「側邊預覽」時，閱讀面板開在畫面哪一邊，清單在另一邊。" for="setting-reader-side">
       <Select id="setting-reader-side" :model-value="ui.readerSide" :options="sideOptions" @update:model-value="ui.readerSide = $event as 'right' | 'left'" />
     </SettingRow>
-    <SettingRow name="強調色" help="主要按鈕和目前所在位置的顏色。">
-      <div class="flex gap-1" role="radiogroup" aria-label="強調色">
+    <SettingRow name="強調色" help="主要按鈕和目前所在位置的顏色。" stacked>
+      <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="強調色">
         <button
           v-for="option in accents"
           :key="option.id"

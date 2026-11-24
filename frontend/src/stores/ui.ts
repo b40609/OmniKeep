@@ -22,6 +22,8 @@ export const useUiStore = defineStore('ui', () => {
   const activeItem = ref<Item | null>(null)
   /** Item the keyboard is on in the cover wall (J/K) without opening it; null until first used. */
   const cursorId = ref<number | null>(null)
+  /** Show the keyboard focus ring only while navigating with the keyboard, never after pointer/touch taps. */
+  const cursorVisible = ref(false)
   const detailTab = ref<ReaderTab>('analysis')
   const readerFontSize = useLocalStorage('omnikeep-reader-font', 16)
   const readerLineHeight = useLocalStorage('omnikeep-reader-lineh', 1.8)
@@ -136,7 +138,7 @@ export const useUiStore = defineStore('ui', () => {
 
   return {
     sidebarOpen, sidebarMobileOpen, searchFocusRequests, pendingQuestion, ask,
-    activeItem, cursorId, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode, readerOpen, readerSide, outlineOpen, railOpen, sidesFit, outlineShown, railFits, railShown,
+    activeItem, cursorId, cursorVisible, detailTab, readerFontSize, readerLineHeight, readerWidth, focusMode, readerOpen, readerSide, outlineOpen, railOpen, sidesFit, outlineShown, railFits, railShown,
     showAddModal, addDraft, openAdd, showCategoryModal, showShortcutsModal, showRadarModal, showWatchModal, showImportModal, importTab, importFile, openImport, showDeckModal,
     showDailyDeckModal, showBrainModal, showEvalModal, evalFocusId, openEvaluations, closeEvaluations,
     showSettingsModal, settingsTab, settingsBlock, settingsLevel, settingsCloseRequests, settingsCard, settingsVersion, openSettings, showSetupWizard,

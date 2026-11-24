@@ -178,6 +178,7 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
     const browsing = items.viewMode === 'cards' && !ui.activeItem
     const moveTo = (index: number) => {
       ui.cursorId = list[index].id
+      ui.cursorVisible = true
       if (!browsing) ui.activeItem = list[index]
     }
     const target = ui.activeItem ?? (browsing && currentIndex >= 0 ? list[currentIndex] : null)
@@ -209,6 +210,16 @@ export function useKeyboard(header: () => AppHeaderExposed | null, enabled: () =
     }
   }
 
-  onMounted(() => window.addEventListener('keydown', handleKeyDown))
-  onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
+  function handlePointerDown() {
+    if (ui.cursorVisible) ui.cursorVisible = false
+  }
+
+  onMounted(() => {
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('pointerdown', handlePointerDown, { passive: true })
+  })
+  onUnmounted(() => {
+    window.removeEventListener('keydown', handleKeyDown)
+    window.removeEventListener('pointerdown', handlePointerDown)
+  })
 }

@@ -197,7 +197,7 @@ function fmtSize(n?: number) {
 
 <template>
   <Dialog :open="ui.showWatchModal" @update:open="(v: boolean) => (ui.showWatchModal = v)">
-    <DialogContent class="max-h-[85vh] w-[min(94vw,720px)] overflow-y-auto sm:max-w-[720px]">
+    <DialogContent class="mobile-scroll max-h-[85dvh] w-[min(94vw,720px)] overflow-y-auto sm:max-w-[720px]">
       <DialogHeader>
         <DialogTitle class="flex items-center gap-2">
           <ScanEye class="size-4.5" /> 專案監看

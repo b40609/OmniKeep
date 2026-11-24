@@ -195,15 +195,17 @@ defineExpose({ scrollToIndex, scrollToItem })
   <div class="@container flex min-h-0 flex-1 flex-col bg-shell" :aria-busy="items.loading">
     <!-- Filter row: kind tabs on the left; how many, the order and the view on the right -->
     <div class="wall-bar" :class="{ 'wall-column': items.viewMode === 'list' }">
-      <div class="no-scrollbar -my-1 flex min-w-0 gap-2 overflow-x-auto py-1 sm:gap-3" role="group" aria-label="類型">
-        <button
-          v-for="tab in KIND_TABS"
-          :key="tab.id"
-          type="button"
-          class="kind-chip"
-          :aria-pressed="items.kindFilter === tab.id"
-          @click="items.kindFilter = tab.id"
-        >{{ tab.label }}</button>
+      <div class="wall-chips-wrap relative min-w-0 flex-1 sm:flex-none">
+        <div class="no-scrollbar -my-1 flex min-w-0 gap-2 overflow-x-auto py-1 pr-3 sm:gap-3 sm:pr-0" role="group" aria-label="類型">
+          <button
+            v-for="tab in KIND_TABS"
+            :key="tab.id"
+            type="button"
+            class="kind-chip"
+            :aria-pressed="items.kindFilter === tab.id"
+            @click="items.kindFilter = tab.id"
+          >{{ tab.label }}</button>
+        </div>
       </div>
       <p class="ml-auto min-w-0 shrink truncate text-sm tabular-nums text-muted-foreground max-sm:hidden" aria-live="polite">
         <template v-if="items.loading">載入中…</template>
@@ -361,7 +363,7 @@ defineExpose({ scrollToIndex, scrollToItem })
           <SwipeableRow v-else-if="row.type === 'item'" :item="row.item">
             <ItemRow :item="row.item" :active="row.item.id === activeId" />
           </SwipeableRow>
-          <div v-else class="wall-end" role="status">
+          <div v-else class="wall-end max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]" role="status">
             <template v-if="items.loadingMore"><Loader2 class="animate-spin" aria-hidden="true" />正在載入更多</template>
             <template v-else-if="items.moreError">{{ items.moreError }}<button type="button" class="wall-end__retry" @click="items.loadMore()">重試</button></template>
             <template v-else-if="!items.hasMore">已顯示全部 {{ totalCount }} 則</template>
@@ -371,7 +373,7 @@ defineExpose({ scrollToIndex, scrollToItem })
     </VList>
 
     <!-- Cover wall: one grid per date section, straight on the page -->
-    <div v-else ref="wall" class="mobile-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-24 sm:px-6 md:pb-10" @scroll.passive="loadMoreIfNearEnd">
+    <div v-else ref="wall" class="mobile-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-6 md:pb-10" @scroll.passive="loadMoreIfNearEnd">
       <section v-for="section in sections" :key="section.key" class="wall-section" :aria-label="section.label || '搜尋結果'">
         <h2 v-if="section.label" class="wall-section-title">{{ section.label }}<span v-if="sectionCount(section) != null">{{ sectionCount(section) }} 則</span></h2>
         <div class="wall-grid">

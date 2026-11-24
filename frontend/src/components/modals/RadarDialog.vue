@@ -348,7 +348,7 @@ watch(tab, (t) => {
 
 <template>
   <Dialog :open="ui.showRadarModal" @update:open="(v) => (ui.showRadarModal = v)">
-    <DialogContent class="flex max-h-[90vh] max-w-3xl flex-col gap-0 p-0 overflow-hidden">
+    <DialogContent class="flex max-h-[90dvh] max-w-3xl flex-col gap-0 p-0 overflow-hidden">
       <!-- Header -->
       <div class="flex shrink-0 items-center justify-between border-b border-border p-5 pb-4">
         <div class="flex items-center gap-2.5">

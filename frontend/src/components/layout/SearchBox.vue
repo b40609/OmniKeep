@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch, type Component } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import {
   Search, Sparkles, Inbox, Star, Archive, Layers, Compass, Tag, FolderGit2, MessageSquare, Play, FileText,
-  Plus, Settings, LayoutGrid, List, Keyboard, Bell, SunMoon, ListChecks, SlidersHorizontal, Eye, CalendarCheck, Check,
+  Plus, Settings, LayoutGrid, List, Keyboard, Bell, SunMoon, ListChecks, SlidersHorizontal, Eye, CalendarCheck, Check, X,
 } from 'lucide-vue-next'
 import { useUiStore } from '@/stores/ui'
 import { useItemsStore, type TriageView } from '@/stores/items'
@@ -237,59 +237,93 @@ function toggleAsk() {
   void focus(mode.value === 'ask' ? 'search' : 'ask')
 }
 
+function dismissMobile() {
+  if (mode.value === 'ask') {
+    mode.value = 'search'
+    text.value = ''
+  }
+  leave()
+  if (!text.value) emit('dismiss')
+}
+
 defineExpose({ focus })
 </script>
 
 <template>
   <div ref="root" class="search" @focusout="onFocusOut">
-    <div class="search-box flex" :class="{ 'search-box--ask': mode === 'ask' }">
-      <Sparkles v-if="mode === 'ask'" aria-hidden="true" />
-      <Search v-else aria-hidden="true" />
-      <span v-if="mode === 'ask'" class="search-box__mode">提問</span>
-      <input
-        ref="input"
-        v-model="text"
-        type="text"
-        inputmode="search"
-        enterkeyhint="search"
-        role="combobox"
-        aria-autocomplete="list"
-        aria-haspopup="listbox"
-        :aria-controls="open ? 'omni-list' : undefined"
-        :aria-expanded="open && rows.length > 0"
-        :aria-activedescendant="activeId"
-        :aria-label="mode === 'ask' ? '提問' : '搜尋或提問'"
-        :placeholder="mode === 'ask' ? '問一個和收藏有關的問題' : '搜尋或提問'"
-        autocomplete="off"
-        autocapitalize="off"
-        spellcheck="false"
-        @focus="open = true"
-        @click="open = true"
-        @keydown="onKeydown"
-      />
+    <!-- Backdrop on narrower viewports so the floating panel does not visually collide with cards behind it -->
+    <div
+      v-if="open"
+      class="fixed inset-0 z-50 bg-black/55 lg:hidden"
+      aria-hidden="true"
+      @mousedown.prevent
+      @click="dismissMobile"
+    />
+    <div class="relative z-[60] flex items-center gap-2">
+      <div class="search-box flex min-w-0 flex-1" :class="{ 'search-box--ask': mode === 'ask' }">
+        <Sparkles v-if="mode === 'ask'" aria-hidden="true" />
+        <Search v-else aria-hidden="true" />
+        <span v-if="mode === 'ask'" class="search-box__mode">提問</span>
+        <input
+          ref="input"
+          v-model="text"
+          type="text"
+          inputmode="search"
+          enterkeyhint="search"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
+          :aria-controls="open ? 'omni-list' : undefined"
+          :aria-expanded="open && rows.length > 0"
+          :aria-activedescendant="activeId"
+          :aria-label="mode === 'ask' ? '提問' : '搜尋或提問'"
+          :placeholder="mode === 'ask' ? '問一個和收藏有關的問題' : '搜尋或提問'"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          @focus="open = true"
+          @click="open = true"
+          @keydown="onKeydown"
+        />
+        <button
+          v-if="text"
+          type="button"
+          class="search-box__clear"
+          aria-label="清除輸入"
+          title="清除"
+          @mousedown.prevent
+          @click="clearText"
+        ><X aria-hidden="true" /></button>
+        <button
+          v-if="mode === 'search'"
+          type="button"
+          class="search-box__toggle"
+          title="切換關鍵字搜尋與語意搜尋"
+          :aria-pressed="items.searchMode === 'semantic'"
+          @mousedown.prevent
+          @click="items.toggleSearchMode()"
+        >{{ items.searchMode === 'semantic' ? '語意' : '關鍵字' }}</button>
+        <button
+          type="button"
+          class="search-box__ask"
+          aria-label="提問"
+          :title="mode === 'ask' ? '改回搜尋' : '提問：用收藏的內容回答　B'"
+          :aria-pressed="mode === 'ask'"
+          @mousedown.prevent
+          @click="toggleAsk"
+        ><Sparkles aria-hidden="true" /></button>
+        <kbd class="key-hint max-lg:hidden" title="按 / 或 Ctrl/Cmd+K 開始搜尋">/</kbd>
+      </div>
       <button
-        v-if="mode === 'search'"
         type="button"
-        class="search-box__toggle"
-        title="切換關鍵字搜尋與語意搜尋"
-        :aria-pressed="items.searchMode === 'semantic'"
+        class="h-10 shrink-0 rounded-lg px-2 text-sm font-medium text-muted-foreground hover:text-foreground lg:hidden"
         @mousedown.prevent
-        @click="items.toggleSearchMode()"
-      >{{ items.searchMode === 'semantic' ? '語意' : '關鍵字' }}</button>
-      <button
-        type="button"
-        class="search-box__ask"
-        aria-label="提問"
-        :title="mode === 'ask' ? '改回搜尋' : '提問：用收藏的內容回答　B'"
-        :aria-pressed="mode === 'ask'"
-        @mousedown.prevent
-        @click="toggleAsk"
-      ><Sparkles aria-hidden="true" /></button>
-      <kbd class="key-hint max-lg:hidden" title="按 / 或 Ctrl/Cmd+K 開始搜尋">/</kbd>
+        @click="dismissMobile"
+      >取消</button>
     </div>
 
     <div v-if="open" class="omni-panel" @mousedown.prevent>
-      <div v-if="rows.length" id="omni-list" ref="list" role="listbox" aria-label="搜尋、提問、篩選與動作" class="omni-panel__list">
+      <div v-if="rows.length" id="omni-list" ref="list" role="listbox" aria-label="搜尋、提問、篩選與動作" class="mobile-scroll omni-panel__list">
         <div v-for="section in sections" :key="section.label" role="group" :aria-label="section.label || '搜尋或提問'">
           <div v-if="section.label" class="omni-panel__label" aria-hidden="true">{{ section.label }}</div>
           <div

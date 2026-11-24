@@ -6,8 +6,8 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#09090b",
-  "theme_color": "#09090b",
+  "background_color": "#0f0f0f",
+  "theme_color": "#0f0f0f",
   "categories": ["productivity", "utilities", "news"],
   "share_target": {
     "action": "/",

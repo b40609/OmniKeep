@@ -265,15 +265,23 @@ useKeyboard(() => headerRef.value, () => signedIn.value)
 function revealItem(id: number | null | undefined) {
   if (id != null) listRef.value?.scrollToItem(id)
 }
-watch(() => ui.cursorId, (id) => nextTick(() => revealItem(id)))
+watch(() => ui.cursorId, (id) => {
+  if (ui.cursorVisible) nextTick(() => revealItem(id))
+})
 watch(
   () => ui.activeItem?.id,
   (id, previous) => {
     if (id != null) ui.cursorId = id
-    void nextTick(() => revealItem(id ?? ui.cursorId))
-    // Opening or closing the reader changes the wall's width and column count;
-    // look again once that transition has settled.
-    if ((id == null) !== (previous == null)) setTimeout(() => revealItem(ui.activeItem?.id ?? ui.cursorId), 340)
+    if (id != null || ui.cursorVisible) {
+      void nextTick(() => revealItem(id ?? ui.cursorId))
+      // Opening or closing the reader changes the wall's width and column count;
+      // look again once that transition has settled.
+      if ((id == null) !== (previous == null)) {
+        setTimeout(() => {
+          if (ui.activeItem?.id != null || ui.cursorVisible) revealItem(ui.activeItem?.id ?? ui.cursorId)
+        }, 340)
+      }
+    }
   },
 )
 
@@ -390,7 +398,7 @@ onUnmounted(() => {
 
 <template>
   <!-- Auth initializing spinner (avoids login modal flashing on localhost) -->
-  <div v-if="isCheckingAuth" class="relative z-10 flex h-screen w-screen items-center justify-center">
+  <div v-if="isCheckingAuth" class="relative z-10 flex h-[100dvh] w-full items-center justify-center">
     <div class="flex flex-col items-center gap-3">
       <div class="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       <span class="text-xs text-muted-foreground tracking-wide">載入 OmniKeep...</span>

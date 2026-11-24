@@ -36,6 +36,8 @@
         root.classList.toggle('oled', t === 'oled');
         root.classList.toggle('neutral', t === 'neutral');
         root.setAttribute('data-accent', localStorage.getItem('omnikeep-accent') || 'blue');
+        var meta = document.querySelector && document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', t === 'neutral' ? '#0f0f0f' : t === 'oled' ? '#000000' : dark ? '#111216' : '#f4f5f7');
       } catch (e) {}
     </script>
   </head>

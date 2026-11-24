@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from typing import Any
 
 from playwright.sync_api import Page, sync_playwright
@@ -47,6 +46,8 @@ def _audit_viewport(page: Page, label: str, is_mobile: bool) -> list[str]:
                 };
             });
             const smallInputs = [];
+            const tinyTexts = [];
+            const clippedEls = [];
             if (isMobile) {
                 for (const inp of document.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), textarea, select')) {
                     const rect = inp.getBoundingClientRect();
@@ -54,8 +55,23 @@ def _audit_viewport(page: Page, label: str, is_mobile: bool) -> list[str]:
                     const fs = parseFloat(window.getComputedStyle(inp).fontSize || '16');
                     if (fs < 16) smallInputs.push({ tag: inp.tagName, placeholder: inp.getAttribute('placeholder') || '', fs });
                 }
+                for (const el of document.querySelectorAll('nav *, .settings__main *, section[aria-label="工具評估與拍板台"] *')) {
+                    if (el.children.length > 0) continue;
+                    const txt = (el.textContent || '').trim();
+                    if (!txt) continue;
+                    const r = el.getBoundingClientRect();
+                    if (r.width === 0 || r.height === 0 || r.bottom < 0 || r.top > window.innerHeight) continue;
+                    const fs = parseFloat(window.getComputedStyle(el).fontSize || '12');
+                    if (fs < 11.5) tinyTexts.push({ text: txt.slice(0, 24), fs });
+                }
+                for (const el of document.querySelectorAll('.settings__main button, .settings__main .set-swatch, .settings__main .set-table')) {
+                    const r = el.getBoundingClientRect();
+                    if (r.width === 0 || r.height === 0) continue;
+                    if (el.closest('.overflow-x-auto')) continue;
+                    if (r.right > innerW + 1) clippedEls.push({ tag: el.tagName, cls: (el.className || '').toString().slice(0, 40), right: Math.round(r.right), innerW });
+                }
             }
-            return { innerW, docW, bodyW, scrollers, smallInputs };
+            return { innerW, docW, bodyW, scrollers, smallInputs, tinyTexts, clippedEls };
         }""",
         is_mobile,
     )
@@ -74,6 +90,10 @@ def _audit_viewport(page: Page, label: str, is_mobile: bool) -> list[str]:
             problems.append(f"[{label}] scroller failed to advance scrollTop ({sc['cls']})")
     for inp in metrics["smallInputs"]:
         problems.append(f"[{label}] mobile input font-size < 16px ({inp['tag']} '{inp['placeholder']}': {inp['fs']}px)")
+    for t in metrics["tinyTexts"][:5]:
+        problems.append(f"[{label}] sub-12px text detected ('{t['text']}': {t['fs']}px)")
+    for c in metrics["clippedEls"][:5]:
+        problems.append(f"[{label}] clipped element past viewport ({c['tag']}.{c['cls']}: right={c['right']} > {c['innerW']})")
     return problems
 
 
@@ -99,6 +119,16 @@ def run_patrol(base_url: str) -> int:
                 list_btn.first.click()
                 m_page.wait_for_timeout(350)
                 all_problems.extend(_audit_viewport(m_page, "mobile:inbox-list", True))
+                # Verify narrow list rows hide inline action buttons and keep readable text width
+                list_check = m_page.evaluate("""() => {
+                    const acts = Array.from(document.querySelectorAll('.list-row__acts')).filter(el => el.getBoundingClientRect().width > 0);
+                    const titles = Array.from(document.querySelectorAll('.list-row__title')).map(el => Math.round(el.getBoundingClientRect().width));
+                    return { visibleActs: acts.length, minTitleW: titles.length ? Math.min(...titles) : 999 };
+                }""")
+                if list_check["visibleActs"] > 0:
+                    all_problems.append(f"[mobile:inbox-list] inline .list-row__acts should be hidden on phone (found {list_check['visibleActs']})")
+                if list_check["minTitleW"] < 160:
+                    all_problems.append(f"[mobile:inbox-list] list row title column too narrow ({list_check['minTitleW']}px < 160px)")
                 cards_btn = m_page.locator('button[aria-label="格狀檢視"]')
                 if cards_btn.count():
                     cards_btn.first.click()
@@ -115,7 +145,7 @@ def run_patrol(base_url: str) -> int:
                     close_drawer.first.click()
                     m_page.wait_for_timeout(250)
 
-            # Open Reader on first item if available
+            # Open Reader on first item if available, then return and verify no lingering blue cursor ring
             first_card = m_page.locator(".cover-card__open").first
             if first_card.count() and first_card.is_visible():
                 first_card.click()
@@ -124,7 +154,27 @@ def run_patrol(base_url: str) -> int:
                 back_btn = m_page.locator('button[aria-label="返回清單"]')
                 if back_btn.count() and back_btn.first.is_visible():
                     back_btn.first.click()
-                    m_page.wait_for_timeout(300)
+                    m_page.wait_for_timeout(350)
+                    card_outlines = m_page.evaluate("""() => Array.from(document.querySelectorAll('.cover-card')).filter(el => {
+                        const cs = getComputedStyle(el);
+                        return cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0;
+                    }).length""")
+                    if card_outlines > 0:
+                        all_problems.append(f"[mobile:cards-after-back] lingering focus/cursor outline on {card_outlines} cover-card(s) after closing reader")
+
+            # Open Add dialog via bottom bar and confirm backdrop overlay renders
+            add_btn = m_page.locator('nav[aria-label="快捷導覽"] button:has-text("新增")')
+            if add_btn.count() and add_btn.first.is_visible():
+                add_btn.first.click()
+                m_page.wait_for_timeout(350)
+                has_overlay = m_page.evaluate("""() => Array.from(document.querySelectorAll('body > div')).some(el => {
+                    const cs = getComputedStyle(el);
+                    return cs.position === 'fixed' && cs.inset === '0px' && cs.backgroundColor !== 'rgba(0, 0, 0, 0)';
+                })""")
+                if not has_overlay:
+                    all_problems.append("[mobile:add-dialog] DialogOverlay backdrop missing (modal prop likely coerced to false)")
+                m_page.keyboard.press("Escape")
+                m_page.wait_for_timeout(250)
 
             # Open Pending Evaluations workspace via bottom bar
             eval_btn = m_page.locator('nav[aria-label="快捷導覽"] button:has-text("待決")')
@@ -132,16 +182,17 @@ def run_patrol(base_url: str) -> int:
                 eval_btn.first.click()
                 m_page.wait_for_timeout(400)
                 all_problems.extend(_audit_viewport(m_page, "mobile:evaluations", True))
-                close_eval = m_page.locator('button[aria-label="關閉評估台"]')
+                close_eval = m_page.locator('button[aria-label="關閉評估拍板台"]')
                 if close_eval.count() and close_eval.first.is_visible():
                     close_eval.first.click()
                     m_page.wait_for_timeout(250)
 
-            # Open Settings via Account menu
-            m_page.goto(f"{base_url.rstrip('/')}/#settings=ai", wait_until="networkidle", timeout=15000)
-            m_page.reload(wait_until="networkidle", timeout=15000)
-            m_page.wait_for_timeout(600)
-            all_problems.extend(_audit_viewport(m_page, "mobile:settings-ai", True))
+            # Open Settings sections (general, ai, advanced)
+            for sec in ("general", "ai", "advanced"):
+                m_page.goto(f"{base_url.rstrip('/')}/#settings={sec}", wait_until="networkidle", timeout=15000)
+                m_page.reload(wait_until="networkidle", timeout=15000)
+                m_page.wait_for_timeout(500)
+                all_problems.extend(_audit_viewport(m_page, f"mobile:settings-{sec}", True))
             m_ctx.close()
 
             # 2. Desktop WebKit Patrol (1280x800)

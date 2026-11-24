@@ -33,7 +33,7 @@ const forwarded = useForwardPropsEmits(props, emits)
       <slot />
       <DialogClose
         v-if="showClose !== false"
-        class="absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-90 focus:outline-none sm:right-4 sm:top-4 sm:size-8"
+        class="absolute right-3 top-3 flex size-10 items-center justify-center rounded-lg bg-surface-2 text-muted-foreground transition-colors hover:bg-surface-3 hover:text-foreground focus:outline-none sm:right-4 sm:top-4 sm:size-8"
         aria-label="關閉"
       >
         <X class="size-4 sm:size-3.5" />

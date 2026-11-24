@@ -175,22 +175,24 @@ onMounted(loadAudit)
       <p v-if="auditError" class="set-error py-3">無法讀取變更紀錄：{{ auditError }}</p>
       <p v-else-if="auditLoaded && !audit.length" class="set-text py-3">還沒有任何變更。</p>
       <p v-else-if="auditLoading && !audit.length" class="set-text py-3">讀取中…</p>
-      <table v-if="audit.length" class="set-table">
-        <thead>
-          <tr>
-            <th scope="col">時間</th>
-            <th scope="col">設定</th>
-            <th scope="col">動作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="entry in audit" :key="entry.id">
-            <td>{{ auditTime(entry.created_at) }}</td>
-            <td>{{ settingLabel(entry.key, entry.label) }}</td>
-            <td class="whitespace-nowrap">{{ AUDIT_ACTION_TEXT[entry.action] ?? entry.action }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-if="audit.length" class="w-full overflow-x-auto">
+        <table class="set-table">
+          <thead>
+            <tr>
+              <th scope="col">時間</th>
+              <th scope="col">設定</th>
+              <th scope="col">動作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="entry in audit" :key="entry.id">
+              <td>{{ auditTime(entry.created_at) }}</td>
+              <td>{{ settingLabel(entry.key, entry.label) }}</td>
+              <td class="whitespace-nowrap">{{ AUDIT_ACTION_TEXT[entry.action] ?? entry.action }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <template v-if="auditMore" #foot>
         <button type="button" class="set-button" :disabled="auditLoading" @click="loadAudit(true)">
           <Loader2 v-if="auditLoading" class="animate-spin" aria-hidden="true" />

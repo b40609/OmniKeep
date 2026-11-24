@@ -50,7 +50,7 @@
     min-width: 0;
     flex: 1;
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: scroll;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
@@ -679,8 +679,8 @@
   }
   .set-swatch {
     display: grid;
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     place-items: center;
     border-radius: 8px;
     cursor: pointer;
@@ -755,6 +755,16 @@
     flex-basis: 100%;
     min-width: 0;
     font-size: 13px;
+  }
+  .set-table {
+    font-size: 13px;
+  }
+  .set-table th,
+  .set-table td {
+    padding: 8px 8px 8px 0;
+  }
+  .set-table td:first-child {
+    white-space: normal;
   }
 }
 

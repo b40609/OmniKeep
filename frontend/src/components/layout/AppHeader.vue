@@ -60,6 +60,17 @@ const viewTitle = computed(() => {
   }
 })
 
+const viewCount = computed<number | null>(() => {
+  if (items.currentCategory !== '全部' || items.searchQuery.trim()) return items.total
+  switch (items.triageView) {
+    case 'inbox': return items.stats.inbox || null
+    case 'starred': return items.stats.starred || null
+    case 'radar': return items.stats.radar || null
+    case 'all': return items.stats.total || null
+    default: return items.total
+  }
+})
+
 /** One button for both: the drawer on a phone, the sidebar (full or icon rail) on wider screens. */
 function toggleSidebar() {
   if (window.matchMedia('(min-width: 768px)').matches) ui.sidebarOpen = !ui.sidebarOpen
@@ -85,13 +96,16 @@ function goInbox() {
           title="側邊欄　Ctrl/Cmd+B"
           @click="toggleSidebar"
         ><Menu /></button>
-        <button type="button" class="flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-1 text-lg font-bold tracking-[-0.01em] text-foreground" title="回到收件匣" @click="goInbox">
+        <button type="button" class="flex min-h-10 min-w-0 items-center gap-2.5 rounded-lg py-1 pr-1 text-lg font-bold tracking-[-0.01em] text-foreground" title="回到收件匣" @click="goInbox">
           <svg class="size-7 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
             <rect width="24" height="24" rx="6" fill="var(--primary)" />
             <path d="M8 6h8v12l-4-3-4 3z" fill="var(--primary-foreground)" />
           </svg>
           <span class="max-md:hidden">OmniKeep</span>
-          <span class="truncate md:hidden">{{ viewTitle }}<span v-if="items.currentCategory !== '全部' && displayCategory(items.currentCategory) !== viewTitle" class="font-normal text-muted-foreground"> / {{ displayCategory(items.currentCategory) }}</span></span>
+          <span class="flex min-w-0 items-baseline gap-1.5 truncate md:hidden">
+            <span class="truncate">{{ viewTitle }}<span v-if="items.currentCategory !== '全部' && displayCategory(items.currentCategory) !== viewTitle" class="font-normal text-muted-foreground"> / {{ displayCategory(items.currentCategory) }}</span></span>
+            <span v-if="viewCount != null" class="shrink-0 text-sm font-normal text-muted-foreground tabular-nums">{{ viewCount > 999 ? '999+' : viewCount }}</span>
+          </span>
         </button>
       </div>
 
@@ -104,15 +118,15 @@ function goInbox() {
         @dismiss="showMobileSearch = false"
       />
 
-      <!-- Add, notifications, settings -->
+      <!-- Add, notifications, settings (phones keep Search & Add in MobileBottomBar to avoid duplicate controls) -->
       <div class="flex items-center justify-end gap-1 max-lg:col-start-3 md:gap-2">
-        <button class="icon-button lg:hidden" aria-label="搜尋或提問" title="搜尋　/" :aria-expanded="showMobileSearch" aria-controls="collection-search" @click="focusSearchInput()"><Search /></button>
+        <button class="icon-button hidden md:grid lg:hidden" aria-label="搜尋或提問" title="搜尋　/" :aria-expanded="showMobileSearch" aria-controls="collection-search" @click="focusSearchInput()"><Search /></button>
 
         <!-- 新增: the one place to add things, whether a link, a note or a bookmark file -->
-        <button type="button" class="top-button top-button--primary max-sm:px-2.5" title="新增　N" aria-label="新增" @click="ui.openAdd()">
+        <button type="button" class="top-button top-button--primary max-md:hidden" title="新增　N" aria-label="新增" @click="ui.openAdd()">
           <Loader2 v-if="ui.isIngesting" class="animate-spin" />
           <Plus v-else />
-          <strong class="max-sm:hidden">新增</strong>
+          <strong>新增</strong>
         </button>
 
         <button v-if="deferredPrompt" type="button" class="icon-button max-md:hidden" aria-label="安裝 OmniKeep" title="安裝成應用程式" @click="installPWA"><Download /></button>

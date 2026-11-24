@@ -138,51 +138,45 @@ function openItem(id: number | string) {
       <h1 class="text-xl leading-snug font-bold tracking-tight text-foreground lg:text-2xl">
         {{ ui.activeItem.title_l1 }}
       </h1>
-      <!-- the way back to the page this was kept from, named after where it goes -->
-      <a
-        v-if="origin"
-        :href="origin.href"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="reader-origin"
-        :title="origin.href"
-      >
-        <OriginIcon :origin="origin" class="reader-origin__icon" />
-        <span>{{ origin.action }}</span>
-        <ArrowUpRight class="size-4" aria-hidden="true" />
-        <span class="sr-only">（新分頁）</span>
-      </a>
+      <!-- Primary action row: open original page, plus offline snapshot beside it at matching height -->
+      <div v-if="origin || (!railOn && hasSnapshot)" class="mt-3 flex flex-wrap items-center gap-2">
+        <a
+          v-if="origin"
+          :href="origin.href"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="reader-origin !mt-0"
+          :title="origin.href"
+        >
+          <OriginIcon :origin="origin" class="reader-origin__icon" />
+          <span>{{ origin.action }}</span>
+          <ArrowUpRight class="size-4" aria-hidden="true" />
+          <span class="sr-only">（新分頁）</span>
+        </a>
+        <button
+          v-if="!railOn && hasSnapshot"
+          type="button"
+          class="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] bg-surface-2 px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface-3"
+          title="開啟收錄時保存的離線網頁"
+          @click="openSnapshot(ui.activeItem)"
+        >
+          <Camera class="size-4 text-muted-foreground" aria-hidden="true" />
+          <span>離線快照</span>
+        </button>
+      </div>
       <!-- with the details rail open, all of this lives there (the snapshot too), so the title stands alone -->
-      <div v-if="!railOn" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-subtle-foreground">
-        <template v-if="!railOn">
+      <div v-if="!railOn" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs leading-5 text-subtle-foreground">
         <a v-if="origin" :href="origin.href" target="_blank" rel="noopener noreferrer" class="reader-source">
           <OriginIcon :origin="origin" class="reader-source__icon" />{{ cleanHost(ui.activeItem.url) }}<ArrowUpRight class="size-3" aria-hidden="true" />
         </a>
         <span v-else>{{ cleanHost(ui.activeItem.url) }}</span>
-        <span aria-hidden="true">·</span>
-        <span>{{ ui.activeItem.published_date || formatRelativeTime(ui.activeItem.created_at) }}</span>
-        <template v-if="ui.activeItem.author">
-          <span aria-hidden="true">·</span>
-          <span>{{ ui.activeItem.author }}</span>
-        </template>
+        <span class="whitespace-nowrap">{{ ui.activeItem.published_date || formatRelativeTime(ui.activeItem.created_at) }}</span>
+        <span v-if="ui.activeItem.author" class="break-words">{{ ui.activeItem.author }}</span>
         <span
           v-if="ui.activeItem.content_raw"
-          class="rounded border border-border bg-muted px-1.5 py-px"
+          class="whitespace-nowrap"
           :title="`約 ${estimateReadTime(ui.activeItem.content_raw)} 分鐘`"
-        >
-          約 {{ estimateReadTime(ui.activeItem.content_raw) }} 分鐘
-        </span>
-        </template>
-        <button
-          v-if="hasSnapshot"
-          type="button"
-          class="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-lg border border-border px-3 text-xs text-muted-foreground transition-colors hover:bg-accent"
-          title="開啟收錄時保存的離線網頁"
-          @click="openSnapshot(ui.activeItem)"
-        >
-          <Camera class="size-2.5" />
-          <span>離線快照</span>
-        </button>
+        >約 {{ estimateReadTime(ui.activeItem.content_raw) }} 分鐘</span>
       </div>
     </header>
 
@@ -253,7 +247,7 @@ function openItem(id: number | string) {
             </span>
             <span
               v-if="ui.activeItem.latest_evaluation?.security_badge"
-              class="rounded border px-1.5 py-0.5 text-[11px] font-medium"
+              class="rounded border px-1.5 py-0.5 text-xs font-medium"
               :class="resolveBadgeUi(ui.activeItem.latest_evaluation.security_badge).pillClass"
             >
               {{ resolveBadgeUi(ui.activeItem.latest_evaluation.security_badge).label }}
@@ -397,7 +391,7 @@ function openItem(id: number | string) {
       <!-- Table of Contents (TOC) -->
       <nav
         v-if="tocItems.length >= 2 && !outlineOn"
-        class="mb-6 rounded-xl border border-white/[0.08] bg-muted/30 p-3.5 backdrop-blur-md"
+        class="mb-6 rounded-xl border border-hairline bg-surface-1 p-3.5"
         aria-label="目錄"
       >
         <div class="mb-2.5 flex items-center justify-between text-xs font-semibold text-muted-foreground">
@@ -405,17 +399,17 @@ function openItem(id: number | string) {
             <List class="size-3.5 text-primary" />
             <span>目錄</span>
           </span>
-          <span class="font-mono text-2xs text-subtle-foreground">{{ tocItems.length }} 個章節</span>
+          <span class="font-mono text-xs text-subtle-foreground">{{ tocItems.length }} 個章節</span>
         </div>
         <div class="flex flex-wrap gap-1.5 sm:grid sm:grid-cols-2 md:grid-cols-3">
           <a
             v-for="h in tocItems"
             :key="h.id"
             :href="'#' + h.id"
-            class="group flex items-center gap-1.5 truncate rounded-lg border border-border/40 bg-card/70 px-2.5 py-1 text-2xs text-foreground/80 transition-all hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
+            class="group flex min-h-9 items-center gap-1.5 truncate rounded-lg border border-hairline bg-card px-2.5 py-1.5 text-xs text-foreground transition-colors hover:border-primary/50 hover:bg-surface-2 hover:text-primary"
             @click.prevent="scrollToHeading(h.id)"
           >
-            <Hash class="size-2.5 shrink-0 text-muted-foreground/60 group-hover:text-primary" />
+            <Hash class="size-3 shrink-0 text-muted-foreground group-hover:text-primary" />
             <span class="truncate">{{ h.text }}</span>
           </a>
         </div>

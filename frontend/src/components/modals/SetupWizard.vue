@@ -315,7 +315,7 @@ onMounted(async () => {
 
 <template>
   <Dialog :open="ui.showSetupWizard" @update:open="onOpenChange">
-    <DialogContent class="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+    <DialogContent class="flex max-h-[90dvh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
       <div class="flex shrink-0 items-start gap-3 border-b border-border p-5 pb-4">
         <div class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <Sparkles class="size-5" aria-hidden="true" />

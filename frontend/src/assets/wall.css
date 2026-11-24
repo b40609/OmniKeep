@@ -17,9 +17,6 @@
     overflow: hidden;
     border-radius: 12px;
     background: var(--surface-1);
-  }
-  /* No-image placeholder keeps a quiet hairline border so dark/OLED cells still read as cards, not holes. */
-  .item-cover:not(.item-cover--image) {
     box-shadow: inset 0 0 0 1px var(--hairline);
   }
   /* Dimmed as a whole (image and backing together) so a white cover does not outshine the page. */
@@ -65,7 +62,7 @@
   }
   .item-cover--pad img {
     object-fit: contain;
-    object-position: center bottom;
+    object-position: center;
   }
   /* A screenshot taller than the frame keeps its top: the author and the first lines. */
   .item-cover img.item-cover__top {
@@ -98,7 +95,7 @@
   }
   /* Reader: full column width, never taller than a third of the window. */
   .item-cover--hero {
-    max-height: min(280px, 28vh);
+    max-height: min(280px, 28dvh);
     width: 100%;
   }
   .item-cover--hero.item-cover--image {
@@ -143,7 +140,13 @@
   .cover-card.is-cursor,
   .cover-card:has(.cover-card__open:focus-visible) {
     outline: 2px solid var(--ring);
-    outline-offset: 6px;
+    outline-offset: 4px;
+  }
+  /* Touch devices never display the keyboard navigation cursor ring. */
+  @media (hover: none) {
+    .cover-card.is-cursor {
+      outline: none;
+    }
   }
   .cover-card__title {
     margin-top: 12px;
@@ -340,9 +343,10 @@
     align-items: center;
     gap: 12px;
     padding: 0 16px;
+    border-bottom: 1px solid var(--hairline);
   }
   .wall-bar .top-button {
-    height: 32px;
+    height: 36px;
     padding: 0 12px;
   }
   .wall-bar .top-button svg {
@@ -387,14 +391,14 @@
   }
 
   .kind-chip {
-    height: 32px;
+    height: 36px;
     flex: none;
     padding: 0 12px;
     border-radius: 8px;
     background: var(--surface-2);
     font-size: 14px;
     font-weight: 500;
-    line-height: 32px;
+    line-height: 36px;
     color: var(--foreground);
     cursor: pointer;
     transition: background-color 150ms ease-out, color 150ms ease-out;
@@ -415,8 +419,9 @@
   /* ---------- List rows ---------- */
   .list-row {
     display: flex;
-    gap: 16px;
-    padding: 8px;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 8px;
     border-radius: 12px;
     cursor: pointer;
     transition: background-color 150ms ease-out;
@@ -428,7 +433,7 @@
     background: var(--surface-2);
   }
   .list-row__thumb {
-    width: 120px;
+    width: 104px;
     flex: none;
     border-radius: 8px;
   }
@@ -450,6 +455,9 @@
   .list-row__meta {
     margin-top: 6px;
   }
+  .list-row__cat {
+    display: none;
+  }
   /* About 46 characters a line, however wide the row is. */
   .list-row__summary {
     display: none;
@@ -464,7 +472,8 @@
     color: var(--muted-foreground);
     text-wrap: pretty;
   }
-  .list-row__acts {
+  /* Higher specificity than .item-actions (defined later in main.css) so narrow mobile rows hide inline action buttons and rely on SwipeableRow + ReaderPane. */
+  .item-actions.list-row__acts {
     display: none;
     align-self: flex-start;
   }
@@ -774,8 +783,8 @@
   }
   .view-switch button {
     display: grid;
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     place-items: center;
     border-radius: 8px;
     color: var(--muted-foreground);
@@ -848,25 +857,50 @@
     line-height: 20px;
     color: var(--foreground);
   }
-  .search-box__toggle {
+  .search-box__clear {
+    display: grid;
+    width: 28px;
     height: 28px;
     flex: none;
-    padding: 0 8px;
+    place-items: center;
     border-radius: 6px;
-    font-size: 14px;
-    line-height: 20px;
+    color: var(--muted-foreground);
     cursor: pointer;
     transition: background-color 150ms ease-out, color 150ms ease-out;
   }
-  .search-box__toggle:hover,
-  .search-box__toggle[aria-pressed='true'] {
+  .search-box__clear:hover {
     background: var(--surface-2);
     color: var(--foreground);
   }
+  .search-box__clear svg {
+    width: 16px;
+    height: 16px;
+    stroke-width: 1.75;
+  }
+  .search-box__toggle {
+    height: 30px;
+    flex: none;
+    padding: 0 10px;
+    border-radius: 6px;
+    background: var(--surface-2);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 30px;
+    color: var(--foreground);
+    cursor: pointer;
+    transition: background-color 150ms ease-out, color 150ms ease-out;
+  }
+  .search-box__toggle:hover {
+    background: var(--surface-3);
+  }
+  .search-box__toggle[aria-pressed='true'] {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
   .search-box__ask {
     display: grid;
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     flex: none;
     place-items: center;
     margin: 0 -4px;
@@ -901,7 +935,7 @@
     box-shadow: var(--float-shadow);
   }
   .omni-panel__list {
-    max-height: min(72vh, 680px);
+    max-height: min(68dvh, 640px);
     overflow-y: auto;
     padding: 8px;
   }
@@ -967,7 +1001,7 @@
   }
   textarea.add-panel__box {
     min-height: 152px;
-    max-height: 50vh;
+    max-height: 50dvh;
     font-size: 16px;
     line-height: 22px;
   }
@@ -1011,20 +1045,56 @@
     padding: 0 24px;
   }
 }
-/* A phone has room for the five tabs and two small buttons: the order as an icon,
-   and one button that switches to the other view. */
+/* A phone has room for the five tabs and two matching icon buttons: sort, and switch view. */
 @media (max-width: 639px) {
   .wall-bar {
     gap: 8px;
   }
   .wall-bar .top-button {
-    padding: 0 6px;
+    width: 36px;
+    padding: 0;
+    justify-content: center;
   }
   .kind-chip {
     padding: 0 10px;
   }
+  .view-switch button {
+    background: var(--surface-2);
+    color: var(--foreground);
+  }
   .view-switch button[aria-pressed='true'] {
     display: none;
+  }
+}
+/* Only fade the chip rail's right edge on narrow phones where the five tabs actually overflow. */
+@media (max-width: 388px) {
+  .wall-chips-wrap::after {
+    content: '';
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 16px;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--shell));
+  }
+}
+
+/* Single-column phone cover wall: 2:1 repository cards fit cleanly without dead top bars,
+   and cards get subtle separation so text-heavy and image cards never blend together. */
+@container (max-width: 35.99rem) {
+  .cover-card .item-cover--pad {
+    aspect-ratio: 2 / 1;
+  }
+  .wall-grid {
+    gap: 24px 16px;
+  }
+  .cover-card {
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--hairline);
+    border-radius: 0;
+  }
+  .cover-card:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
   }
 }
 
@@ -1067,10 +1137,17 @@
 /* List rows grow with the column: thumbnail first, then the actions, the larger
    title and the summary once there is room for them. */
 @container (min-width: 30rem) {
+  .list-row {
+    gap: 16px;
+    padding: 8px;
+  }
   .list-row__thumb {
     width: 168px;
   }
-  .list-row__acts {
+  .list-row__cat {
+    display: inline-block;
+  }
+  .item-actions.list-row__acts {
     display: flex;
   }
 }

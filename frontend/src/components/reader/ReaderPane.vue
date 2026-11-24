@@ -2,6 +2,7 @@
 import { ref, watch, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ArrowLeft, X, Maximize2, Minimize2, PanelLeft, PanelRight } from 'lucide-vue-next'
 import ItemActions from '@/components/items/ItemActions.vue'
+import Select from '@/components/ui/select/Select.vue'
 import Skeleton from '@/components/ui/skeleton/Skeleton.vue'
 import AnalysisTab from './AnalysisTab.vue'
 import ReaderTab from './ReaderTab.vue'
@@ -98,6 +99,10 @@ onBeforeUnmount(() => {
 })
 const merged = computed(() => isLg.value && paneW.value >= 840)
 const TABS = [{ id: 'analysis', label: '重點分析' }, { id: 'reader', label: '原文' }] as const
+const categoryOptions = computed(() => [
+  ...itemsStore.categories.filter((c) => c.name !== 'Inbox').map((c) => ({ value: c.name, label: c.name })),
+  { value: 'Inbox', label: '收件匣' },
+])
 
 // another item, or the other tab: start at the top, not where the last one was left
 watch(() => [ui.activeItem?.id, ui.detailTab], () => {
@@ -139,13 +144,16 @@ function changeTab(event: KeyboardEvent) {
           <span class="w-5 text-center tabular-nums">{{ ui.readerFontSize }}</span>
           <button class="item-action" :disabled="ui.readerFontSize >= 20" aria-label="放大字級" @click="ui.readerFontSize = Math.min(20, ui.readerFontSize + 1)">A+</button>
         </div>
-        <label class="mr-1 flex items-center gap-2 text-xs text-muted-foreground">
-          分類
-          <select :value="ui.activeItem.category_name" class="min-h-9 w-32 rounded-lg border border-border bg-card px-2 text-sm text-foreground" @change="updateCategory(ui.activeItem!, ($event.target as HTMLSelectElement).value)">
-            <option v-for="c in itemsStore.categories.filter(c => c.name !== 'Inbox')" :key="c.id" :value="c.name">{{ c.name }}</option>
-            <option value="Inbox">收件匣</option>
-          </select>
-        </label>
+        <div class="mr-1 flex items-center gap-2 text-xs text-muted-foreground">
+          <span>分類</span>
+          <Select
+            :model-value="ui.activeItem.category_name || 'Inbox'"
+            :options="categoryOptions"
+            aria-label="分類"
+            small
+            @update:model-value="updateCategory(ui.activeItem!, $event)"
+          />
+        </div>
         <span class="mr-2 text-xs text-muted-foreground">{{ ui.activeItem.is_read ? '已封存' : '未封存' }}</span>
         <template v-if="ui.sidesFit">
         <span class="mx-1 h-5 w-px bg-hairline" aria-hidden="true" />
@@ -164,27 +172,26 @@ function changeTab(event: KeyboardEvent) {
       </button>
       <button class="item-action hidden lg:flex" aria-label="關閉閱讀面板" title="關閉（Esc）" @click="closeReader"><X class="size-4" /></button>
     </div>
-    <div v-if="!merged" class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-hairline px-3 py-1 sm:px-4">
-      <div class="flex items-center gap-1" role="tablist" aria-label="閱讀模式" @keydown="changeTab">
+    <div v-if="!merged" class="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-hairline px-3 sm:px-4">
+      <div class="flex shrink-0 items-center gap-1" role="tablist" aria-label="閱讀模式" @keydown="changeTab">
         <button v-for="t in TABS" :id="'tab-' + t.id" :key="t.id"
           role="tab" :aria-selected="ui.detailTab === t.id" :aria-controls="'panel-' + t.id" :tabindex="ui.detailTab === t.id ? 0 : -1"
-          class="min-h-11 rounded-lg px-3 text-sm font-medium" :class="ui.detailTab === t.id ? 'bg-primary-soft text-primary-soft-foreground' : 'text-muted-foreground hover:bg-accent'"
+          class="min-h-10 rounded-lg px-3 text-sm font-medium transition-colors" :class="ui.detailTab === t.id ? 'bg-surface-2 text-foreground font-semibold' : 'text-muted-foreground hover:bg-surface-1'"
           @click="ui.detailTab = t.id">{{ t.label }}</button>
       </div>
-      <div class="flex items-center gap-2">
-        <div v-if="ui.detailTab === 'reader'" class="flex items-center text-xs text-muted-foreground" role="group" aria-label="原文字級">
-          <button class="item-action" :disabled="ui.readerFontSize <= 13" aria-label="縮小字級" @click="ui.readerFontSize = Math.max(13, ui.readerFontSize - 1)">A−</button>
-          <span class="w-5 text-center tabular-nums">{{ ui.readerFontSize }}</span>
-          <button class="item-action" :disabled="ui.readerFontSize >= 20" aria-label="放大字級" @click="ui.readerFontSize = Math.min(20, ui.readerFontSize + 1)">A+</button>
-        </div>
-        <label class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <span class="sr-only sm:not-sr-only">分類</span>
-          <select :value="ui.activeItem.category_name" aria-label="分類" class="min-h-11 w-32 max-w-full rounded-lg border border-border bg-card px-2 text-sm text-foreground" @change="updateCategory(ui.activeItem!, ($event.target as HTMLSelectElement).value)">
-            <option v-for="c in itemsStore.categories.filter(c => c.name !== 'Inbox')" :key="c.id" :value="c.name">{{ c.name }}</option>
-            <option value="Inbox">收件匣</option>
-          </select>
-        </label>
-        <span class="text-xs text-muted-foreground">{{ ui.activeItem.is_read ? '已封存' : '未封存' }}</span>
+      <div v-if="ui.detailTab === 'reader'" class="flex shrink-0 items-center text-xs text-muted-foreground" role="group" aria-label="原文字級">
+        <button class="item-action" :disabled="ui.readerFontSize <= 13" aria-label="縮小字級" @click="ui.readerFontSize = Math.max(13, ui.readerFontSize - 1)">A−</button>
+        <span class="w-6 text-center tabular-nums">{{ ui.readerFontSize }}</span>
+        <button class="item-action" :disabled="ui.readerFontSize >= 20" aria-label="放大字級" @click="ui.readerFontSize = Math.min(20, ui.readerFontSize + 1)">A+</button>
+      </div>
+      <div v-else class="min-w-0 max-w-[10rem] shrink">
+        <Select
+          :model-value="ui.activeItem.category_name || 'Inbox'"
+          :options="categoryOptions"
+          aria-label="分類"
+          small
+          @update:model-value="updateCategory(ui.activeItem!, $event)"
+        />
       </div>
     </div>
     <div v-if="detailError" class="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2 text-sm" role="alert">

@@ -480,32 +480,32 @@ function tabCount(id: string): number {
             <button
               type="button"
               :disabled="store.deciding"
-              class="inline-flex min-h-12 flex-col items-center justify-center rounded-xl bg-primary px-2 py-1.5 text-center text-xs font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
+              class="inline-flex min-h-12 flex-col items-center justify-center rounded-xl bg-primary px-2 py-2 text-center text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
               @click="handleApproveL2"
             >
               <Loader2 v-if="store.deciding" class="size-4 animate-spin" />
               <span v-else>核准進 L2</span>
-              <span class="text-[10px] font-normal opacity-85">僅入待實測</span>
+              <span class="text-xs font-normal opacity-85">僅入待實測</span>
             </button>
 
             <button
               type="button"
               :disabled="store.deciding"
-              class="inline-flex min-h-12 flex-col items-center justify-center rounded-xl border border-hairline bg-card px-2 py-1.5 text-center text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50"
+              class="inline-flex min-h-12 flex-col items-center justify-center rounded-xl border border-hairline bg-card px-2 py-2 text-center text-sm font-semibold text-foreground hover:bg-accent disabled:opacity-50"
               @click="openOnDemandMode"
             >
               <span>收為備案</span>
-              <span class="text-[10px] font-normal text-muted-foreground">0 token 常駐</span>
+              <span class="text-xs font-normal text-muted-foreground">0 token 常駐</span>
             </button>
 
             <button
               type="button"
               :disabled="store.deciding"
-              class="inline-flex min-h-12 flex-col items-center justify-center rounded-xl border border-hairline bg-card px-2 py-1.5 text-center text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              class="inline-flex min-h-12 flex-col items-center justify-center rounded-xl border border-hairline bg-card px-2 py-2 text-center text-sm font-semibold text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
               @click="actionMode = actionMode === 'reject' ? 'none' : 'reject'"
             >
               <span>拒絕</span>
-              <span class="text-[10px] font-normal">記理由防重推</span>
+              <span class="text-xs font-normal">記理由防重推</span>
             </button>
           </div>
         </div>
@@ -515,12 +515,12 @@ function tabCount(id: string): number {
     <!-- Evaluation Queue List -->
     <template v-else>
       <!-- Filter strip -->
-      <div class="flex shrink-0 gap-1.5 overflow-x-auto border-b border-hairline bg-shell px-3 py-2.5 sm:px-6">
+      <div class="no-scrollbar flex shrink-0 gap-2 overflow-x-auto border-b border-hairline bg-shell px-3 py-2.5 sm:px-6">
         <button
           v-for="tab in EVAL_FILTER_TABS"
           :key="tab.id"
           type="button"
-          class="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors"
+          class="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors"
           :class="
             store.statusFilter === tab.id
               ? 'border-primary bg-primary text-primary-foreground'
@@ -533,7 +533,7 @@ function tabCount(id: string): number {
         </button>
       </div>
 
-      <div class="mobile-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-6">
+      <div class="mobile-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6">
         <div class="mx-auto max-w-2xl space-y-2.5">
           <div v-if="store.loading && !store.evaluations.length" class="flex items-center justify-center py-16 text-sm text-muted-foreground">
             <Loader2 class="mr-2 size-4 animate-spin" />
@@ -557,28 +557,28 @@ function tabCount(id: string): number {
             class="flex w-full flex-col gap-2 rounded-xl border border-hairline bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/40"
             @click="store.openEvaluation(ev.id)"
           >
-            <div class="flex w-full items-center justify-between gap-2">
-              <span class="truncate text-sm font-semibold text-foreground">
+            <div class="flex w-full flex-col gap-1.5">
+              <span class="break-words text-base font-semibold leading-snug text-foreground">
                 {{ ev.l1?.name || ev.target_repo || ev.item_title }}
               </span>
               <span
-                class="shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-medium"
+                class="w-fit max-w-full rounded-md border px-2 py-0.5 text-xs font-medium"
                 :class="resolveBadgeUi(ev.security_badge).pillClass"
               >
                 {{ ev.status === 'queued' || ev.status === 'running_l0' ? '預研中' : resolveBadgeUi(ev.security_badge).label }}
               </span>
             </div>
 
-            <p v-if="ev.user_note" class="line-clamp-1 text-xs text-primary">
+            <p v-if="ev.user_note" class="line-clamp-2 text-xs leading-relaxed text-primary">
               問：{{ ev.user_note }}
             </p>
-            <p class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+            <p class="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
               {{ ev.l1?.summary || ev.item_summary || ev.error_message || '正在背景執行 L0/L1 檢查…' }}
             </p>
 
-            <div class="flex items-center gap-2 text-[11px] text-subtle-foreground">
-              <Clock class="size-3" />
-              <span>{{ ev.target_repo || ev.item_url }}</span>
+            <div class="flex min-w-0 items-center gap-2 text-xs text-subtle-foreground">
+              <Clock class="size-3.5 shrink-0" />
+              <span class="truncate">{{ ev.target_repo || ev.item_url }}</span>
             </div>
           </button>
         </div>

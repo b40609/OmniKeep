@@ -653,6 +653,7 @@ test('in the cover wall J/K move a cursor, Enter opens it, and E/S act on it', a
     assert.deepEqual(acted, [])              // nothing selected yet
     key('j'); key('j')
     assert.equal(ctx.ui.cursorId, 2)
+    assert.equal(ctx.ui.cursorVisible, true)
     assert.equal(ctx.ui.activeItem, null)    // moving does not open (or log a view)
     key('k')
     assert.equal(ctx.ui.cursorId, 1)
@@ -668,6 +669,10 @@ test('in the cover wall J/K move a cursor, Enter opens it, and E/S act on it', a
     key('Escape')
     assert.equal(ctx.ui.activeItem, null)
     assert.equal(ctx.ui.cursorId, 2)         // closing keeps the place
+    // Pointer/touch interaction hides the keyboard focus ring while preserving cursorId for later J/K.
+    window.dispatchEvent(new Event('pointerdown'))
+    assert.equal(ctx.ui.cursorVisible, false)
+    assert.equal(ctx.ui.cursorId, 2)
   } finally { view.unmount() }
 })
 
