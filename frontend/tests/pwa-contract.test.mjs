@@ -24,5 +24,5 @@ test('iOS standalone PWA pushes top chrome past the system status-bar blur veil'
   const css = await readFile(new URL('../src/assets/main.css', import.meta.url), 'utf8')
   assert.match(css, /@supports\s*\(-webkit-touch-callout:\s*none\)/)
   assert.match(css, /@media\s*\(display-mode:\s*standalone\)/)
-  assert.match(css, /--safe-top:\s*calc\(max\(0px,\s*env\(safe-area-inset-top\)\)\s*\+\s*28px\)/)
+  assert.match(css, /--safe-top:\s*calc\(max\(0px,\s*env\(safe-area-inset-top\)\)\s*\+\s*18px\)/)
 })
