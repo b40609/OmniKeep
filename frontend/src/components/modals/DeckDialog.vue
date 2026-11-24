@@ -194,7 +194,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   <Dialog :open="ui.showDeckModal" @update:open="(v) => (ui.showDeckModal = v)">
     <DialogContent
       :show-close="false"
-      class="flex max-h-[100dvh] max-w-md flex-col gap-4 max-sm:h-[100dvh] max-sm:max-w-none max-sm:rounded-none max-sm:border-0 max-sm:pt-[max(1.5rem,env(safe-area-inset-top))] max-sm:pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+      class="flex max-h-[100dvh] max-w-md flex-col gap-4 max-sm:h-[100dvh] max-sm:max-w-none max-sm:rounded-none max-sm:border-0 max-sm:pt-[max(1.5rem,var(--safe-top))] max-sm:pb-[max(1.5rem,env(safe-area-inset-bottom))]"
     >
       <DialogHeader>
         <div class="flex items-center gap-2">

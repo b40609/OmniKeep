@@ -23,7 +23,7 @@
     align-items: center;
     gap: 8px;
     padding: 0 16px 0 8px;
-    padding-top: env(safe-area-inset-top);
+    padding-top: var(--safe-top, env(safe-area-inset-top));
     box-sizing: content-box;
   }
   .settings__top h1 {

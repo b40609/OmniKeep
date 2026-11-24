@@ -581,8 +581,21 @@ option {
 /* ============================================================
    SAFE AREA (iOS PWA)
    ============================================================ */
+:root {
+  --safe-top: max(0px, env(safe-area-inset-top));
+}
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    :root {
+      /* iOS 26/27 standalone PWA overlays a system progressive blur veil down to ~95pt
+         from screen top (~33pt below safe-area-inset-top on Dynamic Island iPhones).
+         Add 28px solid --shell buffer so top header controls start clear of the veil. */
+      --safe-top: calc(max(0px, env(safe-area-inset-top)) + 28px);
+    }
+  }
+}
 .safe-top {
-  padding-top: max(0px, env(safe-area-inset-top));
+  padding-top: var(--safe-top);
 }
 .safe-bottom {
   padding-bottom: max(0px, env(safe-area-inset-bottom));

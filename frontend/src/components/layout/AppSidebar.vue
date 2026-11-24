@@ -88,7 +88,7 @@ const menu = useMenuAction()
   />
 
   <aside
-    class="z-40 flex h-full shrink-0 flex-col bg-shell transition-[width,transform] duration-200 motion-reduce:transition-none max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:w-72 max-md:border-r max-md:border-hairline max-md:pt-[env(safe-area-inset-top)]"
+    class="z-40 flex h-full shrink-0 flex-col bg-shell transition-[width,transform] duration-200 motion-reduce:transition-none max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:w-72 max-md:border-r max-md:border-hairline max-md:pt-[var(--safe-top)]"
     :inert="!desktop && !ui.sidebarMobileOpen"
     aria-label="主要導覽"
     :class="[rail ? 'md:w-[72px]' : 'md:w-60', ui.sidebarMobileOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full']"
