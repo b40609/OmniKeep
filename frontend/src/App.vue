@@ -445,7 +445,7 @@ onUnmounted(() => {
       {{ loggingIn ? '驗證中…' : '登入' }}
     </button>
   </form>
-  <div v-else class="relative z-10 flex h-[100dvh] w-screen flex-col overflow-hidden bg-shell text-foreground">
+  <div v-else class="fixed inset-0 z-10 flex flex-col overflow-hidden bg-shell text-foreground">
     <!-- Top bar spans the full width; the sidebar and the workspace sit under it -->
     <AppHeader ref="headerRef" :inert="ui.showSettingsModal" @logout="handleLogout" />
     <ServiceStatusBanner />

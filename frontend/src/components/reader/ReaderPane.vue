@@ -190,7 +190,7 @@ function changeTab(event: KeyboardEvent) {
     <div v-if="detailError" class="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2 text-sm" role="alert">
       <span>{{ detailError }}</span><button class="min-h-11 px-2 font-medium underline underline-offset-4" @click="loadFull(ui.activeItem.id)">重試</button>
     </div>
-    <div :id="'panel-' + ui.detailTab" data-reader-scroll role="tabpanel" :aria-labelledby="'tab-' + ui.detailTab" tabindex="0" :aria-busy="fetchingFull" class="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none">
+    <div :id="'panel-' + ui.detailTab" data-reader-scroll role="tabpanel" :aria-labelledby="'tab-' + ui.detailTab" tabindex="0" :aria-busy="fetchingFull" class="mobile-scroll relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
       <ReadingProgress />
       <div v-if="fetchingFull && !ui.activeItem.citations && !ui.activeItem.deep_analysis" class="mx-auto max-w-3xl space-y-4 p-6 lg:p-8" aria-label="正在載入完整內容">
         <Skeleton class="h-7 w-3/4" /><Skeleton class="h-4 w-1/2" />

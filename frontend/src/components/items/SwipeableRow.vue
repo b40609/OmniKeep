@@ -51,8 +51,8 @@ function onTouchMove(e: TouchEvent) {
   const mx = t.clientX - startX
   const my = t.clientY - startY
   if (horizontal === null) {
-    if (Math.abs(mx) < 8 && Math.abs(my) < 8) return
-    horizontal = Math.abs(mx) > Math.abs(my)
+    if (Math.abs(mx) < 12 && Math.abs(my) < 12) return
+    horizontal = Math.abs(mx) > Math.abs(my) * 1.5
   }
   if (!horizontal) return
   e.preventDefault()
@@ -117,12 +117,12 @@ function onTouchCancel() {
 
     <!-- The row, translated by touch with spring curve -->
     <div
-      class="swipe-content"
+      class="swipe-content touch-pan-y"
       :style="{
         transform: `translateX(${dx}px)`,
         transition: dragging ? 'none' : 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',
       }"
-      @touchstart="onTouchStart"
+      @touchstart.passive="onTouchStart"
       @touchmove="onTouchMove"
       @touchend="onTouchEnd"
       @touchcancel="onTouchCancel"

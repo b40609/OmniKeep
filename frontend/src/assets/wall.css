@@ -27,6 +27,31 @@
     filter: brightness(var(--cover-dim));
     transition: filter 150ms ease-out;
   }
+  /* On touch screens, avoid CSS filter GPU passes and sticky :hover animations during scroll. */
+  @media (hover: none) {
+    .item-cover--image {
+      filter: none;
+      transition: none;
+    }
+    .item-cover--image::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: #000;
+      opacity: calc(1 - var(--cover-dim));
+      pointer-events: none;
+    }
+    .is-read .item-cover--image {
+      filter: none;
+    }
+    .is-read .item-cover--image::after {
+      opacity: calc(1 - var(--cover-dim-read));
+    }
+    .item-cover--hero.item-cover--image::after,
+    .cover-host.is-active .item-cover--image::after {
+      opacity: 0;
+    }
+  }
   .item-cover img {
     display: block;
     width: 100%;
@@ -113,9 +138,6 @@
     position: relative;
     min-width: 0;
     border-radius: 12px;
-    /* Cells far off screen are not laid out or painted, so hundreds of them stay cheap. */
-    content-visibility: auto;
-    contain-intrinsic-size: auto 340px;
   }
   /* Keyboard position (J/K) and Tab focus share one ring around the whole cell. */
   .cover-card.is-cursor,

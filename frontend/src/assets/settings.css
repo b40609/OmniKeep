@@ -41,6 +41,9 @@
     width: 240px;
     flex: none;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
     padding: 12px;
   }
   .settings__main {
@@ -48,7 +51,8 @@
     flex: 1;
     overflow-x: hidden;
     overflow-y: auto;
-    overscroll-behavior-x: none;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
     padding: 12px 24px 96px;
     scroll-padding-top: 24px;

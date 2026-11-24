@@ -100,7 +100,7 @@ const menu = useMenuAction()
         <button class="icon-button" aria-label="關閉選單" @click="ui.sidebarMobileOpen = false"><X /></button>
       </div>
 
-      <nav class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3" aria-label="收藏與分類">
+      <nav class="mobile-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3" aria-label="收藏與分類">
         <!-- 1. Views -->
         <SidebarRow
           v-for="v in views"

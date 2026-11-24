@@ -600,6 +600,13 @@ option {
 .safe-bottom {
   padding-bottom: max(0px, env(safe-area-inset-bottom));
 }
+/* Dedicated scroll container rules for iOS WebKit: prevent scroll-chaining freezes
+   and ensure smooth 120Hz momentum scrolling without gesture lockups. */
+.mobile-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
 
 /* Compatibility names keep existing dialogs on the same opaque surface. */
 .ios-blur, .glass, .glass-strong, .glass-tint { background: var(--card); }

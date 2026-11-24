@@ -26,3 +26,10 @@ test('iOS standalone PWA pushes top chrome past the system status-bar blur veil'
   assert.match(css, /@media\s*\(display-mode:\s*standalone\)/)
   assert.match(css, /--safe-top:\s*calc\(max\(0px,\s*env\(safe-area-inset-top\)\)\s*\+\s*18px\)/)
 })
+
+test('mobile scroll panes avoid iOS WebKit scroll-freeze traps', async () => {
+  const wallCss = await readFile(new URL('../src/assets/wall.css', import.meta.url), 'utf8')
+  assert.doesNotMatch(wallCss, /content-visibility:\s*auto/)
+  const mainCss = await readFile(new URL('../src/assets/main.css', import.meta.url), 'utf8')
+  assert.match(mainCss, /\.mobile-scroll\s*\{[^}]*overscroll-behavior:\s*contain[^}]*touch-action:\s*pan-y/s)
+})
