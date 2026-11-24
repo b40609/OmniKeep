@@ -110,13 +110,19 @@ async def ingest_url(
 
     # Otherwise process and return full item
     try:
-        item = await run_pipeline(clean_input, req.category,
-                                  page_title=_page_hint(req.page_title, 300),
-                                  page_description=_page_hint(req.page_description, 1000),
-                                  user_note=user_note,
-                                  intent=intent,
-                                  target_project=target_project,
-                                  **({"as_note": True} if as_note else {}))
+        pipeline_kw: dict = {
+            "page_title": _page_hint(req.page_title, 300),
+            "page_description": _page_hint(req.page_description, 1000),
+        }
+        if user_note:
+            pipeline_kw["user_note"] = user_note
+        if intent != "read":
+            pipeline_kw["intent"] = intent
+        if target_project:
+            pipeline_kw["target_project"] = target_project
+        if as_note:
+            pipeline_kw["as_note"] = True
+        item = await run_pipeline(clean_input, req.category, **pipeline_kw)
         evaluation_id = None
         if intent == "agent_eval" and item and item.get("id"):
             from app.eval.runner import enqueue_evaluation_for_item

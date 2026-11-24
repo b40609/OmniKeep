@@ -2,7 +2,7 @@
 
 這是什麼：讓外部的 coding agent（Claude Code、Codex、Antigravity 等）透過 Model Context Protocol（MCP）查詢你的收藏、把結論寫回 OmniKeep。不用 agent 的話不需要看這份文件。
 
-**一般使用者不用手動設定。** 安裝腳本（`scripts/install.ps1`、`scripts/install.sh`）最後會執行 `scripts/register_agents.py`，把 stdio MCP 與 `omnikeep-setup` Skill 註冊到這台電腦的 Claude Code、Codex、Antigravity。裝好後開一個新的 agent session 就能用。
+**一般使用者不用手動設定。** 安裝腳本（`scripts/install.ps1`、`scripts/install.sh`）最後會執行 `scripts/register_agents.py`，把 stdio MCP 與 `skills/` 內的 Skill（`omnikeep-setup`、`omnikeep-review`）註冊到這台電腦的 Claude Code、Codex、Antigravity。裝好後開一個新的 agent session 就能用。
 
 下面是給要手動設定，或要從別台電腦連進來的人看的。
 
@@ -89,7 +89,7 @@ claude mcp add --transport http omnikeep --scope user https://<主機名>.<tailn
 
 ---
 
-## 工具清單（26 個）
+## 工具清單（29 個）
 
 以 `app/mcp_server.py` 裡的 `@mcp.tool()` 為準。工具名稱與參數是程式識別字，維持原文（例如 `search_brain`、`omnikeep_run_radar`）；名稱裡的 brain 指你的收藏，radar 指探索，proposal 指專案監看的建議。
 
@@ -101,12 +101,12 @@ claude mcp add --transport http omnikeep --scope user https://<主機名>.<tailn
 | `hybrid_search_brain` | `query`、`category`、`is_starred`、`is_read`、`limit`（預設 5） | 全文檢索加向量語意檢索，用 RRF 合併；關鍵字對不上時也找得到相關內容 |
 | `get_item_architecture` | `item_id` | 單一則收藏的摘要與重點分析，不含原文 |
 | `get_item_raw` | `item_id`、`max_chars`（預設 2500） | 原文節錄；要看原始程式碼或逐字引述時才用 |
-| `get_item_detail` | `item_id`、`include_raw`（預設 false） | 同 `get_item_architecture`；`include_raw=true` 時附上原文節錄 |
+| `get_item_detail` | `item_id`、`include_raw`（預設 false）、`raw_limit`（預設 8000） | 同 `get_item_architecture`；`include_raw=true` 時附上原文節錄 |
 | `list_recent_items` | `triage_status`（`inbox`、`starred`、`archived`、`all`）、`category`、`limit`（預設 5） | 列出最近的收藏 |
 | `read_sql_query` | `query`、`limit`（預設 50） | 唯讀 SQL（`SELECT`、`PRAGMA`、`EXPLAIN`、`WITH`）；連線本身是唯讀的，寫入會被拒絕 |
 | `ask_brain_synthesis` | `topic`、`top_k`（預設 5） | 找出和主題相關的多則收藏，交給 AI 寫跨篇比較 |
 
-### 寫入（3 個）
+### 寫入（4 個）
 
 | 工具 | 參數 | 說明 |
 | :--- | :--- | :--- |
@@ -114,6 +114,16 @@ claude mcp add --transport http omnikeep --scope user https://<主機名>.<tailn
 | `writeback_insight` | `title`、`summary`、`architecture_details`、`category`、`tech_tags`、`related_item_id` | 把和 agent 討論出的結論寫成一則新收藏；給 `related_item_id` 會建立引用關聯 |
 | `update_item_status` | `item_id`、`is_read`、`is_starred` | 封存（標記已讀）或加星 |
 | `attach_item_diagram` | `item_id`、`path` 或 `html` | 把 agent 用 Archify 畫好的架構圖 HTML 存進收藏，分析頁的「agent 架構圖」會在隔離框裡顯示（上限 8 MB） |
+
+### 工具評估閉環（3 個）
+
+配合 `omnikeep-review` Skill，在桌機開發對話檢視手機端核准實測的工具或按情境動態召回備案工具。
+
+| 工具 | 參數 | 說明 |
+| :--- | :--- | :--- |
+| `list_agent_queue` | `status`（預設 `needs_decision`）、`limit`（預設 20） | 列出待拍板（`needs_decision`）或手機已核准待桌機實測（`approved_l2`）的評估工單 |
+| `record_agent_decision` | `item_id`、`decision`、`note`、`trigger_when` | 記錄人類或桌機 Layer 2 實測後的最終判定（`adopted`、`on_demand`、`rejected` 等）並同步回寫 OmniKit |
+| `search_on_demand_tools` | `query`、`limit`（預設 5） | 漸進式揭露（Progressive Disclosure）：依觸發條件或問題關鍵字動態召回平日 0 token 常駐的情境備案工具 |
 
 ### 專案監看與建議（3 個，實驗功能）
 

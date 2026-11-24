@@ -412,11 +412,13 @@ class TaskWorker:
 
         try:
             # 3. Execute intelligence pipeline, for a bounded time
-            pipeline_kw: Dict[str, Any] = {
-                "user_note": user_note,
-                "intent": intent,
-                "target_project": target_project,
-            }
+            pipeline_kw: Dict[str, Any] = {}
+            if user_note:
+                pipeline_kw["user_note"] = user_note
+            if intent != "read":
+                pipeline_kw["intent"] = intent
+            if target_project:
+                pipeline_kw["target_project"] = target_project
             if task.get("category"):
                 pipeline_kw["manual_category"] = task["category"]
             item = await self._run_with_timeout(
