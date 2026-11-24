@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- OmniKeep mark: a saved bookmark with three summary lines. Primary blue #0065d1 (main.css primary token).
+       Source for the PWA icons: npm run generate-pwa-assets -->
+  <rect width="512" height="512" rx="115" fill="#0065d1"/>
+  <path d="M156 132H356V380L256 320L156 380Z" fill="#fff" stroke="#fff" stroke-width="32" stroke-linejoin="round"/>
+  <g stroke="#0065d1" stroke-width="22" stroke-linecap="round">
+    <path d="M204 186H308"/>
+    <path d="M204 236H308"/>
+    <path d="M204 286H262"/>
+  </g>
+</svg>

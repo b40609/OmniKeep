@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>OmniKeep｜Telegram 連結收藏，裝在你自己的電腦</title>
+  <meta name="description" content="自架的連結收藏工具。在 Telegram 把連結丟給自己的機器人，OmniKeep 把網頁、影片、社群貼文讀完寫好摘要，之後用搜尋或提問就找得到。資料存在你自己的電腦。">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
+  <meta property="og:title" content="OmniKeep｜Telegram 連結收藏，裝在你自己的電腦">
+  <meta property="og:description" content="在 Telegram 丟連結，OmniKeep 幫你讀完，之後找得到。自架、開源 MIT，資料存在你自己的電腦。">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="assets/img/share.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/img/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">跳到主要內容</a>
+
+  <!-- 頂部置中毛玻璃導覽（C 結構 + A 藍銀質感 + App 藍色書籤） -->
+  <header class="nav" id="nav">
+    <div class="nav__in">
+      <a class="brand" href="#top" aria-label="OmniKeep 回到頂端">
+        <img src="assets/img/logo.svg" alt="" width="24" height="24">
+        <span>OmniKeep</span>
+      </a>
+      <nav class="nav__links" aria-label="頁面導覽">
+        <a href="#how">怎麼運作</a>
+        <a href="#capture">收錄</a>
+        <a href="#read">讀取</a>
+        <a href="#find">搜尋</a>
+        <a href="#data">資料</a>
+      </nav>
+      <div class="nav__actions">
+        <a class="nav__gh" href="https://github.com/b40609/OmniKeep" target="_blank" rel="noopener" aria-label="GitHub 原始碼">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+        <a class="pill pill--sm pill--primary" href="#start">安裝 OmniKeep</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ============ HERO（C 首屏構圖 + A 上半部冷藍光暈質感 + App 藍色書籤） ============ -->
+    <section class="hero" id="top" aria-labelledby="hero-h">
+      <div class="hero__light" aria-hidden="true"></div>
+      <div class="hero__copy">
+        <p class="hero__brand"><img src="assets/img/logo.svg" alt="" width="28" height="28">OmniKeep</p>
+        <h1 id="hero-h">Telegram 連結收藏，<br><span class="grad">裝在你自己的電腦</span>。</h1>
+        <p class="hero__lead">把連結傳給自己的機器人，網頁、影片與社群貼文都幫你讀完寫好摘要；<br class="br-lg">之後用搜尋或提問就找得到。</p>
+        <div class="hero__cta">
+          <a class="pill pill--primary" href="#start">三分鐘開始用</a>
+          <a class="more-link" href="https://github.com/b40609/OmniKeep" target="_blank" rel="noopener">到 GitHub 看原始碼</a>
+        </div>
+        <p class="hero__fact">自架・開源 MIT・Windows、macOS、Linux・資料存本機</p>
+      </div>
+
+      <figure class="hero__shot" id="heroShot">
+        <div class="hero__frame">
+          <picture>
+            <source media="(max-width: 734px)" srcset="assets/shots/inbox-m.webp" width="824" height="438">
+            <img src="assets/shots/inbox.webp" width="1920" height="1080" alt="OmniKeep 收件匣實際畫面：16 則公開收藏依卡片排列，上排為 OmniKeep、Claude 個人理財、常駐 AI 代理、Lean，下排為 Raycast MCP、opencode、Vercel 與 Claude Code，每張卡片皆含預覽圖、AI 摘要與來源網域。" fetchpriority="high">
+          </picture>
+        </div>
+      </figure>
+    </section>
+
+    <!-- ============ 01 怎麼運作（三步驟，B 結構） ============ -->
+    <section class="chapter" id="how">
+      <div class="wrap">
+        <header class="chead reveal">
+          <p class="eyebrow">怎麼運作</p>
+          <h2 class="headline">收藏很容易，<br>找回來很難。</h2>
+          <p class="lede">看到值得留的連結，收了常常就沒再看，要用的時候也找不到。OmniKeep 主要做一件事，<b>分成三步：丟連結、幫你讀完、找得到。</b></p>
+        </header>
+
+        <ol class="steps">
+          <li class="tile step reveal">
+            <figure class="step__art">
+              <img src="assets/shots/step-add.webp" width="576" height="406" loading="lazy" alt="OmniKeep 的新增面板：貼上一個 YouTube 連結、選擇 AI 自動分類，右下角是收藏連結按鈕。">
+            </figure>
+            <div class="step__txt">
+              <span class="step__no">1</span>
+              <h3>丟連結</h3>
+              <p>在 Telegram 把連結傳給<b>自己的機器人</b>；在電腦前，就按頂部的「新增」貼上。</p>
+            </div>
+          </li>
+          <li class="tile step reveal">
+            <figure class="step__art">
+              <img src="assets/shots/step-read.webp" width="688" height="574" loading="lazy" alt="YouTube 收藏詳情：標題「Claude 個人理財：讀取銀行餘額分析花銷」、在 YouTube 觀看按鈕、影片封面與完整摘要。">
+            </figure>
+            <div class="step__txt">
+              <span class="step__no">2</span>
+              <h3>幫你讀完</h3>
+              <p>網頁、影片（YouTube、Bilibili、短影音）、社群貼文（Threads、X）都會抓下內容，交給你接上的 AI <b>寫出摘要與重點</b>。</p>
+            </div>
+          </li>
+          <li class="tile step reveal">
+            <figure class="step__art">
+              <img src="assets/shots/step-ask.webp" width="896" height="520" loading="lazy" alt="提問「Claude 個人理財會動到我的銀行帳戶嗎？」，AI 分點回答並標註引用編號，下方列出引用的收藏。">
+            </figure>
+            <div class="step__txt">
+              <span class="step__no">3</span>
+              <h3>找得到</h3>
+              <p>用關鍵字或語意搜尋，或直接在搜尋框提問，<b>回答會附上引用的收藏</b>。</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ============ 02 收錄（6 欄 Bento，B 結構） ============ -->
+    <section class="chapter chapter--alt" id="capture">
+      <div class="wrap">
+        <header class="chead reveal">
+          <p class="eyebrow">收錄</p>
+          <h2 class="headline">一個連結，<br>從哪裡丟都行。</h2>
+          <p class="lede"><b>Telegram 是主要入口</b>，把連結傳給自己的私人機器人，收錄後回覆摘要卡。其他管道，依你的習慣挑。</p>
+        </header>
+
+        <div class="bento">
+          <article class="tile b-tg reveal">
+            <div class="tile__txt">
+              <p class="tile__kicker">主要入口</p>
+              <h3>Telegram 機器人</h3>
+              <p>用一次性配對連結綁定你的帳號。傳連結過去，<b>處理完它會回一張有摘要的卡片</b>。</p>
+            </div>
+            <div class="b-tg__art" aria-hidden="true">
+              <svg viewBox="0 0 120 120"><path d="M14 58.5L104 18 79 102 60 74 14 58.5z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M60 74l44-56" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            </div>
+          </article>
+          <article class="tile b-sm reveal">
+            <svg class="tile__ico" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 8h20a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14l-6 5v-5H6a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+            <h3>LINE 官方帳號</h3>
+            <p>同樣是轉發連結就收錄，支援長文與 Flex 訊息卡回覆。</p>
+          </article>
+          <article class="tile b-sm reveal">
+            <span class="tile__key" aria-hidden="true"><kbd>N</kbd></span>
+            <h3>網頁上的「新增」</h3>
+            <p>一個面板，貼連結、寫筆記、把書籤檔拖進來都從這裡。</p>
+          </article>
+          <article class="tile b-sm reveal">
+            <svg class="tile__ico" viewBox="0 0 32 32" aria-hidden="true"><rect x="9" y="3" width="14" height="26" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M14 25.5h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <h3>手機</h3>
+            <p>iOS 原生捷徑（Share Sheet）一鍵收錄，或把 PWA 加到主畫面獨立操作。</p>
+          </article>
+          <article class="tile b-sm reveal">
+            <svg class="tile__ico" viewBox="0 0 32 32" aria-hidden="true"><path d="M11 9l-7 7 7 7M21 9l7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <h3>外部 agent（MCP）</h3>
+            <p>同一台電腦用 stdio，別台電腦用 Streamable HTTP（經 Tailscale）。安裝腳本會自動註冊到 Claude Code、Codex、Antigravity。</p>
+          </article>
+          <article class="tile b-sm reveal">
+            <svg class="tile__ico" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 10h22M5 16h22M5 22h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <h3>REST API</h3>
+            <p>內建 Swagger 文件，方便腳本與自動化流程串接。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 03 讀取（詳情切換 Showcase + 內容輪播 + 摘要與分析對照，B 結構） ============ -->
+    <section class="chapter" id="read">
+      <div class="wrap">
+        <header class="chead reveal">
+          <p class="eyebrow">讀取</p>
+          <h2 class="headline">影片、貼文、長文，<br><span class="grad">都讀成文字</span>。</h2>
+          <p class="lede">不是只存網址。每一種內容用適合它的方式讀，<b>沒字幕的 YouTube 也轉成逐字稿</b>，帶 [MM:SS] 時間與章節。</p>
+        </header>
+
+        <div class="showcase reveal" id="detail">
+          <div class="seg showcase__tabs" role="tablist" aria-label="切換收藏類型">
+            <button role="tab" id="d-yt" aria-selected="true" aria-controls="dp-yt">YouTube 影片</button>
+            <button role="tab" id="d-gh" aria-selected="false" aria-controls="dp-gh" tabindex="-1">GitHub 專案</button>
+            <button role="tab" id="d-x" aria-selected="false" aria-controls="dp-x" tabindex="-1">X 貼文</button>
+          </div>
+          <div class="window window--detail">
+            <div class="window__bar" aria-hidden="true"><i></i><i></i><i></i><span>127.0.0.1:5000</span></div>
+            <figure class="showcase__pane" id="dp-yt" role="tabpanel" aria-labelledby="d-yt">
+              <picture>
+                <source media="(max-width: 734px)" srcset="assets/shots/detail-yt-m.webp" width="688" height="908">
+                <img src="assets/shots/detail-yt.webp" width="1376" height="1004" loading="lazy" alt="YouTube 收藏詳情頁：左側為本篇目錄，中間為標題、在 YouTube 觀看按鈕、影片封面、摘要、相關項目與重點分析，右側為來源資訊、標籤與相關收藏。">
+              </picture>
+              <figcaption>YouTube 影片：摘要、重點分析、最重要的 3 件事，點主按鈕可隨時回原影片；右側列出相關收藏。</figcaption>
+            </figure>
+            <figure class="showcase__pane" id="dp-gh" role="tabpanel" aria-labelledby="d-gh" hidden>
+              <picture>
+                <source media="(max-width: 734px)" srcset="assets/shots/detail-gh-m.webp" width="688" height="908">
+                <img src="assets/shots/detail-gh.webp" width="1376" height="1004" loading="lazy" alt="GitHub 專案 OmniKeep 詳情頁：在 GitHub 開啟按鈕、專案封面卡、Agent 工具評估列、摘要、相關項目與右側相關收藏。">
+              </picture>
+              <figcaption>GitHub 專案：完整解析架構與規格重點，右側自動串連相關專案與原始引用來源。</figcaption>
+            </figure>
+            <figure class="showcase__pane" id="dp-x" role="tabpanel" aria-labelledby="d-x" hidden>
+              <picture>
+                <source media="(max-width: 734px)" srcset="assets/shots/detail-x-m.webp" width="688" height="908">
+                <img src="assets/shots/detail-x.webp" width="1376" height="1004" loading="lazy" alt="X 貼文詳情頁：「Claude Code：iOS 模擬器支援 iPhone Duo 折疊測試」，含在 X 查看按鈕、貼文附圖、摘要、重點分析與社群實測反例目錄。">
+              </picture>
+              <figcaption>X 貼文：保留貼文附圖、重點拆解與社群留言討論，不用翻回時間軸大海撈針。</figcaption>
+            </figure>
+          </div>
+        </div>
+
+        <div class="rail-wrap reveal">
+          <ul class="rail" id="rail" aria-label="各種內容怎麼讀">
+            <li class="tile card">
+              <p class="card__k">YouTube</p>
+              <h3>接上 Gemini，直接解析影片。</h3>
+              <p>主機不用下載。沒有 Gemini 時讀字幕，沒字幕就用本機語音轉錄（中文用<b>台灣華語微調的 Breeze-ASR-25</b>）。選裝畫面 OCR 後，再補上投影片、圖表上旁白沒講到的字。</p>
+            </li>
+            <li class="tile card">
+              <p class="card__k">Bilibili 長影片</p>
+              <h3>先用官方逐字稿。</h3>
+              <p>先用官方 CC／AI 逐字稿 JSON，沒有時改抓 DASH 音訊，交給本機 <b>faster-whisper</b> 轉錄（GPU／CPU 自動切換，選用安裝）。</p>
+            </li>
+            <li class="tile card">
+              <p class="card__k">Reels・TikTok・Shorts</p>
+              <h3>畫面和聲音一起讀。</h3>
+              <p>關鍵幀 OCR 加語音轉錄（本機或雲端），<b>兩邊的文字合併後再分析</b>。</p>
+            </li>
+            <li class="tile card">
+              <p class="card__k">Threads・X</p>
+              <h3>社群貼文也收得下。</h3>
+              <p>抓下貼文正文與附圖，交給你接上的 AI <b>寫出摘要與重點</b>。</p>
+            </li>
+            <li class="tile card">
+              <p class="card__k">長文</p>
+              <h3>原網頁沒了，還看得到。</h3>
+              <p>用 trafilatura 清掉廣告與雜訊，並<b>存一份 HTML 快照</b>；原網頁失效後仍然看得到。</p>
+            </li>
+          </ul>
+          <div class="rail-ctrl">
+            <div class="dots" role="group" aria-label="切換卡片"></div>
+            <div class="arrows">
+              <button type="button" class="arrow" data-dir="-1" aria-label="上一張"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <button type="button" class="arrow" data-dir="1" aria-label="下一張"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 摘要與重點分析 -->
+        <div class="layers">
+          <article class="tile layer reveal">
+            <p class="tile__kicker">摘要</p>
+            <h3>先看摘要。</h3>
+            <p>卡片上是一個說重點的標題、一句白話說明，以及來源與收錄時間。</p>
+            <figure class="layer__shot"><img src="assets/shots/layer-cards.webp" width="824" height="334" loading="lazy" alt="收件匣裡的兩張卡片：「OmniKeep」與「Claude 個人理財」，各有封面、重點標題、一句白話說明與來源。"></figure>
+          </article>
+          <article class="tile layer reveal">
+            <p class="tile__kicker">重點分析</p>
+            <h3>需要再看重點分析。</h3>
+            <p>打開收藏可以看完整的分析（最重要的 3 件事、我可以怎麼用、架構與關聯圖），以及 Markdown 原文閱讀模式。</p>
+            <figure class="layer__shot"><img src="assets/shots/layer-analysis.webp" width="688" height="496" loading="lazy" alt="詳情頁的重點分析、最重要的 3 件事、我可以怎麼用與關聯圖。"></figure>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 04 搜尋與提問（Tab Showcase + Trio，B 結構） ============ -->
+    <section class="chapter chapter--alt" id="find">
+      <div class="wrap">
+        <header class="chead reveal">
+          <p class="eyebrow">找得到</p>
+          <h2 class="headline">問一句，<br>它從你的收藏裡回答。</h2>
+          <p class="lede">頂部只有一個搜尋框，<b>搜尋、提問、篩選都在這裡</b>。提問時先檢索相關的收藏，再交給 AI 回答，回答裡附上引用的來源編號。</p>
+        </header>
+
+        <div class="showcase reveal" id="demo">
+          <div class="seg showcase__tabs" role="tablist" aria-label="切換提問、搜尋或篩選">
+            <button role="tab" id="tab-ask" aria-selected="true" aria-controls="pane-ask">提問</button>
+            <button role="tab" id="tab-search" aria-selected="false" aria-controls="pane-search" tabindex="-1">搜尋</button>
+            <button role="tab" id="tab-filter" aria-selected="false" aria-controls="pane-filter" tabindex="-1">篩選</button>
+          </div>
+          <div class="window">
+            <div class="window__bar" aria-hidden="true"><i></i><i></i><i></i><span>127.0.0.1:5000</span></div>
+            <figure class="showcase__pane" id="pane-ask" role="tabpanel" aria-labelledby="tab-ask">
+              <picture>
+                <source media="(max-width: 734px)" srcset="assets/shots/ask-m.webp" width="896" height="972">
+                <img src="assets/shots/ask.webp" width="1920" height="1080" loading="lazy" alt="提問視窗：問「Claude 個人理財會動到我的銀行帳戶嗎？」，回答分點說明並標上引用編號，下方列出引用的 5 則收藏與相關分數。">
+              </picture>
+              <figcaption>提問：回答裡的 [1] 對到下面列出的收藏，點「開啟」直接打開那一則。</figcaption>
+            </figure>
+            <figure class="showcase__pane" id="pane-search" role="tabpanel" aria-labelledby="tab-search" hidden>
+              <picture>
+                <source media="(max-width: 734px)" srcset="assets/shots/search-m.webp" width="700" height="456">
+                <img src="assets/shots/search.webp" width="1920" height="1080" loading="lazy" alt="頂部搜尋框輸入「Claude」，下拉選單有「搜尋」與「提問」兩個選項，後方顯示 8 則依相關度排序的結果。">
+              </picture>
+              <figcaption>搜尋：同一個框，按 Enter 搜尋關鍵字，按 Tab 直接切到對收藏提問。</figcaption>
+            </figure>
+            <figure class="showcase__pane" id="pane-filter" role="tabpanel" aria-labelledby="tab-filter" hidden>
+              <picture>
+                <source media="(max-width: 734px)" srcset="assets/shots/filter-m.webp" width="824" height="438">
+                <img src="assets/shots/filter.webp" width="1920" height="560" loading="lazy" alt="收件匣上方切到「影片」，4 支橫式 YouTube 影片整齊排成一列。">
+              </picture>
+              <figcaption>篩選：上方一鍵切到專案、貼文、影片或文章，只看當下要找的類型。</figcaption>
+            </figure>
+          </div>
+        </div>
+
+        <ul class="trio">
+          <li class="reveal">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><rect x="5" y="8" width="30" height="24" rx="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 16h18M11 22h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <h3>全文檢索</h3>
+            <p>SQLite FTS5，用 trigram 分詞，<b>中文句子裡的子字串也找得到</b>。</p>
+          </li>
+          <li class="reveal">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="13" cy="14" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="28" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="24" cy="28" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M16.5 16.5l4.5 7.5M25.5 14.5l-1 8.5" stroke="currentColor" stroke-width="1.6"/></svg>
+            <h3>語意搜尋</h3>
+            <p>sqlite-vec 向量索引，和全文檢索的結果合併，<b>關鍵字對不上時也找得到相關內容</b>。</p>
+          </li>
+          <li class="reveal">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 9h24a3 3 0 0 1 3 3v13a3 3 0 0 1-3 3H18l-7 5v-5H8a3 3 0 0 1-3-3V12a3 3 0 0 1 3-3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 17h12M14 21h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <h3>提問</h3>
+            <p>直接對收藏的內容提問，<b>回答附上引用的來源編號</b>。</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ 05 資料（規格大字卡 + AI 備援鏈 + 差別對照，B 結構 + A 藍銀配色） ============ -->
+    <section class="chapter data" id="data">
+      <div class="wrap">
+        <header class="chead reveal">
+          <p class="eyebrow">資料在自己手上</p>
+          <h2 class="headline">你的收藏，<br><span class="grad">就在你的電腦裡</span>。</h2>
+          <p class="lede">資料存在你自己的電腦上（SQLite），<b>不放在別人的雲端</b>，每天自動備份。</p>
+        </header>
+
+        <div class="specs">
+          <article class="tile spec reveal">
+            <p class="spec__big mono">127.0.0.1</p>
+            <h3>預設只有這台電腦連得到</h3>
+            <p>服務只綁本機位址，別台裝置連不到。要讓手機用，走 Tailscale 這類私有網路，一律要存取金鑰或一次性配對碼。</p>
+          </article>
+          <article class="tile spec reveal">
+            <p class="spec__big">每天</p>
+            <h3>自動備份一次</h3>
+            <p>本機多份輪替、雲端同步（rclone：Google Drive／Dropbox／S3），或私有 Git 儲存庫自動提交。資料庫與 HTML 快照一起備份。</p>
+          </article>
+          <article class="tile spec reveal">
+            <p class="spec__big">末四碼</p>
+            <h3>金鑰加密後才存</h3>
+            <p>在 App 內輸入的金鑰會加密後才存進資料庫，之後只顯示末四碼。</p>
+          </article>
+          <article class="tile spec reveal">
+            <p class="spec__big">SQLite</p>
+            <h3>一個本機資料庫</h3>
+            <p>WAL 模式。全文索引是 trigram 分詞的 FTS5，向量索引是 sqlite-vec。用 <code>scripts/restore_backup.py</code> 還原。</p>
+          </article>
+          <article class="tile spec spec--wide reveal">
+            <div>
+              <p class="tile__kicker">AI 連線</p>
+              <h3>用哪個 AI，你決定。</h3>
+              <p>支援 OpenAI 相容（<code>/v1</code>）、Google Gemini、本機 Ollama 三種協定。分析、提問、語意搜尋、影片各排一串連線，<b>第一條是主要，其餘依序備援</b>。儲存後立即生效，不必重啟。</p>
+            </div>
+            <ul class="chain" aria-hidden="true">
+              <li><span>1</span>主要連線</li>
+              <li><span>2</span>備援連線</li>
+              <li><span>3</span>備援連線</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="compare reveal">
+          <h3 class="compare__title">和常見做法的差別</h3>
+          <div class="compare__grid">
+            <div class="compare__item">
+              <p class="compare__k">稍後讀服務<span>Pocket、Omnivore</span></p>
+              <p>服務可能終止，資料綁在廠商的雲端，而且多半只保存文字。</p>
+            </div>
+            <div class="compare__item">
+              <p class="compare__k">筆記工具<span>Notion、Obsidian</span></p>
+              <p>收錄流程比較繁瑣，影片（YouTube、Bilibili、Reels）不會自動整理成文字與重點。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 06 實驗功能（B 結構） ============ -->
+    <section class="chapter chapter--alt lab" id="labs" aria-labelledby="lab-title">
+      <div class="wrap">
+        <header class="chead chead--sm reveal">
+          <p class="eyebrow">實驗功能</p>
+          <h2 class="headline headline--md" id="lab-title">還在改，<br>但已經可以開。</h2>
+          <p class="lede">新安裝預設關閉，在「設定 › 實驗功能」開啟。<b>介面與行為之後還會改。</b></p>
+        </header>
+        <ul class="lab__grid">
+          <li class="reveal"><h3>探索</h3><p>定時檢查你加的探索來源（RSS、YouTube 頻道、GitHub 專案、Google News 關鍵字、網頁變動），每輪只挑分數最高的幾篇做 AI 分析，整理成精選。</p></li>
+          <li class="reveal"><h3>通知</h3><p>預設不通知；可以改成每日精選，或只在分數到門檻時通知。</p></li>
+          <li class="reveal"><h3>逐則篩選</h3><p>一則一則決定要不要留，喜歡、不喜歡會調整標籤的權重，影響之後的排序。</p></li>
+          <li class="reveal"><h3>Dream Pass</h3><p>依最近的互動提議更新興趣描述，你同意才套用。目前只能手動觸發。</p></li>
+          <li class="reveal"><h3>專案監看</h3><p>掃描你指定的本機資料夾，產生風險與改進的建議。</p></li>
+          <li class="reveal"><h3>每日回顧</h3><p>每天挑幾則未讀和值得重看的舊收藏，一則一則看過。</p></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ 07 三分鐘開始用（B 結構 + A 質感配色） ============ -->
+    <section class="chapter start" id="start">
+      <div class="wrap">
+        <header class="chead reveal">
+          <p class="eyebrow">開始用</p>
+          <h2 class="headline">三分鐘開始用。</h2>
+          <p class="lede">需要 git、Python 3.12+、Node.js 20.19+ 或 22.12+。<b>不用先申請 AI 金鑰</b>：安裝後會自動接上不用註冊的免費 AI 服務。</p>
+        </header>
+
+        <div class="tile install reveal">
+          <div class="install__col">
+            <p class="tile__kicker">1　安裝</p>
+            <h3>對 agent 說一句話。</h3>
+            <p>對 Claude Code、Codex 或 Antigravity 說這句話，agent 會裝好，再帶你接上 AI、接上 Telegram、丟第一個連結。金鑰與機器人權杖一律在 OmniKeep 的設定頁自己貼，不經過聊天。</p>
+            <div class="say">
+              <p>幫我安裝 OmniKeep：https://github.com/b40609/OmniKeep</p>
+              <button class="copy" type="button" data-copy="幫我安裝 OmniKeep：https://github.com/b40609/OmniKeep">複製</button>
+            </div>
+          </div>
+          <div class="install__col">
+            <p class="tile__kicker">或自己執行安裝腳本</p>
+            <div class="term">
+              <div class="seg seg--dark term__tabs" role="tablist" aria-label="選擇作業系統">
+                <button role="tab" id="os-win" aria-selected="true" aria-controls="cmd-win" data-os="win">Windows</button>
+                <button role="tab" id="os-unix" aria-selected="false" aria-controls="cmd-unix" data-os="unix" tabindex="-1">macOS、Linux</button>
+              </div>
+              <div class="term__pane" id="cmd-win" role="tabpanel" aria-labelledby="os-win">
+                <pre><code><span class="c"># Windows（Windows PowerShell 5.1 或 PowerShell 7）</span>
+<span class="cmd">&amp; ([scriptblock]::Create((irm https://raw.githubusercontent.com/b40609/OmniKeep/main/scripts/install.ps1).TrimStart([char]0xFEFF)))</span></code></pre>
+                <button class="copy copy--term" type="button" data-copy-from="cmd-win">複製指令</button>
+              </div>
+              <div class="term__pane" id="cmd-unix" role="tabpanel" aria-labelledby="os-unix" hidden>
+                <pre><code><span class="c"># macOS、Linux</span>
+<span class="cmd">curl -fsSL https://raw.githubusercontent.com/b40609/OmniKeep/main/scripts/install.sh | bash</span></code></pre>
+                <button class="copy copy--term" type="button" data-copy-from="cmd-unix">複製指令</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <ol class="next">
+          <li class="tile reveal">
+            <p class="tile__kicker">2　打開</p>
+            <h3>不用登入，<br>直接進主畫面。</h3>
+            <p>在這台電腦用瀏覽器打開 <code>http://127.0.0.1:5000</code>。第一次會出現「歡迎使用 OmniKeep」：AI 已接好 → 接上 Telegram → 丟第一個連結。</p>
+          </li>
+          <li class="tile reveal">
+            <p class="tile__kicker">3　接上 Telegram</p>
+            <h3>建立機器人，配對帳號。</h3>
+            <p>在 Telegram 找 <code>@BotFather</code> 傳 <code>/newbot</code> 拿到權杖，貼到「設定 › 收錄管道 › Telegram」，再按「產生配對連結」用你的 Telegram 開啟。</p>
+          </li>
+          <li class="tile reveal">
+            <p class="tile__kicker">4　丟第一個連結</p>
+            <h3>傳過去，等摘要卡。</h3>
+            <p>處理完機器人會回一張有摘要的卡片。或在 OmniKeep 按頂部的「新增」（快捷鍵 <kbd>N</kbd>）貼上。</p>
+          </li>
+        </ol>
+
+        <p class="start__more">還沒接上 AI 也能收藏：卡片標示「尚未分析」，接上之後在背景自動補分析。Docker 與自己一步一步裝的方式，見 <a href="https://github.com/b40609/OmniKeep#進階安裝細節與其他裝法" target="_blank" rel="noopener">README 的進階一節</a>。</p>
+      </div>
+    </section>
+
+    <!-- ============ 08 FAQ（B 結構） ============ -->
+    <section class="chapter faq" id="faq" aria-labelledby="faq-title">
+      <div class="wrap wrap--narrow">
+        <header class="chead chead--sm reveal">
+          <h2 class="headline headline--md" id="faq-title">常見問題</h2>
+        </header>
+        <div class="faq__list">
+          <details>
+            <summary>一定要先申請 AI 金鑰嗎？</summary>
+            <p>不用。安裝後會自動接上不用註冊的免費 AI 服務，想更好再到「設定 › AI」升級。就算一個 AI 都沒接上，連結也照樣收藏，卡片標示「尚未分析」；之後接上連線，會在背景自動補分析。</p>
+          </details>
+          <details>
+            <summary>手機上怎麼用？</summary>
+            <p>Telegram 機器人在手機、電腦都能用。要在手機打開 OmniKeep 的網頁介面，走 Tailscale 這類私有網路連回執行 OmniKeep 的電腦，用存取金鑰或一次性配對碼登入；也可以用 iOS 捷徑從分享表單一鍵收錄，或把 PWA 加到主畫面。</p>
+          </details>
+          <details>
+            <summary>可以把以前的瀏覽器書籤匯進來嗎？</summary>
+            <p>可以。按頂部的「新增」，把瀏覽器匯出的 HTML 書籤檔拖進去，選「只匯入，不分析」或「匯入後交給 AI 分析」。</p>
+          </details>
+          <details>
+            <summary>有 Docker 版嗎？</summary>
+            <p>有，適合已經在用 Docker 的主機。Docker 版不支援「agent 帶著設定」，AI 連線、Telegram 都要在網頁的設定頁自己設定，而且一律要存取金鑰登入。一般桌機建議用一行安裝。</p>
+          </details>
+          <details>
+            <summary>之後怎麼更新？</summary>
+            <p>對 agent 說「更新 OmniKeep」就好（2026-11-12 之前安裝的，要附上 GitHub 網址，請它照 README「更新到新版」一節做）。想自己來，README 列了步驟：先備份資料庫、<code>git pull --ff-only</code>、重跑安裝腳本；重跑安裝腳本不會動 <code>.env</code> 與資料。</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 09 CTA（App 藍色書籤 + A 冷藍光暈 + B 收尾結構） ============ -->
+    <section class="cta">
+      <div class="wrap cta__inner reveal">
+        <img src="assets/img/logo.svg" alt="" width="72" height="72">
+        <h2 class="headline">下一個值得留的連結，<br><span class="grad">丟給它</span>。</h2>
+        <p class="lede">開源、MIT 授權，裝在你自己的電腦。</p>
+        <div class="cta__btns">
+          <a class="pill pill--primary" href="#start">三分鐘開始用</a>
+          <a class="more-link" href="https://github.com/b40609/OmniKeep" target="_blank" rel="noopener">到 GitHub 看原始碼</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot__inner">
+      <p>頁面中的畫面是 OmniKeep 的實際截圖（OLED 深色主題），示範內容為 16 則公開連結，由最新版 App 實際讀完並寫好摘要；第三方名稱與標誌為各自所有者的商標。</p>
+      <div class="foot__row">
+        <span>OmniKeep・以 MIT License 授權</span>
+        <div class="foot__links">
+          <a href="https://github.com/b40609/OmniKeep" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/b40609/OmniKeep#更新到新版" target="_blank" rel="noopener">更新到新版</a>
+          <a href="https://github.com/b40609/OmniKeep/issues" target="_blank" rel="noopener">回報問題</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="main.js" defer></script>
+</body>
+</html>
