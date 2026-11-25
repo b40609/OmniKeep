@@ -20,15 +20,119 @@ from app.providers.base import UnconfiguredProvider
 
 logger = logging.getLogger("omnikeep.eval.adapter")
 
-_SKILL_CONFIG_CANDIDATES = (
-    Path.home() / ".agents" / "skills" / "omnikit-eval" / ".omnikit.json",
-    Path.home() / ".claude" / "skills" / "omnikit-eval" / ".omnikit.json",
-    Path.home() / ".codex" / "skills" / "omnikit-eval" / ".omnikit.json",
-)
+_SKILL_NAME = "omnikit-eval"
+_AGENT_HOME_DIRS = (".claude", ".codex", ".agents")
+
+
+def _legacy_skill_config_candidates(home: Path) -> List[Path]:
+    """Legacy (pre-sync.py) marker files written next to installed skills."""
+    return [home / agent / "skills" / _SKILL_NAME / ".omnikit.json" for agent in _AGENT_HOME_DIRS]
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _omnikit_state_dir(home: Optional[Path] = None) -> Path:
+    raw = (os.environ.get("OMNIKIT_STATE_DIR") or "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return (home or Path.home()) / ".omnikit"
+
+
+def _looks_like_omnikit_repo(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    if (path / "data" / "omnikit.yaml").is_file():
+        return True
+    return _find_cli_script(path, "eval_single.py") is not None
+
+
+def _read_repo_field(cfg_path: Path) -> Optional[Path]:
+    if not cfg_path.is_file():
+        return None
+    try:
+        data = json.loads(cfg_path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    repo_val = str(data.get("repo") or "").strip()
+    return Path(repo_val).expanduser() if repo_val else None
+
+
+def _is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _state_dev_repo(state_dir: Path) -> Optional[Path]:
+    """Development repo recorded by OmniKit sync.py in <state>/config.json (never the current/ copy)."""
+    repo = _read_repo_field(state_dir / "config.json")
+    if repo is None or not _looks_like_omnikit_repo(repo):
+        return None
+    if _is_within(repo, state_dir / "current"):
+        return None
+    return repo
+
+
+def _prefer_dev_repo(candidate: Path, state_dir: Path) -> Path:
+    """Redirect paths inside <state>/current back to the real git workspace when known.
+
+    record_decision.py writes into the repo, so it must land in the development
+    checkout rather than the clean copy that sync.py may overwrite.
+    """
+    if _is_within(candidate, state_dir / "current"):
+        dev = _state_dev_repo(state_dir)
+        if dev is not None:
+            return dev
+    return candidate
+
+
+def _repo_from_skill_link(home: Path) -> Optional[Path]:
+    """Resolve ~/.claude|.codex/skills/omnikit-eval junctions to <repo>/engine/skills/omnikit-eval."""
+    for agent in _AGENT_HOME_DIRS:
+        link = home / agent / "skills" / _SKILL_NAME
+        if not link.exists():
+            continue
+        try:
+            target = link.resolve()
+        except OSError:
+            continue
+        if len(target.parents) < 3:
+            continue
+        repo = target.parents[2]
+        if (repo / "data" / "omnikit.yaml").is_file():
+            return repo
+    return None
+
+
+def _discover_omnikit_repo(home: Path, state_dir: Path) -> Optional[Path]:
+    """Probe OmniKit install locations (sync.py layout first, legacy markers last)."""
+    # a. <state>/config.json written by OmniKit sync.py
+    dev = _state_dev_repo(state_dir)
+    if dev is not None:
+        return dev
+
+    # b. Skill junctions installed by sync.py
+    linked = _repo_from_skill_link(home)
+    if linked is not None:
+        return _prefer_dev_repo(linked, state_dir)
+
+    # c. Legacy .omnikit.json markers (pre-sync.py installs)
+    for cfg_path in _legacy_skill_config_candidates(home):
+        repo = _read_repo_field(cfg_path)
+        if repo is not None and repo.is_dir():
+            return _prefer_dev_repo(repo, state_dir)
+
+    # d. Clean copy as the very last resort
+    current = state_dir / "current"
+    if _looks_like_omnikit_repo(current):
+        return current
+    return None
 
 
 def resolve_omnikit_repo() -> Optional[Path]:
@@ -36,31 +140,23 @@ def resolve_omnikit_repo() -> Optional[Path]:
     raw = (getattr(settings, "OMNIKIT_REPO_PATH", "") or os.environ.get("OMNIKIT_REPO_PATH") or "").strip()
     if raw:
         candidate = Path(raw).expanduser()
-        return candidate if candidate.is_dir() else None
+        if not candidate.is_dir():
+            return None
+        return _prefer_dev_repo(candidate, _omnikit_state_dir())
 
     # Never probe host skill folders during isolated automated tests.
     if os.environ.get("OMNIKEEP_TESTING") == "1":
         return None
 
-    for cfg_path in _SKILL_CONFIG_CANDIDATES:
-        if not cfg_path.is_file():
-            continue
-        try:
-            data = json.loads(cfg_path.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        repo_val = str(data.get("repo") or "").strip()
-        if repo_val:
-            candidate = Path(repo_val).expanduser()
-            if candidate.is_dir():
-                return candidate
-    return None
+    home = Path.home()
+    return _discover_omnikit_repo(home, _omnikit_state_dir(home))
 
 
 def _find_cli_script(repo_path: Path, filename: str) -> Optional[Path]:
     for rel in (
         Path("scripts") / filename,
-        Path("skills") / "omnikit-eval" / "scripts" / filename,
+        Path("engine") / "skills" / _SKILL_NAME / "scripts" / filename,
+        Path("skills") / _SKILL_NAME / "scripts" / filename,
     ):
         candidate = repo_path / rel
         if candidate.is_file():

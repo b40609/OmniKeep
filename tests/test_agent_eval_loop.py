@@ -428,3 +428,114 @@ async def test_worker_carries_eval_intent_and_enqueues_evaluation(monkeypatch):
     assert len(submitted) == 1
     assert get_evaluation_counts()["evaluating"] == 1
     assert len(list_evaluations("evaluating")) == 1
+
+
+# --- B9: OmniKit 無帳本架構（sync.py：<state>/config.json + skill junction）探索 ---
+
+
+def _make_fake_omnikit_repo(root: Path) -> Path:
+    (root / "data").mkdir(parents=True, exist_ok=True)
+    (root / "data" / "omnikit.yaml").write_text("name: omnikit\n", encoding="utf-8")
+    skill_scripts = root / "engine" / "skills" / "omnikit-eval" / "scripts"
+    skill_scripts.mkdir(parents=True, exist_ok=True)
+    (skill_scripts / "eval_single.py").write_text("print('{}')\n", encoding="utf-8")
+    (skill_scripts / "record_decision.py").write_text("print('{}')\n", encoding="utf-8")
+    return root
+
+
+def _link_dir(link: Path, target: Path) -> None:
+    """Create a directory junction (Windows) or symlink (POSIX) like OmniKit sync.py does."""
+    link.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import _winapi  # type: ignore[import-not-found]
+
+        _winapi.CreateJunction(str(target), str(link))
+        return
+    except ImportError:
+        pass
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError as exc:  # pragma: no cover - platform without link support
+        pytest.skip(f"cannot create directory link: {exc}")
+
+
+@pytest.fixture
+def omnikit_host(tmp_path, monkeypatch):
+    """Isolated fake host: no OMNIKIT_REPO_PATH, no legacy .omnikit.json, probing enabled."""
+    home = tmp_path / "home"
+    state = tmp_path / "state"
+    home.mkdir()
+    state.mkdir()
+    monkeypatch.setattr(settings, "OMNIKIT_REPO_PATH", "")
+    monkeypatch.delenv("OMNIKIT_REPO_PATH", raising=False)
+    monkeypatch.delenv("OMNIKEEP_TESTING", raising=False)
+    monkeypatch.setenv("OMNIKIT_STATE_DIR", str(state))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    return home, state
+
+
+def test_resolve_omnikit_repo_from_state_config_json(tmp_path, omnikit_host):
+    from app.eval.adapter import resolve_omnikit_repo
+
+    home, state = omnikit_host
+    repo = _make_fake_omnikit_repo(tmp_path / "OmniKit")
+    # sync.py 可能寫出帶 BOM 的 UTF-8
+    (state / "config.json").write_text(json.dumps({"repo": str(repo)}), encoding="utf-8-sig")
+
+    assert resolve_omnikit_repo() == repo
+    adapter = get_evaluator_adapter()
+    assert isinstance(adapter, OmniKitAdapter)
+    assert adapter.eval_script == repo / "engine" / "skills" / "omnikit-eval" / "scripts" / "eval_single.py"
+    assert adapter.decision_script == repo / "engine" / "skills" / "omnikit-eval" / "scripts" / "record_decision.py"
+
+
+def test_resolve_omnikit_repo_from_claude_skill_junction(tmp_path, omnikit_host):
+    from app.eval.adapter import resolve_omnikit_repo
+
+    home, _state = omnikit_host
+    repo = _make_fake_omnikit_repo(tmp_path / "OmniKit")
+    _link_dir(home / ".claude" / "skills" / "omnikit-eval", repo / "engine" / "skills" / "omnikit-eval")
+
+    assert resolve_omnikit_repo().resolve() == repo.resolve()
+    assert isinstance(get_evaluator_adapter(), OmniKitAdapter)
+
+
+def test_resolve_omnikit_repo_redirects_current_copy_to_dev_repo(tmp_path, omnikit_host, monkeypatch):
+    from app.eval.adapter import _discover_omnikit_repo, resolve_omnikit_repo
+
+    home, state = omnikit_host
+    dev = _make_fake_omnikit_repo(tmp_path / "OmniKit")
+    current = _make_fake_omnikit_repo(state / "current")
+    _link_dir(home / ".codex" / "skills" / "omnikit-eval", current / "engine" / "skills" / "omnikit-eval")
+
+    # 只有 current 副本、沒有 config.json：退回 current
+    assert resolve_omnikit_repo().resolve() == current.resolve()
+
+    # config.json 有有效開發 repo：連結指向 current 也要轉回開發 repo
+    (state / "config.json").write_text(json.dumps({"repo": str(dev)}), encoding="utf-8")
+    assert resolve_omnikit_repo() == dev
+    # 連結解析分支本身也會轉回（不依賴 config.json 先被讀到）
+    assert _discover_omnikit_repo(home, state) == dev
+
+    # 明確指定 OMNIKIT_REPO_PATH 為 current 也要轉回開發 repo
+    monkeypatch.setattr(settings, "OMNIKIT_REPO_PATH", str(state / "current"))
+    assert resolve_omnikit_repo() == dev
+
+
+def test_resolve_omnikit_repo_legacy_marker_still_supported(tmp_path, omnikit_host):
+    from app.eval.adapter import resolve_omnikit_repo
+
+    home, _state = omnikit_host
+    repo = _make_fake_omnikit_repo(tmp_path / "OmniKit")
+    marker = home / ".agents" / "skills" / "omnikit-eval" / ".omnikit.json"
+    marker.parent.mkdir(parents=True)
+    marker.write_text(json.dumps({"repo": str(repo)}), encoding="utf-8")
+
+    assert resolve_omnikit_repo() == repo
+
+
+def test_resolve_omnikit_repo_none_when_nothing_installed(omnikit_host):
+    from app.eval.adapter import resolve_omnikit_repo
+
+    assert resolve_omnikit_repo() is None
+    assert isinstance(get_evaluator_adapter(), LocalLiteAdapter)
