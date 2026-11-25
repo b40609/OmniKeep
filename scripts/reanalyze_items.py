@@ -18,6 +18,7 @@ Vectors are built from title, summary and tags: rebuild them afterwards with
 scripts/rebuild_embeddings.py --reembed --all.
 """
 import argparse
+import dataclasses
 import asyncio
 import json
 import sys
@@ -110,14 +111,28 @@ def updates_for(item: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _rate_limited(exc: Exception) -> bool:
+    return getattr(exc, "code", None) == 429
+
+
+def _with_model(conn, model: str):
+    """The same connection asking for another model; a full Vertex path keeps its project and endpoint."""
+    if "/models/" in conn.model:
+        model = conn.model.rsplit("/models/", 1)[0] + "/models/" + model
+    return dataclasses.replace(conn, model=model)
+
+
 async def run(connection_id: int, out: Path, limit: Optional[int], concurrency: int, stop_after: int,
-              only: Optional[set] = None) -> Dict[str, int]:
+              only: Optional[set] = None, fallback_model: str = "") -> Dict[str, int]:
     conn = ai_connections.get_connection(connection_id)
     if conn is None:
         raise SystemExit(f"找不到連線 {connection_id}")
     if not (out / "before.jsonl").exists():
         raise SystemExit(f"{out / 'before.jsonl'} 不存在：先用 --backup-only 另存目前的分析")
     provider = build_provider(conn)
+    # A 429 is the model's shared capacity, not the account: the same request goes once more to
+    # fallback_model on the same connection (owner's rule: Hydrogen, else 3.8 Flash, both high).
+    fallback = build_provider(_with_model(conn, fallback_model)) if fallback_model else None
     system_prompt = analysis_system_prompt()
     categories = ", ".join(c["name"] for c in get_all_categories())
     done_ids = {row["id"] for row in read_jsonl(out / "done.jsonl")}
@@ -140,8 +155,15 @@ async def run(connection_id: int, out: Path, limit: Optional[int], concurrency: 
             if stop.is_set():
                 return
             started = time.monotonic()
+            prompt = build_prompt(item, categories)
             try:
-                result = await analyse(provider, build_prompt(item, categories), system_prompt)
+                try:
+                    result = await analyse(provider, prompt, system_prompt)
+                except Exception as first:
+                    if fallback is None or not _rate_limited(first):
+                        raise
+                    stats["fallback"] = stats.get("fallback", 0) + 1
+                    result = await analyse(fallback, prompt, system_prompt)
             except Exception as exc:
                 stats["failed"] += 1
                 in_a_row += 1
@@ -196,6 +218,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--ids", type=Path, help="JSONL of {\"id\": ...}: analyse only these items")
     ap.add_argument("--concurrency", type=int, default=2)
     ap.add_argument("--stop-after", type=int, default=5, help="stop after this many failures in a row")
+    ap.add_argument("--fallback-model", default="", help="on a 429, ask this model on the same connection once")
     args = ap.parse_args(argv)
     if args.restore:
         print(f"已還原 {restore(args.out)} 筆")
@@ -209,7 +232,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.connection is None:
         ap.error("--connection is required")
     only = {row["id"] for row in read_jsonl(args.ids)} if args.ids else None
-    stats = asyncio.run(run(args.connection, args.out, args.limit, args.concurrency, args.stop_after, only))
+    stats = asyncio.run(run(args.connection, args.out, args.limit, args.concurrency, args.stop_after, only,
+                            args.fallback_model))
     tidy_index()
     print(f"結束：要處理 {stats['todo']} 筆，完成 {stats['done']}，失敗 {stats['failed']}"
           + ("；連續失敗太多次，已停止" if stats["stopped"] else ""))
