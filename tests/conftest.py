@@ -206,6 +206,9 @@ def isolated_runtime(monkeypatch, request):
     # The OCR of video frames downloads the video; tests/test_screen.py turns it on where it tests it.
     from app.parsers import screen
     monkeypatch.setattr(screen, "available", lambda: False)
+    # Owner alerts are claimed in the test database but never delivered; the tests of
+    # app/owner_alert.py record what _fire would have sent.
+    monkeypatch.setattr("app.owner_alert._fire", lambda title, body, tag: None)
     # The network guard is installed once at import (see _install_network_guard).
     database.init_db()
     _refusals.clear()

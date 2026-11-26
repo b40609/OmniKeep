@@ -50,7 +50,7 @@ def redact(message: str) -> str:
     try:
         from app.config import settings
         secrets += [settings.OPENAI_API_KEY, *settings.gemini_keys]
-    except Exception:
+    except Exception:  # noqa: BLE001 - redacting must never fail; saved connections' keys still apply
         pass
     for secret in secrets:
         for part in str(secret).split(","):
@@ -62,10 +62,15 @@ def redact(message: str) -> str:
 
 def record_success(service: str, label: str = "") -> None:
     with _lock:
+        was_quota = _state.get(service, {}).get("kind") == "quota"
         _state[service] = {"ok": True, "at": _now(), "status": None, "message": "", "hint": "",
                            "kind": "", "action_required": False, "fix_url": None,
                            "cooldown_until": 0.0, "cooldown_reason": "",
                            "label": label or _state.get(service, {}).get("label", "")}
+    if was_quota:  # the cap was raised or the balance topped up: a new one is worth telling again
+        _quota_alerted.discard(service)
+        from app import owner_alert
+        owner_alert.forget(_QUOTA_ALERT + service)
 
 
 def record_failure(service: str, status: Optional[int], message: str, label: str = "") -> None:
@@ -81,6 +86,23 @@ def record_failure(service: str, status: Optional[int], message: str, label: str
             "cooldown_reason": previous.get("cooldown_reason", ""),
             "label": label or previous.get("label", ""),
         }
+    if info["kind"] == "quota":
+        _alert_quota(service, label or previous.get("label", ""), info)
+
+
+# A spend cap or an empty balance is told to the owner once (app/owner_alert.py), not on every
+# refused call; _quota_alerted saves the database lookup after the first one in this process.
+_QUOTA_ALERT = "quota."
+_quota_alerted: set = set()
+
+
+def _alert_quota(service: str, label: str, info: Dict[str, Any]) -> None:
+    if service in _quota_alerted:
+        return
+    _quota_alerted.add(service)
+    from app import owner_alert  # alert_once never raises
+    body = info["hint"] + ("\n" + info["fix_url"] if info.get("fix_url") else "")
+    owner_alert.alert_once(_QUOTA_ALERT + service, f"⚠️ {label or service}：額度或支出上限用完", body)
 
 
 def set_cooldown(service: str, seconds: float, reason: str = "") -> None:
@@ -117,6 +139,8 @@ def forget(*services: str) -> None:
             _state.pop(service, None)
         for service in services or list(_streaks):
             _streaks.pop(service, None)
+        for service in services or list(_quota_alerted):
+            _quota_alerted.discard(service)
 
 
 # Failures in a row per connection (app/providers/chain.py pauses one that keeps failing);

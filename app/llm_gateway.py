@@ -16,6 +16,20 @@ Order (llm_gateway.json, read again whenever the file changes, so no restart is 
   Anything else (a model gone, 5xx, an empty answer) tries the next model on the same connection.
   A connection that was rate limited or refused a moment ago goes to the back of the line.
 Thinking is always "high": a lower level in the file is raised to it (owner's rule, 2026-11-18).
+A connection past its spend cap (or out of balance) is left out for QUOTA_COOLDOWN (6 hours) and
+then tried once more at the back; the other refusals only go to the back of the line.
+
+Budget per source ("sources" in llm_gateway.json, checked before anything is sent):
+  "sources": {"claude-mem": {"daily_requests": 400, "daily_tokens": 5000000, "until": "2026-12-03"},
+              "*": {...}}   (for the sources not named; without it DEFAULT_SOURCE_LIMITS apply)
+  daily_requests / daily_tokens  answered calls and prompt+completion tokens today (local time),
+                                 counted in ai_usage_sources; null means no cap. Over it: 429
+                                 with Retry-After until midnight.
+  until                          the end date: from 00:00 (local time) of that day the source is
+                                 refused with 403 ("2026-12-03"; an ISO time with its offset is
+                                 taken as is). A value that cannot be read refuses the source.
+  The owner is told once (app/owner_alert.py): the first refusal of the day over a cap, the first
+  refusal after the end date.
 
 Callers are told apart by their token (Authorization: Bearer ...), one per source, kept
 encrypted in app_settings as "_gateway.token.<source>". Every attempt is counted in ai_usage
@@ -31,7 +45,7 @@ import time
 import uuid
 from contextlib import closing
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -50,10 +64,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "thinking_level": "high",
     # claude-mem gives up on a streamed answer after 300 s; stop trying before that.
     "deadline_seconds": 280,
+    "sources": {},
 }
+# A source with no entry of its own and no "*" entry: about the median day of claude-mem's use
+# on 2026-11-19..23 (369 answered calls, 4.7M tokens); the busiest day was 663 and 8.9M.
+DEFAULT_SOURCE_LIMITS: Dict[str, Any] = {"daily_requests": 400, "daily_tokens": 5_000_000, "until": None}
+LIMIT_FIELDS = ("daily_requests", "daily_tokens")
 THINKING_LEVELS = ("high",)  # google-genai's ThinkingLevel has nothing above HIGH
 ACCOUNT_KINDS = ("rate_limit", "auth", "disabled", "quota")  # the whole project, not one model
 REFUSED_COOLDOWN = 600.0
+QUOTA_COOLDOWN = 6 * 3600.0  # a spend cap does not lift by itself within minutes
 RATE_LIMIT_COOLDOWN = 60.0
 KEEPALIVE_SECONDS = 15.0
 _SOURCE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
@@ -112,7 +132,57 @@ def check_config(raw: Dict[str, Any]) -> Dict[str, Any]:
         config["deadline_seconds"] = max(10.0, float(config["deadline_seconds"]))
     except (TypeError, ValueError):
         config["port"], config["deadline_seconds"] = DEFAULT_CONFIG["port"], DEFAULT_CONFIG["deadline_seconds"]
+    config["sources"] = _check_sources(config.get("sources"))
     return config
+
+
+def _parse_until(value: Any) -> datetime:
+    """The moment a source stops being served; a bare date means 00:00 local time that day."""
+    text = str(value).strip()
+    if len(text) == 10:
+        return datetime.strptime(text, "%Y-%m-%d").astimezone()  # naive -> this computer's time zone
+    moment = datetime.fromisoformat(text)
+    return moment if moment.tzinfo else moment.astimezone()
+
+
+def _check_sources(raw: Any) -> Dict[str, Dict[str, Any]]:
+    """source -> {daily_requests, daily_tokens, until, broken}; an unreadable entry refuses its source."""
+    if raw in (None, ""):
+        return {}
+    if not isinstance(raw, dict):
+        logger.warning("llm_gateway.json: sources must be an object; every source is refused until it is fixed")
+        return {"*": {**DEFAULT_SOURCE_LIMITS, "broken": "sources is not an object"}}
+    out: Dict[str, Dict[str, Any]] = {}
+    for name, entry in raw.items():
+        limits: Dict[str, Any] = {**DEFAULT_SOURCE_LIMITS, "broken": ""}
+        if not isinstance(entry, dict):
+            limits["broken"] = "not an object"
+        else:
+            for field_name in LIMIT_FIELDS:
+                if field_name not in entry:
+                    continue
+                value = entry[field_name]
+                if value is None:
+                    limits[field_name] = None
+                elif isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                    limits[field_name] = value
+                else:
+                    limits["broken"] = f"{field_name} {value!r} is not a whole number"
+            if entry.get("until") not in (None, ""):
+                try:
+                    limits["until"] = _parse_until(entry["until"])
+                except (TypeError, ValueError):
+                    limits["broken"] = f"until {entry['until']!r} is not a date"
+        if limits["broken"]:
+            logger.warning("llm_gateway.json: sources.%s: %s; this source is refused until it is fixed",
+                           name, limits["broken"])
+        out[str(name)] = limits
+    return out
+
+
+def limits_for(source: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    sources = config.get("sources") or {}
+    return sources.get(source) or sources.get("*") or {**DEFAULT_SOURCE_LIMITS, "broken": ""}
 
 
 def write_default_config(path: Optional[Path] = None) -> Path:
@@ -177,13 +247,63 @@ def source_for(authorization: str) -> Optional[str]:
     return None
 
 
-# ── Calling Vertex ──────────────────────────────────────────────
+# ── Budget per source ───────────────────────────────────────────
 
 class GatewayError(Exception):
-    def __init__(self, status: int, message: str, attempts: List[str]):
+    def __init__(self, status: int, message: str, attempts: List[str], retry_after: Optional[int] = None):
         super().__init__(message)
         self.status = status
         self.attempts = attempts
+        self.retry_after = retry_after
+
+
+def usage_today(source: str) -> Dict[str, int]:
+    """Answered calls and tokens for `source` today (local time), every connection and model."""
+    from app import ai_usage
+    today = datetime.now().astimezone().date().isoformat()
+    rows = [r for r in ai_usage.source_rows(source, since=today) if r["day"] == today]
+    return {"requests": sum(r["requests"] for r in rows),
+            "tokens": sum(r["prompt_tokens"] + r["completion_tokens"] for r in rows)}
+
+
+def _seconds_to_midnight(now: datetime) -> int:
+    tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(60, int((tomorrow - now).total_seconds()))
+
+
+def check_source(source: str, config: Dict[str, Any], now: Optional[datetime] = None) -> None:
+    """Raise GatewayError when `source` may not be served now (llm_gateway.json "sources")."""
+    from app import owner_alert
+    limits = limits_for(source, config)
+    if limits.get("broken"):
+        raise GatewayError(403, f"Source {source} is refused: its llm_gateway.json sources entry "
+                                f"cannot be read ({limits['broken']})", [])
+    now = (now or datetime.now()).astimezone()
+    until = limits.get("until")
+    if until is not None and now >= until:
+        owner_alert.alert_once(
+            f"gateway.until.{source}.{until.date().isoformat()}", f"⛔ AI 轉接端點已停止服務 {source}",
+            f"llm_gateway.json 設定 {source} 用到 {until:%Y-%m-%d %H:%M} 為止，之後的請求一律拒絕，"
+            f"不會再花到付費額度。要繼續用就把 sources.{source}.until 改到新的日期。")
+        raise GatewayError(403, f"Source {source} is not served from {until.isoformat()} on "
+                                f"(llm_gateway.json sources.{source}.until)", [])
+    caps = {name: limits[name] for name in LIMIT_FIELDS if limits.get(name) is not None}
+    if not caps:
+        return
+    used = usage_today(source)
+    for name, cap in caps.items():
+        spent = used["requests" if name == "daily_requests" else "tokens"]
+        if spent >= cap:
+            what = " 次請求" if name == "daily_requests" else " tokens"
+            owner_alert.alert_once(
+                f"gateway.cap.{source}.{now.date().isoformat()}", f"⏸️ {source} 今天的 AI 用量到上限了",
+                f"{source} 今天已用 {spent:,}{what}（上限 {cap:,}），今天其餘的請求一律拒絕，明天 00:00 自動恢復。"
+                f"要調整就改 llm_gateway.json 的 sources.{source}.{name}。")
+            raise GatewayError(429, f"Source {source} reached its daily cap ({name} {spent}/{cap}); "
+                                    f"it resets at midnight", [], retry_after=_seconds_to_midnight(now))
+
+
+# ── Calling Vertex ──────────────────────────────────────────────
 
 
 @dataclass
@@ -286,9 +406,20 @@ def _connections(ids: List[int]) -> List[Any]:
             logger.warning("Gateway: connection c%s has no readable key; skipped", connection_id)
             continue
         found.append(conn)
+    # Past its spend cap within QUOTA_COOLDOWN: left out, every call would only be refused again.
+    found = [c for c in found if not _quota_hold(c.status_key)]
     # A connection that was rate limited or refused a moment ago waits behind the others.
     return [c for c in found if not ai_status.unusable(c.status_key)] + \
            [c for c in found if ai_status.unusable(c.status_key)]
+
+
+QUOTA_REASON = "支出上限或額度用完"
+
+
+def _quota_hold(status_key: str) -> bool:
+    from app import ai_status
+    entry = ai_status.get(status_key)
+    return entry.get("cooldown_reason") == QUOTA_REASON and entry.get("cooldown_until", 0.0) > time.time()
 
 
 def _short(exc: BaseException) -> str:
@@ -306,10 +437,12 @@ async def complete(messages: List[Dict[str, Any]], source: str, options: Optiona
     options = options or {}
     config = config or load_config()
     caller = caller or _call
+    check_source(source, config)
     system, contents = to_gemini(messages)
     conns = _connections(config["connections"])
     if not conns:
-        raise GatewayError(503, "No usable Vertex AI connection in llm_gateway.json", [])
+        raise GatewayError(503, "No usable Vertex AI connection in llm_gateway.json "
+                                "(switched off, or past its spend cap within the last 6 hours)", [])
     deadline = time.monotonic() + config["deadline_seconds"]
     attempts: List[str] = []
     later: List[Tuple[Any, str]] = []  # models skipped on a rate-limited connection
@@ -331,7 +464,7 @@ async def complete(messages: List[Dict[str, Any]], source: str, options: Optiona
             attempts.append(f"{conn.status_key}/{model}:timeout")
             ai_usage.record_source(conn.status_key, source, model, False)
             return None, "deadline"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any failure of one call is classified and the next one tried
             info = classify(exc)
             attempts.append(f"{conn.status_key}/{model}:{info['status'] or info['kind']}")
             ai_usage.record_source(conn.status_key, source, model, False)
@@ -340,6 +473,8 @@ async def complete(messages: List[Dict[str, Any]], source: str, options: Optiona
             if info["kind"] == "rate_limit":
                 rate_limited = True
                 ai_status.set_cooldown(conn.status_key, _retry_after(exc) or RATE_LIMIT_COOLDOWN, "限流")
+            elif info["kind"] == "quota":
+                ai_status.set_cooldown(conn.status_key, QUOTA_COOLDOWN, QUOTA_REASON)
             elif info["kind"] in ACCOUNT_KINDS:
                 ai_status.set_cooldown(conn.status_key, REFUSED_COOLDOWN, "被拒絕（金鑰、權限或支出上限）")
             return None, info["kind"]
@@ -381,8 +516,16 @@ def _usage(result: Result) -> Dict[str, Any]:
 
 
 def _error_body(status: int, message: str) -> Dict[str, Any]:
-    kind = {401: "authentication_error", 400: "invalid_request_error", 429: "rate_limit_error"}.get(status, "api_error")
+    kind = {401: "authentication_error", 400: "invalid_request_error", 403: "permission_error",
+            429: "rate_limit_error"}.get(status, "api_error")
     return {"error": {"message": message, "type": kind, "code": status}}
+
+
+def _error_headers(exc: GatewayError) -> Dict[str, str]:
+    headers = {"x-omnikeep-attempts": ",".join(exc.attempts)}
+    if exc.retry_after:
+        headers["retry-after"] = str(exc.retry_after)
+    return headers
 
 
 def _log_result(source: str, result: Optional[Result], error: Optional[GatewayError], started: float,
@@ -446,7 +589,7 @@ def create_app(config_file: Optional[Path] = None):
             except GatewayError as exc:
                 _log_result(source, None, exc, started, False)
                 return JSONResponse(_error_body(exc.status, str(exc)), status_code=exc.status,
-                                    headers={"x-omnikeep-attempts": ",".join(exc.attempts)})
+                                    headers=_error_headers(exc))
             _log_result(source, result, None, started, False)
             return JSONResponse(
                 {"id": completion_id, "object": "chat.completion", "created": created, "model": result.model,
@@ -468,7 +611,7 @@ def create_app(config_file: Optional[Path] = None):
                 exc = GatewayError(500, "The gateway failed", [])
             _log_result(source, None, exc, started, True)
             return JSONResponse(_error_body(exc.status, str(exc)), status_code=exc.status,
-                                headers={"x-omnikeep-attempts": ",".join(exc.attempts)})
+                                headers=_error_headers(exc))
 
         async def events():
             try:
@@ -483,7 +626,7 @@ def create_app(config_file: Optional[Path] = None):
                         raise
                     except Exception as unexpected:
                         logger.exception("Gateway failed", exc_info=unexpected)
-                        raise GatewayError(500, "The gateway failed", [])
+                        raise GatewayError(500, "The gateway failed", []) from unexpected
                 except GatewayError as exc:
                     _log_result(source, None, exc, started, True)
                     yield "data: " + json.dumps(_error_body(exc.status, str(exc))) + "\n\n"

@@ -22,6 +22,14 @@ _PATTERNS: Tuple[Tuple[str, str, str, bool, Optional[str]], ...] = (
     (r"token status is unavailable", "disabled",
      "金鑰被停用：到 platform.agnes-ai.com 的 API Keys 頁重新啟用或重建，再把新金鑰貼回來。",
      True, "https://platform.agnes-ai.com/settings/apiKeys"),
+    # Vertex AI past the project's spend cap: "403 PERMISSION_DENIED. ... Spend cap breached for
+    # project: projects/<n> for service: aiplatform.googleapis.com" (service log, 2026-11-24/26).
+    # Before the 403 rule below, which took it for a missing permission: nothing was said and the
+    # chain kept knocking every 10 minutes. Retrying cannot help until the cap is raised.
+    (r"spend cap", "quota",
+     "撞到支出上限（Google Cloud 專案的 spend cap）：到 Google Cloud Console 調高這個專案的上限或改用別條連線；"
+     "調高後到「設定 › AI」按這條連線的「測試」恢復使用。",
+     True, "https://console.cloud.google.com/billing"),
     (r"rate limit for free users", "rate_limit",
      "超過免費帳號的每分鐘請求數（Agnes 每把金鑰約每分鐘 10 次）：把請求間隔調到 7 秒以上，或再加一把金鑰輪流用。",
      False, None),
@@ -136,7 +144,7 @@ def mark_ai_failure(exc: BaseException) -> BaseException:
     goes on unchanged; is_ai_failure() reads the mark."""
     try:
         setattr(exc, _AI_MARK, True)
-    except Exception:  # a type without a __dict__: its class decides
+    except (AttributeError, TypeError):  # a type without a __dict__: its class decides
         pass
     return exc
 
