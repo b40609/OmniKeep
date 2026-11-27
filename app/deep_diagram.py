@@ -138,7 +138,8 @@ def agent_prompt(item: Dict[str, Any], base_url: str = "") -> str:
         "candidate.json 與輸出的 HTML 也放在同一個暫存資料夾、從那裡執行 finalize，"
         "加上 --repo-root 指到剛剛的 repo 資料夾、--quality showcase，直到通過。"
         "meta.repository 加上 provider: \"github\"，來源連結才會指到 GitHub 網頁。說明文字用繁體中文（台灣用語）。\n"
-        f"4. 把通過的 HTML 存回 OmniKeep：有 OmniKeep MCP 就呼叫 attach_item_diagram(item_id=\"{item_id}\", path=\"<HTML 的絕對路徑>\")；"
-        f"沒有的話，用 OmniKeep 的存取金鑰 PUT 到 {api}（Content-Type: text/html）。\n"
+        f"4. 把通過的 HTML 存回 OmniKeep：若這個 session 有 attach_item_diagram MCP 工具就直接呼叫 attach_item_diagram(item_id=\"{item_id}\", path=\"<HTML 的絕對路徑>\")；"
+        f"本機為預設 core 精簡 MCP 時，改用專案 .venv 的 Python 執行 scripts/setup_cli.py attach-diagram \"{item_id}\" --path \"<HTML 的絕對路徑>\"（不需讀取金鑰）；"
+        f"僅在遠端裝置無法存取本機目錄時，才請使用者自行以存取金鑰 PUT 到 {api}（Content-Type: text/html，agent 不可讀取 .env）。\n"
         "5. 完成後刪掉暫存的專案資料夾，回報元件數、有附證據的元件數，以及 finalize 的結果。"
     )

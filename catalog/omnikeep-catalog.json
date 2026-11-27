@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "revision": 2026112701,
+ "revision": 2026112702,
  "cards": {
   "agnes": {
    "label": "Agnes",
@@ -337,7 +337,7 @@
    "label": "FreeLLMAPI 本機閘道",
    "cost": "0（自動聚合多家免費層 API，由 FreeLLMAPI 統一維護）",
    "limits": "預設連到本機 127.0.0.1:3001/v1；支援多家免費服務商自動路由、429 降級與額度追蹤，不必逐一維護每張免費卡片。",
-   "notes": "先安裝並啟動本機 FreeLLMAPI（Windows 可用 winget install 9PBN6G8K2B7F），在桌面程式內填入你的免費服務商金鑰後即可使用 auto 路由；若有設自訂金鑰或埠號再修改此處欄位。",
+   "notes": "先安裝並啟動本機 FreeLLMAPI（Windows 可用 winget install 9PBN6G8K2B7F），在桌面程式內填入免費服務商金鑰，再到 Keys 頁複製 freellmapi- 開頭的 unified key 貼到此處。若拿來做語意向量，auto 會隨預設 family 變動，建議改填固定向量模型名避免維度不一致。",
    "model": "auto",
    "models": [
     "auto",

@@ -85,6 +85,7 @@ claude mcp add --transport http omnikeep --scope user https://<主機名>.<tailn
 
 - 其他 agent：照它的文件新增一個 Streamable HTTP 的 MCP 伺服器，網址與標頭同上。
 - 金鑰會留在那台電腦的 agent 設定裡，只在自己的裝置上做。
+- **遠端工具分層**：Streamable HTTP（`/mcp-http`）與 stdio 共用伺服器端 `.env` 的 `MCP_PROFILE`（預設 `core` 7 個核心工具）。若要在別台電腦的遠端 agent 執行首次設定（`omnikeep-setup`）或工具評估閉環（`omnikeep-review`），請在 OmniKeep 主機的 `.env` 設 `MCP_PROFILE=core,setup` 或 `MCP_PROFILE=core,review`（或 `full`）後重啟服務。
 - 金鑰外洩時，在 OmniKeep 主機執行 `python scripts/rotate_api_key.py` 換一把，重啟服務，再更新每一台 client。指令不會把金鑰印出來。
 
 ---
@@ -99,7 +100,8 @@ claude mcp add --transport http omnikeep --scope user https://<主機名>.<tailn
 | `review` | 10 | `core` ＋ 工具評估閉環 3 個工具（給 `omnikeep-review`） |
 | `setup` | 18 | `core` ＋ 首次設定 11 個 `omnikeep_*` 工具（給 `omnikeep-setup`） |
 | `labs` | 10 | `core` ＋ 實驗功能（專案監看與提案）3 個工具 |
-| `full` | 29 | 全部 29 個工具（含舊版相容別名 `search_brain`、`get_item_architecture`、`get_item_raw` 等） |
+| `legacy` | 12 | `core` ＋ 舊版相容與低頻工具 5 個（含 `attach_item_diagram`） |
+| `full` / `all` | 29 | 全部 29 個工具（含舊版相容別名 `search_brain`、`get_item_architecture`、`get_item_raw` 等） |
 
 也支援逗號組合，例如 `OMNIKEEP_MCP_PROFILE=core,review` 或 `python mcp_server.py --profile setup`。在預設 `core` 模式下，`omnikeep-setup` 與 `omnikeep-review` Skill 可直接透過 `python scripts/setup_cli.py <子指令>` 完成首次設定與工具評估閉環，平日維持 0 額外常駐 token。
 

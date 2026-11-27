@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # startup, comma-separated (app/mcp_http.py).
     MCP_ALLOWED_HOSTS: str = ""
     # Tool profile registered on the MCP server: core (7 lean tools, default), review, setup,
-    # labs, full, or a comma-separated combination such as "core,review".
+    # labs, legacy, full, all, or a comma-separated combination such as "core,review".
     MCP_PROFILE: str = "core"
     CORS_ORIGINS: List[str] = []
     BACKGROUND_SERVICES_ENABLED: bool = True

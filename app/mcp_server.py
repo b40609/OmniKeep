@@ -4,6 +4,7 @@ Allows external AI Agents (ChatGPT App, Claude, Cursor, Antigravity) to query,
 retrieve, synthesize, and write back engineering intelligence into OmniKeep's Second Brain.
 """
 
+import logging
 import os
 import sys
 import json
@@ -233,7 +234,7 @@ async def get_item_detail(item_id: str, include_raw: bool = False, raw_limit: in
     Set include_raw=True if raw text is explicitly required (adjust raw_limit as needed).
     """
     base = await get_item_architecture(item_id)
-    if not include_raw or "錯誤：" in base:
+    if not include_raw or base.startswith("錯誤："):
         return base
 
     item = get_item_by_id(item_id)
@@ -970,10 +971,10 @@ PROFILE_GROUPS = {
 }
 
 _active_profile = "core"
+_logger = logging.getLogger("omnikeep.mcp")
 
 
-def resolve_tool_names(profile: Optional[str] = None) -> List[str]:
-    """Resolve a profile name (or comma-separated profile list) into ordered tool names."""
+def _parse_profile_tokens(profile: Optional[str] = None) -> List[str]:
     raw = (
         profile
         if profile is not None
@@ -986,6 +987,12 @@ def resolve_tool_names(profile: Optional[str] = None) -> List[str]:
     if unknown:
         valid = ", ".join(sorted(PROFILE_GROUPS))
         raise ValueError(f"不認得的 MCP profile：{', '.join(unknown)}（可用：{valid}）")
+    return list(dict.fromkeys(tokens))
+
+
+def resolve_tool_names(profile: Optional[str] = None) -> List[str]:
+    """Resolve a profile name (or comma-separated profile list) into ordered tool names."""
+    tokens = _parse_profile_tokens(profile)
     selected = set()
     for token in tokens:
         selected.update(PROFILE_GROUPS[token])
@@ -995,17 +1002,16 @@ def resolve_tool_names(profile: Optional[str] = None) -> List[str]:
 def configure_mcp_profile(profile: Optional[str] = None) -> List[str]:
     """Re-register tools on the shared FastMCP instance for the requested profile."""
     global _active_profile
-    tool_names = resolve_tool_names(profile)
-    for existing in list(mcp._tool_manager._tools.keys()):
+    tokens = _parse_profile_tokens(profile)
+    selected = set()
+    for token in tokens:
+        selected.update(PROFILE_GROUPS[token])
+    tool_names = [name for name in ALL_TOOL_FUNCTIONS if name in selected]
+    for existing in [t.name for t in mcp._tool_manager.list_tools()]:
         mcp.remove_tool(existing)
     for name in tool_names:
         mcp.add_tool(ALL_TOOL_FUNCTIONS[name])
-    _active_profile = (
-        (profile if profile is not None else (os.environ.get("OMNIKEEP_MCP_PROFILE") or settings.MCP_PROFILE or "core"))
-        .strip()
-        .lower()
-        or "core"
-    )
+    _active_profile = ",".join(tokens)
     return tool_names
 
 
@@ -1013,7 +1019,11 @@ def active_mcp_profile() -> str:
     return _active_profile
 
 
-configure_mcp_profile()
+try:
+    configure_mcp_profile()
+except ValueError as exc:
+    _logger.warning("無效的 MCP profile 設定，已自動退回 core：%s", exc)
+    configure_mcp_profile("core")
 
 
 # ── 11. Resources ───────────────────────────────────────────────

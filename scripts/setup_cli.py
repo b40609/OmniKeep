@@ -1,9 +1,9 @@
-"""CLI bridge for OmniKeep setup and evaluation workflows (0-token MCP companion).
+"""CLI bridge for OmniKeep setup, evaluation & diagram workflows (0-token MCP companion).
 
 When the MCP server runs on its lean default `core` profile (7 tools), the
-`omnikeep-setup` and `omnikeep-review` skills can run first-time setup and
-mobile evaluation closed-loop commands on demand through this CLI without
-keeping 14+ low-frequency tool schemas loaded in every agent session.
+`omnikeep-setup` and `omnikeep-review` skills (and Archify diagram attach) can
+run on demand through this CLI without keeping 15+ low-frequency tool schemas
+loaded in every agent session.
 
 All subcommands print UTF-8 JSON (or Markdown for text tools) and never expose
 stored API keys or bot tokens.
@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import inspect
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -33,9 +34,10 @@ def _ensure_utf8_stdio() -> None:
 
 def _load_json_arg(raw: Optional[str], file_path: Optional[str], field_name: str) -> Any:
     if file_path:
-        text = Path(file_path).read_text(encoding="utf-8")
+        text = Path(file_path).read_text(encoding="utf-8-sig")
     elif raw == "-":
-        text = sys.stdin.read()
+        # Always decode raw stdin bytes as UTF-8 (with optional BOM) to avoid Windows cp950 mojibake.
+        text = sys.stdin.buffer.read().decode("utf-8-sig")
     elif raw:
         text = raw
     else:
@@ -43,12 +45,26 @@ def _load_json_arg(raw: Optional[str], file_path: Optional[str], field_name: str
     return json.loads(text)
 
 
+def _is_error_result(payload: Any) -> bool:
+    if isinstance(payload, dict) and payload.get("ok") is False:
+        return True
+    if isinstance(payload, str) and (payload.startswith("錯誤：") or payload.startswith("❌")):
+        return True
+    return False
+
+
 def _dump(payload: Any) -> int:
     if isinstance(payload, str):
         print(payload)
     else:
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
-    return 0
+    return 1 if _is_error_result(payload) else 0
+
+
+async def _maybe_await(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 async def _dispatch(args: argparse.Namespace) -> Any:
@@ -59,72 +75,77 @@ async def _dispatch(args: argparse.Namespace) -> Any:
     cmd = args.command
     if cmd == "scan":
         from app import setup_flow
-        return setup_flow.scan()
-    if cmd == "peek":
+        result = setup_flow.scan()
+    elif cmd == "peek":
         from app import setup_flow
-        return await setup_flow.peek(args.url, args.max_chars)
-    if cmd == "check-sources":
+        result = setup_flow.peek(args.url, args.max_chars)
+    elif cmd == "check-sources":
         from app import setup_flow
         sources = _load_json_arg(args.sources_json, args.sources_file, "sources")
-        return await setup_flow.check_sources(sources, args.recent)
-    if cmd == "list-provider-options":
+        result = setup_flow.check_sources(sources, args.recent)
+    elif cmd == "list-provider-options":
         from app import setup_flow
-        return setup_flow.list_provider_options()
-    if cmd == "open-settings":
+        result = setup_flow.list_provider_options()
+    elif cmd == "open-settings":
         from app import setup_flow
-        return setup_flow.open_settings(args.card, args.tab)
-    if cmd == "test-provider":
+        result = setup_flow.open_settings(args.card, args.tab)
+    elif cmd == "test-provider":
         from app import setup_flow
-        return await setup_flow.test_provider(args.service, args.connection_id)
-    if cmd == "preview-setup":
+        result = setup_flow.test_provider(args.service, args.connection_id)
+    elif cmd == "preview-setup":
         from app import setup_flow
         answers = _load_json_arg(args.answers_json, args.answers_file, "answers")
         try:
-            return await setup_flow.call_service("POST", "/api/setup/preview", json_body={"answers": answers})
+            result = await setup_flow.call_service("POST", "/api/setup/preview", json_body={"answers": answers})
         except setup_flow.ServiceUnavailable:
             result = setup_flow.preview(answers)
             result["note"] = "OmniKeep 服務沒在跑：這是直接讀資料庫的預覽；套用前要先啟動服務"
-            return result
         except setup_flow.ServiceError as exc:
             raise setup_flow.SetupError(str(exc)) from exc
-    if cmd == "apply-setup":
+    elif cmd == "apply-setup":
         from app import setup_flow
         answers = _load_json_arg(args.answers_json, args.answers_file, "answers")
-        return await setup_flow.call_service(
+        result = setup_flow.call_service(
             "POST",
             "/api/setup/apply",
             json_body={"answers": answers, "confirm_code": args.confirm_code},
         )
-    if cmd == "ingest":
+    elif cmd == "ingest":
         from app import setup_flow
-        return await setup_flow.ingest(args.url)
-    if cmd == "run-radar":
+        result = setup_flow.ingest(args.url)
+    elif cmd == "run-radar":
         from app import setup_flow
-        return await setup_flow.call_service("POST", "/api/setup/run-radar", timeout=900.0)
-    if cmd == "import":
+        result = setup_flow.call_service("POST", "/api/setup/run-radar", timeout=900.0)
+    elif cmd == "import":
         from app import setup_flow
-        return await setup_flow.import_data(
+        result = setup_flow.import_data(
             args.kind, args.path, args.browser, args.profile, args.enqueue_ai, args.limit
         )
-    if cmd == "queue":
+    elif cmd == "queue":
         from app.mcp_server import list_agent_queue
-        return await list_agent_queue(status=args.status, limit=args.limit)
-    if cmd == "decide":
+        result = list_agent_queue(status=args.status, limit=args.limit)
+    elif cmd == "decide":
         from app.mcp_server import record_agent_decision
-        return await record_agent_decision(
+        result = record_agent_decision(
             item_id=args.item_id,
             decision=args.decision,
             note=args.note,
             trigger_when=args.trigger_when,
         )
-    if cmd == "on-demand":
+    elif cmd == "on-demand":
         from app.mcp_server import search_on_demand_tools
-        return await search_on_demand_tools(query=args.query, limit=args.limit)
-    raise ValueError(f"不認得的子指令：{cmd}")
+        result = search_on_demand_tools(query=args.query, limit=args.limit)
+    elif cmd == "attach-diagram":
+        from app.mcp_server import attach_item_diagram
+        result = attach_item_diagram(item_id=args.item_id, path=args.path)
+    else:
+        raise ValueError(f"不認得的子指令：{cmd}")
+
+    return await _maybe_await(result)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="OmniKeep 首次設定與評估閉環 CLI（免常駐 MCP schema）")
+    parser = argparse.ArgumentParser(description="OmniKeep 首次設定、評估閉環與架構圖 CLI（免常駐 MCP schema）")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("scan", help="掃描硬體、OmniKeep 狀態、已接 AI 連線與書籤筆數")
@@ -184,6 +205,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_od.add_argument("query", nargs="?", default="")
     p_od.add_argument("--limit", type=int, default=5)
 
+    p_diag = sub.add_parser("attach-diagram", help="把本機 Archify 產出的架構圖 HTML 存進收藏")
+    p_diag.add_argument("item_id")
+    p_diag.add_argument("--path", required=True, help="獨立 HTML 檔案的絕對路徑")
+
     return parser
 
 
@@ -195,10 +220,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         result = asyncio.run(_dispatch(args))
         return _dump(result)
     except Exception as exc:
-        from app import setup_flow
-        if isinstance(exc, setup_flow.SetupError):
-            _dump({"ok": False, "error": str(exc)})
-            return 1
         _dump({"ok": False, "error": str(exc)})
         return 1
 

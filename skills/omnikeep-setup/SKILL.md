@@ -38,7 +38,8 @@ description: 安裝 OmniKeep（自架的連結收藏工具：在 Telegram 丟連
 
 - **MCP 與本機 CLI 雙管道**（OmniKeep MCP 預設以精簡 `core` 7 工具啟動以省常駐 token，不常駐載入 11 個 `omnikeep_*` 設定工具）：
   - 如果這個 session 裡有 `omnikeep_scan` MCP 工具（以 `--profile setup`／`full` 啟動）：直接呼叫 `omnikeep_*` MCP 工具。
-  - 如果這個 session 只有精簡核心工具（例如 `hybrid_search_brain`）或剛裝好尚未重開 session，且 OmniKeep 就在這台電腦上：直接用專案 `.venv` 的 Python 執行 `<OmniKeep>/scripts/setup_cli.py <子指令>`（例如 `scan`、`list-provider-options`、`open-settings`、`test-provider`、`preview-setup`、`apply-setup`、`ingest`、`import`、`peek`、`check-sources`、`run-radar`），輸入輸出 JSON、預覽與確認碼契約和 MCP 工具完全相同，且不印金鑰。
+  - 如果這個 session 只有精簡核心工具（例如 `hybrid_search_brain`）或剛裝好尚未重開 session，且 OmniKeep 就在這台電腦上：直接用專案 `.venv` 的 Python 執行 `<OmniKeep>/scripts/setup_cli.py <子指令>`（例如 `scan`、`list-provider-options`、`open-settings`、`test-provider`、`preview-setup`、`apply-setup`、`ingest`、`import`、`peek`、`check-sources`、`run-radar`），輸入輸出 JSON、預覽與確認碼契約和 MCP 工具完全相同，且不印金鑰。在 Windows 上傳送含中文的答案 JSON 時，建議先寫成 UTF-8 檔再帶 `--answers-file` 傳入。
+  - 若 agent 在**別台電腦**透過 Streamable HTTP（`/mcp-http`）連線，無法執行本機 `scripts/setup_cli.py`：請先在 OmniKeep 主機的 `.env` 設 `MCP_PROFILE=core,setup`（或 `full`）並重啟服務，即可暴露全部 `omnikeep_*` MCP 工具。
 - 沒有工具也沒有本機資料夾，但使用者說已經裝了：問 OmniKeep 資料夾在哪，在那裡跑 `python scripts/register_agents.py`（有 `.venv` 就用 `.venv` 裡的 Python），即可用 `scripts/setup_cli.py` 繼續設定。
 - 都沒有：照下面安裝。
 
@@ -339,20 +340,20 @@ MCP 工具不能代為設定機器人權杖，也不能產生配對連結：這�
   - 預設只存標題與網址。`enqueue_ai=true` 會把每個連結都排進 AI 分析、會用額度，先問過使用者。
 - 「多加幾個 X 的來源」「摘要改到晚上」：這是探索，照「實驗功能：探索」一節，只列新的來源、只改那一項。
 
-## MCP 工具一覽
+## MCP 工具與本機 CLI 對照一覽
 
-| 工具 | 用途 | 會寫入嗎 |
-|---|---|---|
-| `omnikeep_scan` | 硬體、狀態、已接的 AI 連線、上次答案、OmniKit profile、書籤與 GitHub 加星的專案筆數 | 否 |
-| `omnikeep_list_provider_options` | AI 服務的選項卡片與目前的 AI 連線 | 否 |
-| `omnikeep_open_settings` | 設定頁的連結。`card` 指向某張 AI 卡片；`tab` 指向分頁（`ai`、`telegram`、`line`、`push`、`labs` 等） | 否 |
-| `omnikeep_test_provider` | 用已存的金鑰或權杖送一筆小請求。`connection_id` 測一條 AI 連線；`service` 測某個用途（`analysis`、`brain`、`radar`、`embeddings`、`video`）的第一條連線，或 `telegram`、`line`、`github` | 否 |
-| `omnikeep_preview_setup` | 驗證答案 JSON，回傳設定差異與確認碼 | 否 |
-| `omnikeep_apply_setup` | 套用設定，要帶確認碼 | 是 |
-| `omnikeep_ingest` | 收藏一個網址並分析；回傳的 `analysed` 是 false 表示沒接 AI、只存了原文 | 是（新增一筆收藏） |
-| `omnikeep_import` | 匯入書籤、GitHub 加星的專案、Pocket 匯出檔、OPML | 是 |
-| `omnikeep_peek` | 解析一個網址，不跑 AI、不存（探索的種子連結用） | 否 |
-| `omnikeep_check_sources` | 驗證候選的探索來源，首頁自動找 RSS | 否 |
-| `omnikeep_run_radar` | 探索檢查一次並產生精選 | 是 |
+| MCP 工具（`setup`/`full` profile） | 對應本機 CLI（`scripts/setup_cli.py`） | 用途 | 會寫入嗎 |
+|---|---|---|---|
+| `omnikeep_scan` | `scan` | 硬體、狀態、已接的 AI 連線、上次答案、OmniKit profile、書籤與 GitHub 加星的專案筆數 | 否 |
+| `omnikeep_list_provider_options` | `list-provider-options` | AI 服務的選項卡片與目前的 AI 連線 | 否 |
+| `omnikeep_open_settings` | `open-settings --card <id> --tab <tab>` | 設定頁的連結。`card` 指向某張 AI 卡片；`tab` 指向分頁（`ai`、`telegram`、`line`、`push`、`labs` 等） | 否 |
+| `omnikeep_test_provider` | `test-provider --service <slot> --connection-id <id>` | 用已存的金鑰或權杖送一筆小請求測試 | 否 |
+| `omnikeep_preview_setup` | `preview-setup --answers-file <path>` | 驗證答案 JSON，回傳設定差異與確認碼（亦支援 `--answers-json -` 由 UTF-8 stdin 讀入） | 否 |
+| `omnikeep_apply_setup` | `apply-setup --answers-file <path> --confirm-code <code>` | 套用設定，要帶確認碼 | 是 |
+| `omnikeep_ingest` | `ingest <url>` | 收藏一個網址並分析；回傳的 `analysed` 是 false 表示沒接 AI、只存了原文 | 是（新增一筆收藏） |
+| `omnikeep_import` | `import <kind> [--path <p>] [--browser chrome\|edge] [--enqueue-ai]` | 匯入書籤、GitHub 加星的專案、Pocket 匯出檔、OPML | 是 |
+| `omnikeep_peek` | `peek <url> [--max-chars 3000]` | 解析一個網址，不跑 AI、不存（探索的種子連結用） | 否 |
+| `omnikeep_check_sources` | `check-sources --sources-file <path> [--recent 3]` | 驗證候選的探索來源，首頁自動找 RSS | 否 |
+| `omnikeep_run_radar` | `run-radar` | 探索檢查一次並產生精選 | 是 |
 
 工具回錯誤時，照錯誤訊息處理並跟使用者說明；不要改用直接讀寫資料庫或設定檔繞過。
