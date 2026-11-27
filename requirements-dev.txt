@@ -4,3 +4,5 @@ pytest-asyncio>=1.4,<2
 # Checks that every import is declared (tests/test_optional_dependencies.py).
 deptry>=0.25,<1
 ruff>=0.17,<1
+# Pinned: scripts/pyright_baseline.json was recorded with this version; update both together.
+pyright==1.1.414

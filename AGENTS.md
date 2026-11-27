@@ -6,7 +6,7 @@
 
 | 修改範圍 | 必跑指令 | 通過標準 |
 |---|---|---|
-| Python 後端（`app/`、`scripts/`、`tests/`） | `ruff check` ＋ `pyright app/<修改檔案>` ＋ 對應 `pytest` | 0 error（新改檔案另跑 `ruff check --select F,E4,E7,E9,B,ASYNC,BLE,FAST <檔>`） |
+| Python 後端（`app/`、`scripts/`、`tests/`） | `ruff check` ＋ `python scripts/pyright_baseline.py`（CI 僅擋新增）＋ 對應 `pytest` | `ruff check` 0 error、pyright 不得新增超出 `scripts/pyright_baseline.json` 的錯誤（新改檔案另跑 `ruff check --select F,E4,E7,E9,B,ASYNC,BLE,FAST <檔>` 與 `pyright <新檔>`） |
 | 前端／行動端（`frontend/`、`static/`） | `cd frontend && npm run lint && npm test && npm run build` | `oxlint` + `stylelint` 0 error、全部單元與行動端契約測試全綠、建置 0 錯誤 |
 | 涉及版面、捲動、彈窗、CSS 或路由 | 啟動服務後執行 `python scripts/verify_mobile_webkit.py` | 真實 Playwright **WebKit（Safari 核心）** 手機（iPhone）與桌面巡檢 `ok: true, problems_count: 0` |
 | Commit 前門禁（已由 `prek` 自動掛載） | `prek run --all-files`（含 `gitleaks` 金鑰掃描） | 嚴禁使用 `git commit --no-verify` 繞過門禁；嚴禁為求通過而擅自刪除或放寬 lint 規則 |

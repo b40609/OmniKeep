@@ -58,6 +58,10 @@ COPY run.py ./
 # docker compose run --rm omnikeep python scripts/restore_backup.py --latest (docs/backup_restore.md)
 COPY scripts/restore_backup.py ./scripts/
 
+# The image has no .git: /health reports this commit instead (app/build_info.py).
+ARG OMNIKEEP_COMMIT=""
+ENV OMNIKEEP_COMMIT=$OMNIKEEP_COMMIT
+
 # Persistent storage mount point for database, HTML snapshots, and rotating backups
 RUN mkdir -p /data/snapshots /data/backups
 

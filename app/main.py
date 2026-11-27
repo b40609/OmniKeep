@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from app.static_assets import CurrentBuildFiles
 from fastapi.responses import FileResponse
-from app import __version__
+from app import __version__, build_info
 from app.config import settings
 from app.database import init_db
 from app.routers import (
@@ -205,4 +205,7 @@ async def serve_dashboard():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "OmniKeep", "version": __version__}
+    # commit is what this process started from, not what is on disk now (app/build_info.py).
+    return {"status": "healthy", "service": "OmniKeep", "version": __version__,
+            "commit": build_info.STARTUP_COMMIT, "commit_dirty": build_info.STARTUP_DIRTY,
+            "started_at": build_info.STARTED_AT}

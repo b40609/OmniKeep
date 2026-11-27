@@ -58,6 +58,11 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r requirements-dev.txt
 
+      # 212 errors existed when this gate came in (2026-11-27): those are in the baseline, new ones fail.
+      - name: pyright (only errors beyond scripts/pyright_baseline.json fail)
+        if: matrix.python == '3.14'
+        run: python scripts/pyright_baseline.py
+
       - name: Check that sqlite-vec loads (its tests fail in CI otherwise)
         run: |
           python -c "import sqlite3, sqlite_vec; c = sqlite3.connect(':memory:'); c.enable_load_extension(True); sqlite_vec.load(c); print('sqlite-vec', c.execute('select vec_version()').fetchone()[0])"
@@ -87,15 +92,16 @@ jobs:
           persist-credentials: false
 
       - name: Build the image
-        run: docker build --pull -t omnikeep-ci .
+        run: docker build --pull --build-arg OMNIKEEP_COMMIT=${{ github.sha }} -t omnikeep-ci .
 
-      - name: Start it and check /health reports the VERSION file
+      - name: Start it and check /health reports the VERSION file and the commit
         run: |
           docker run -d --name omnikeep -p 5000:5000 -e API_KEY="ci-only-$(openssl rand -hex 24)" omnikeep-ci
           for i in $(seq 1 30); do
             if body=$(curl -fsS http://127.0.0.1:5000/health); then
               echo "$body"
               echo "$body" | grep -F "\"version\":\"$(cat VERSION)\""
+              echo "$body" | grep -F "\"commit\":\"${{ github.sha }}\""
               exit 0
             fi
             sleep 2

@@ -58,8 +58,10 @@ def test_all_private_routes_require_header(path):
 
 def test_auth_and_cors_fail_closed(monkeypatch):
     with TestClient(app) as client:
-        assert client.get("/health").json() == {
+        health = client.get("/health").json()
+        assert {k: health[k] for k in ("status", "service", "version")} == {
             "status": "healthy", "service": "OmniKeep", "version": __version__}
+        assert set(health) == {"status", "service", "version", "commit", "commit_dirty", "started_at"}
         assert client.get("/api/watch/targets", headers=headers()).status_code == 200
         assert client.get("/api/watch/targets", headers={"X-API-Key": settings.API_KEY}).status_code == 200
         assert client.get("/api/watch/targets", params={"token": settings.API_KEY}).status_code == 401
