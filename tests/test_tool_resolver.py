@@ -373,3 +373,27 @@ async def test_telegram_detail_count_matches_listed_open_source_projects():
     assert "重複收錄" in sent_text
 
 
+
+
+# KEEP-B-01 (2026-11-26 review): "run" in the regional keywords matched every English text with
+# run, running or runtime and tied f2etw/jobs to 60 unrelated items as a "verified" counterpart.
+@pytest.mark.asyncio
+async def test_english_run_does_not_trigger_the_taiwan_counterpart():
+    from app.research.tool_resolver import resolve_taiwan_counterpart
+    search = AsyncMock(return_value=[{"full_name": "f2etw/jobs", "html_url": "https://github.com/f2etw/jobs",
+                                      "stars": 1873}])
+    with patch("app.research.tool_resolver.search_github_repositories", search):
+        result = await resolve_taiwan_counterpart(
+            "fastrun", "Run it locally: the runtime is running in a container and runs every hour.")
+    assert result is None
+    search.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_regional_topic_still_finds_the_taiwan_counterpart():
+    from app.research.tool_resolver import resolve_taiwan_counterpart
+    search = AsyncMock(return_value=[{"full_name": "f2etw/jobs", "html_url": "https://github.com/f2etw/jobs",
+                                      "stars": 1873}])
+    with patch("app.research.tool_resolver.search_github_repositories", search):
+        result = await resolve_taiwan_counterpart("guide", "海外开源移民指南")
+    assert result and result["name"] == "f2etw/jobs"

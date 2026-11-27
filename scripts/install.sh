@@ -110,6 +110,15 @@ if [ ${#MISSING[@]} -gt 0 ]; then
 fi
 [ -n "$BASE_PYTHON" ] && note "Python：$("$BASE_PYTHON" --version 2>&1)（$BASE_PYTHON）"
 command -v node >/dev/null 2>&1 && note "Node.js $(node --version)"
+# ffmpeg is not needed for links, only for videos: short videos, speech without subtitles and
+# text on long videos' frames need it (app/parsers/reel.py, transcript.py, screen.py).
+if command -v ffmpeg >/dev/null 2>&1; then
+  note "ffmpeg：$(command -v ffmpeg)"
+elif [ "$(uname -s)" = "Darwin" ]; then
+  warn "沒有 ffmpeg：網頁連結照常收，短影音與影片的畫面、聲音讀不到。要用就執行：brew install ffmpeg"
+else
+  warn "沒有 ffmpeg：網頁連結照常收，短影音與影片的畫面、聲音讀不到。要用就執行：sudo apt install ffmpeg（或你的套件管理員）"
+fi
 
 # ── 2. 取得程式碼 ────────────────────────────────────────────────
 

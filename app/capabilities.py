@@ -53,6 +53,26 @@ def _ollama_installed() -> bool:
     return any(p.exists() for p in places)
 
 
+def _ffmpeg_installed() -> bool:
+    """ffmpeg cuts the frames and the sound out of videos (app/parsers/reel.py, transcript.py, screen.py)."""
+    return shutil.which("ffmpeg") is not None
+
+
+def _ffmpeg_step() -> str:
+    # 2026-11-26 review (KEEP-B-04): the installer and this page never mentioned ffmpeg, so a
+    # machine without it showed short videos as good while every reel came back as text only.
+    if os.name == "nt":
+        command = "winget install --id Gyan.FFmpeg -e"
+    elif Path("/Applications").exists():
+        command = "brew install ffmpeg"
+    else:
+        command = "sudo apt install ffmpeg（或你的套件管理器）"
+    return f"在伺服器安裝 ffmpeg：{command}（免帳號），再重新啟動 OmniKeep。" + AGENT_HINT
+
+
+NO_FFMPEG = "沒裝 ffmpeg"
+
+
 def _embedder_step(prefix: str = "") -> str:
     # 2026-11-18 rehearsal: a machine with Ollama but no embedding model was told to install Ollama
     if _ollama_installed():
@@ -107,6 +127,9 @@ def _video() -> Dict[str, Any]:
 
 
 def _reel_frames() -> Dict[str, Any]:
+    if not _ffmpeg_installed():
+        return _feature("reel_frames", "短影音畫面上的字", OFF,
+                        f"{NO_FFMPEG}：短影音抽不出畫面和聲音，只用貼文文字", _ffmpeg_step())
     entries = _entries("analysis") + [e for e in _entries("video") if e not in _entries("analysis")]
     seeing = [conn for conn, _ in entries if _sees(conn)]
     if not seeing:
@@ -117,6 +140,9 @@ def _reel_frames() -> Dict[str, Any]:
 
 def _screen_text() -> Dict[str, Any]:
     from app.parsers import screen
+    if not _ffmpeg_installed():
+        return _feature("screen_text", "長影片畫面上的字", OFF, f"{NO_FFMPEG}：讀不到影片畫面，只用逐字稿",
+                        _ffmpeg_step())
     if not screen.missing_packages():
         return _feature("screen_text", "長影片畫面上的字", GOOD, "在這台電腦讀投影片和圖表上的字")
     return _feature("screen_text", "長影片畫面上的字", OFF, "沒裝畫面文字辨識：只用逐字稿",
@@ -124,6 +150,9 @@ def _screen_text() -> Dict[str, Any]:
 
 
 def _speech() -> Dict[str, Any]:
+    if not _ffmpeg_installed():
+        return _feature("speech", "沒有字幕的影片轉文字", OFF, f"{NO_FFMPEG}：解不開影片的聲音，沒有字幕的影片無法分析內容",
+                        _ffmpeg_step())
     if _installed("faster_whisper", "ctranslate2"):
         return _feature("speech", "沒有字幕的影片轉文字", GOOD, "在這台電腦把語音轉成文字")
     return _feature("speech", "沒有字幕的影片轉文字", OFF, "沒裝語音轉文字：沒有字幕的影片無法分析內容",

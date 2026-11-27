@@ -438,7 +438,9 @@ def test_a_fresh_install_can_analyse_with_no_account(monkeypatch):
 
 
 def test_a_fresh_install_shows_what_is_basic_and_how_to_improve_it(monkeypatch):
+    from app import capabilities
     monkeypatch.setattr(ai_connections, "STARTER_CARDS", ("flm", "jarvisclaw", "kilo", "ovh"))
+    monkeypatch.setattr(capabilities, "_ffmpeg_installed", lambda: True)
     with TestClient(app) as client:
         body = client.get("/api/ai/features", headers=HEADERS).json()
         rows = {f["id"]: f for f in body["features"]}
@@ -484,6 +486,19 @@ def test_a_fresh_install_without_ollama_searches_by_meaning_through_a_no_signup_
     assert rows["search"]["level"] == "basic" and "每分鐘" in rows["search"]["now"]
     # 2026-11-18 trial: searching often, most queries were matched by their words alone; say so
     assert "常搜尋的時候多半是在用關鍵字找" in rows["search"]["now"]
+
+
+def test_without_ffmpeg_the_video_features_say_what_is_missing(monkeypatch):
+    # KEEP-B-04 (2026-11-26 review): reels showed as good on a machine without ffmpeg
+    from app import capabilities
+    monkeypatch.setattr(ai_connections, "STARTER_CARDS", ("flm", "jarvisclaw", "kilo", "ovh"))
+    monkeypatch.setattr(capabilities, "_ffmpeg_installed", lambda: False)
+    with TestClient(app) as client:
+        rows = {f["id"]: f for f in client.get("/api/ai/features", headers=HEADERS).json()["features"]}
+    for fid in ("reel_frames", "speech", "screen_text"):
+        assert rows[fid]["level"] == "off", fid
+        assert "ffmpeg" in rows[fid]["now"] and "ffmpeg" in rows[fid]["step"], fid
+    assert rows["analysis"]["level"] == "basic"  # links still work without it
 
 
 def test_search_upgrade_says_download_a_model_when_ollama_is_already_installed(monkeypatch):

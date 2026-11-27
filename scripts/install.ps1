@@ -171,6 +171,25 @@ if ($prereq.Missing.Count -gt 0) {
 if ($prereq.Python) { Write-Note "Python $($prereq.Python.Version)：$($prereq.Python.Exe)" }
 if (Get-Command node -ErrorAction SilentlyContinue) { Write-Note "Node.js $((& node --version) 2>$null)" }
 
+# ffmpeg is not needed for links, only for videos: short videos, speech without subtitles and
+# text on long videos' frames need it (app/parsers/reel.py, transcript.py, screen.py).
+$FfmpegId = 'Gyan.FFmpeg'
+if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+    Write-Note "ffmpeg：$((Get-Command ffmpeg).Source)"
+} elseif ($InstallPrereqs -and -not $DryRun -and (Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Note "用 winget 安裝 ffmpeg（$FfmpegId）"
+    try {
+        Invoke-Native 'winget' @('install', '--id', $FfmpegId, '-e',
+            '--accept-source-agreements', '--accept-package-agreements')
+        Update-SessionPath
+    } catch {
+        Write-Warn "ffmpeg 沒裝成功（$($_.Exception.Message)）：網頁連結照常收，影片之後可以再裝。"
+    }
+} else {
+    Write-Warn "沒有 ffmpeg：網頁連結照常收，短影音與影片的畫面、聲音讀不到。要用就執行："
+    Write-Note "winget install --id $FfmpegId -e --accept-source-agreements --accept-package-agreements"
+}
+
 # ── 2. 取得程式碼 ────────────────────────────────────────────────
 
 function Test-OmniKeepRepo([string]$path) {

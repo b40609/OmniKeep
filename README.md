@@ -58,7 +58,7 @@ agent 會照 [`skills/omnikeep-setup`](skills/omnikeep-setup/SKILL.md) 安裝，
 curl -fsSL https://raw.githubusercontent.com/b40609/OmniKeep/main/scripts/install.sh | bash
 ```
 
-需要 git、Python 3.12+、Node.js 20.19+ 或 22.12+。腳本做了什麼、怎麼移除，見[安裝細節](#安裝腳本做了什麼)。
+需要 git、Python 3.12+、Node.js 20.19+ 或 22.12+。短影音與影片的畫面、聲音另外要 ffmpeg（沒有也能收網頁連結；安裝腳本會檢查，Windows 加 `-InstallPrereqs` 時用 winget 一起裝）。腳本做了什麼、怎麼移除，見[安裝細節](#安裝腳本做了什麼)。
 
 ### 2. 打開
 

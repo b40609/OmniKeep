@@ -581,6 +581,12 @@ async def resolve_mentioned_tools(
     return enriched
 
 
+# Regional indicators: topics like 润学 / 走线 / 出海 / 墙内 / 移民. Matched as substrings of the
+# lowercased title and text, so no English word belongs here: "run" (for 润) matched run, running
+# and runtime in English articles and tied a job board to 60 unrelated items (2026-10-31..11-25).
+REGIONAL_KEYWORDS = ("润学", "出海", "移民", "墙内", "走线", "海外求职", "海外工作")
+
+
 async def resolve_taiwan_counterpart(
     target_name: str,
     content_raw: str,
@@ -589,9 +595,7 @@ async def resolve_taiwan_counterpart(
     """Discover and resolve Taiwan/localized counterpart for regional projects."""
     combined = f"{target_name} {content_raw[:1000]}".lower()
 
-    # Regional indicators: topics like 润学 / 走线 / 出海 / 墙内 / 移民
-    regional_keywords = ["润学", "出海", "移民", "墙内", "走线", "海外求职", "海外工作", "run"]
-    if not any(k in combined for k in regional_keywords):
+    if not any(k in combined for k in REGIONAL_KEYWORDS):
         return None
 
     # Search Taiwan developer counterpart repositories
