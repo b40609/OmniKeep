@@ -139,32 +139,38 @@ async def _dispatch(args: argparse.Namespace) -> Any:
         from app.mcp_server import attach_item_diagram
         result = attach_item_diagram(item_id=args.item_id, path=args.path)
     elif cmd == "connect-freellmapi":
-        try:
-            from scripts.freellmapi_bridge import auto_connect
-        except ModuleNotFoundError:
-            import importlib.util
-
-            bridge_path = Path(__file__).resolve().parent / "freellmapi_bridge.py"
-            spec = importlib.util.spec_from_file_location("omnikeep_freellmapi_bridge", bridge_path)
-            if spec is None or spec.loader is None:
-                raise RuntimeError(f"找不到 FreeLLMAPI 接線腳本：{bridge_path}")
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            auto_connect = mod.auto_connect
-        result = auto_connect(
+        bridge_mod = _load_freellmapi_bridge()
+        slot_position = "prepend" if args.prepend else ("append" if args.append else None)
+        result = bridge_mod.auto_connect(
             base_url=args.base_url,
             launch=args.launch,
             enable_keyless=not args.no_keyless,
             sync_existing_keys=args.sync_existing_keys,
             model=args.model,
             slot=args.slot,
-            prepend_slot=not args.append,
+            slot_position=slot_position,
             dry_run=args.dry_run,
         )
     else:
         raise ValueError(f"不認得的子指令：{cmd}")
 
     return await _maybe_await(result)
+
+
+def _load_freellmapi_bridge():
+    try:
+        from scripts import freellmapi_bridge as mod
+        return mod
+    except ModuleNotFoundError:
+        import importlib.util
+
+        bridge_path = Path(__file__).resolve().parent / "freellmapi_bridge.py"
+        spec = importlib.util.spec_from_file_location("omnikeep_freellmapi_bridge", bridge_path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"找不到 FreeLLMAPI 接線腳本：{bridge_path}")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -233,14 +239,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_diag.add_argument("--path", required=True, help="獨立 HTML 檔案的絕對路徑")
 
     p_flm = sub.add_parser("connect-freellmapi", help="一鍵免手動貼上接線本機 FreeLLMAPI 桌面版")
-    p_flm.add_argument("--base-url", default="")
-    p_flm.add_argument("--launch", action="store_true")
-    p_flm.add_argument("--no-keyless", action="store_true")
-    p_flm.add_argument("--sync-existing-keys", action="store_true")
-    p_flm.add_argument("--model", default="auto")
-    p_flm.add_argument("--slot", default="analysis")
-    p_flm.add_argument("--append", action="store_true")
-    p_flm.add_argument("--dry-run", action="store_true")
+    _load_freellmapi_bridge().add_bridge_arguments(p_flm)
 
     return parser
 

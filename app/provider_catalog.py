@@ -23,6 +23,7 @@ task slot naming it, gets them (app/ai_connections.py extra_body_for).
 """
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 VERIFIED = "2026-11-05"
 
@@ -439,7 +440,16 @@ def guess_card(base_url: str, kind: str = "openai") -> str:
     """The card an existing address most likely came from (used when migrating .env settings)."""
     if kind == "gemini":
         return "gemini"
-    url = (base_url or "").lower()
+    raw = (base_url or "").strip()
+    url = raw.lower()
+    try:
+        parsed = urlparse(raw)
+        host = (parsed.hostname or "").lower()
+        port = parsed.port
+    except ValueError:
+        host, port = "", None
+    if host in ("127.0.0.1", "localhost", "::1") and port in (31415, 3001):
+        return "freellmapi"
     for card_id, marker in (("agnes", "agnes-ai.com"), ("groq", "api.groq.com"),
                             ("cloudflare", "api.cloudflare.com"), ("openrouter", "openrouter.ai"),
                             ("zai", "api.z.ai"), ("inception", "inceptionlabs.ai"), ("tokenharbor", "tokenharbor.ai"),
@@ -447,8 +457,6 @@ def guess_card(base_url: str, kind: str = "openai") -> str:
                             ("aihubmix", "aihubmix.com"), ("sealion", "api.sea-lion.ai"),
                             ("itera", "iteracompute.com"), ("kilo", "api.kilo.ai"), ("blockrun", "blockrun.ai"),
                             ("bazaarlink", "bazaarlink.ai"), ("cheapllm", "cheapllm.shop"), ("ovh", "endpoints.kepler.ai.cloud.ovh.net"),
-                            ("freellmapi", "127.0.0.1:31415"), ("freellmapi", "localhost:31415"),
-                            ("freellmapi", "127.0.0.1:3001"), ("freellmapi", "localhost:3001"),
                             ("omniroute", ":20128"), ("deepseek", "api.deepseek.com"),
                             ("openai", "api.openai.com"), ("ollama", ":11434")):
         if marker in url:

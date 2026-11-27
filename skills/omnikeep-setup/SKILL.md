@@ -141,16 +141,21 @@ OmniKeep 的摘要、重點分析與提問要用 AI。先跟使用者說清楚�
 
 本機推論（例如 Ollama）不需要金鑰，測試通過就好。
 
-### 一鍵接上 FreeLLMAPI 本機閘道（零複製貼上）
+### 一鍵接上 FreeLLMAPI 本機閘道（零複製貼上，先預覽再套用）
 
-如果使用者想用 **FreeLLMAPI** 統一管理多家免費層 API（免去自己維護每張免費卡片與限流），**不要叫使用者手動複製貼上 unified key**，由 agent 全自動接線：
+如果使用者想用 **FreeLLMAPI** 統一管理多家免費層 API（免去自己維護每張免費卡片與限流），**不要叫使用者手動複製貼上 unified key**，由 agent 分兩步自動接線（嚴格遵守「先預覽、同意後才寫入」）：
 
-1. Windows 尚未安裝時，由 agent 直接執行 `winget install --id 9PBN6G8K2B7F --source msstore --accept-source-agreements --accept-package-agreements` 安裝 Microsoft Store 簽名桌面版。
-2. 確認桌面版已開啟（或經使用者同意以 `--launch` 喚起）後，執行本機零洩漏接線腳本：
+1. Windows 尚未安裝時，由 agent 直接執行 `winget install --id 9PBN6G8K2B7F --source msstore --accept-source-agreements --accept-package-agreements` 安裝 Microsoft Store 簽名桌面版；請使用者確認桌面版已開啟（或經使用者同意於正式步驟加 `--launch` 喚起）。
+2. **第一步（嚴格零寫入預覽）**：先執行 `--dry-run`（**預設不帶 `--sync-existing-keys`**；只有使用者明確表示要把 OmniKeep 既有免費層金鑰同步到 FreeLLMAPI 時才加 `--sync-existing-keys`）：
    ```bash
-   <.venv Python> scripts/setup_cli.py connect-freellmapi --sync-existing-keys
+   <.venv Python> scripts/setup_cli.py connect-freellmapi --dry-run
    ```
-   它會透過本機 loopback 官方桌面免密端點自動：(a) 啟用 FreeLLMAPI 內建的免金鑰免費服務商、(b) 將 OmniKeep 既有免費層金鑰本機加密同步過去（不動付費／Vertex 卡，全程不經聊天、不印出金鑰）、(c) 自動取得 unified key 寫入 OmniKeep `freellmapi` 連線並掛進 `analysis` 槽位。使用者全程 0 次手動複製貼上。
+   把預覽結果說清楚給使用者看：會連到哪個本機位址、是否會啟用 FreeLLMAPI 內建免金鑰來源、會新建或更新哪條 OmniKeep 連線、會掛在哪個槽位第幾順位（不想搶走目前分析第一順位時可加 `--append`），以及（若有要求同步）預計同步哪幾張免費層卡片（不動付費／Vertex 卡）。
+3. **第二步（使用者同意後才套用）**：使用者確認後，移除 `--dry-run` 執行同一組參數正式接線：
+   ```bash
+   <.venv Python> scripts/setup_cli.py connect-freellmapi [--sync-existing-keys] [--append]
+   ```
+   腳本會透過本機 loopback 官方桌面免密端點自動取得 unified key 寫入 OmniKeep（全程不經聊天、不印出金鑰、結束後自動登出工作階段），使用者全程 0 次手動複製貼上。
 
 都接好之後，把「主要在前、備援依序在後」的連線 id 放進答案的 `ai_order`，連同「關於你」（`about_you`）照「預覽與套用」一節預覽，使用者同意再套用。提問與探索預設跟著分析用的順序；使用者想分開設定，請他到「設定 › AI」的「用途與備援順序」調整。
 
