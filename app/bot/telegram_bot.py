@@ -12,6 +12,8 @@ import inspect
 import json
 import logging
 import re
+import sqlite3
+import time
 from typing import Optional, Dict, Any, List
 import httpx
 
@@ -1303,13 +1305,51 @@ class TelegramBot:
 
 
 
+    # A message is skipped only when it keeps failing on its own: at least this many failures in
+    # a row AND this long after the first one. A database locked for a minute (a backup, a big
+    # recompute) fails every message 5 times in 15 s; before 2026-11-27 that dropped them (P1-4).
     MAX_CONSECUTIVE_UPDATE_FAILURES = 5
+    MIN_FAILING_SECONDS_BEFORE_SKIP = 600
+
+    @staticmethod
+    def _clock() -> float:
+        return time.monotonic()
+
+    @staticmethod
+    def _is_transient_failure(exc: BaseException) -> bool:
+        """A locked database or a network hiccup is not the message's fault: never skip for it."""
+        current: Optional[BaseException] = exc
+        for _ in range(10):  # follow `raise ... from` / `during handling` a few levels
+            if current is None:
+                return False
+            if isinstance(current, (sqlite3.OperationalError, httpx.TransportError)):
+                return True
+            current = current.__cause__ or current.__context__
+        return False
+
+    async def _alert_skipped_update(self, update_id: int, attempts: int, seconds: float, reason: str) -> None:
+        from app import owner_alert
+        key = f"telegram-skip-{update_id}"
+        title = "Telegram 訊息連續失敗，已跳過"
+        body = (f"訊息 update_id={update_id} 連續失敗 {attempts} 次、持續約 {int(seconds // 60)} 分鐘"
+                f"（{reason}），已自動跳過以免卡住後續收錄。請檢查伺服器日誌或重新傳送連結。")
+        if owner_alert.alert_once(key, title, body, tag="omnikeep-tg-skip"):
+            return
+        if owner_alert.sent_at(key) is not None:
+            return  # already told about this one (replayed after a restart)
+        # The once-only record could not be written, which is often why the message kept failing:
+        # tell the owner anyway rather than leave only a line in the server log.
+        try:
+            await owner_alert.send(title, body, tag="omnikeep-tg-skip")
+        except Exception as exc:  # noqa: BLE001 - send() never raises; polling must go on regardless
+            logger.warning("Telegram skip alert could not be sent (%s)", type(exc).__name__)
 
     async def run_polling(self):
         self.running = True
         offset = 0
         failed_update_id: Optional[int] = None
         failed_attempts = 0
+        failed_since = 0.0
         client = await self.get_client()
 
         logger.warning("Telegram polling started (authorized users: %d)", len(settings.telegram_allowed_ids))
@@ -1336,35 +1376,40 @@ class TelegramBot:
                     try:
                         await self.handle_update(update)
                     except Exception as e:  # noqa: BLE001 - isolate poison update from crashing poller
-                        if update_id is not None and update_id == failed_update_id:
-                            failed_attempts += 1
-                        else:
-                            failed_update_id = update_id
-                            failed_attempts = 1
+                        transient = self._is_transient_failure(e)
+                        if not transient:
+                            now = self._clock()
+                            if update_id is not None and update_id == failed_update_id:
+                                failed_attempts += 1
+                            else:
+                                failed_update_id = update_id
+                                failed_attempts = 1
+                                failed_since = now
+                            failing_for = now - failed_since
 
-                        if update_id is not None and failed_attempts >= self.MAX_CONSECUTIVE_UPDATE_FAILURES:
-                            logger.error(
-                                "Telegram update %s failed %d consecutive times (%s); skipping to unblock polling",
-                                update_id, failed_attempts, type(e).__name__,
-                            )
-                            from app import owner_alert
-                            owner_alert.alert_once(
-                                f"telegram-skip-{update_id}",
-                                "Telegram 訊息連續失敗，已跳過",
-                                f"訊息 update_id={update_id} 連續失敗 {failed_attempts} 次（{type(e).__name__}），"
-                                "已自動跳過以免卡住後續收錄。請檢查伺服器日誌或重新傳送連結。",
-                                tag="omnikeep-tg-skip",
-                            )
-                            offset = update_id + 1
-                            failed_update_id = None
-                            failed_attempts = 0
-                            continue
+                            if (update_id is not None
+                                    and failed_attempts >= self.MAX_CONSECUTIVE_UPDATE_FAILURES
+                                    and failing_for >= self.MIN_FAILING_SECONDS_BEFORE_SKIP):
+                                logger.error(
+                                    "Telegram update %s failed %d consecutive times over %ds (%s); "
+                                    "skipping to unblock polling",
+                                    update_id, failed_attempts, int(failing_for), type(e).__name__,
+                                )
+                                await self._alert_skipped_update(update_id, failed_attempts, failing_for,
+                                                                 type(e).__name__)
+                                offset = update_id + 1
+                                failed_update_id = None
+                                failed_attempts = 0
+                                continue
 
                         # Keep the failing update unacknowledged so it can be
                         # replayed; earlier updates have durable dedupe keys.
                         logger.exception(
-                            "Telegram update %s not yet persisted (attempt %d/%d): %s",
-                            update_id, failed_attempts, self.MAX_CONSECUTIVE_UPDATE_FAILURES, e,
+                            "Telegram update %s not yet persisted (%s): %s",
+                            update_id,
+                            "transient, not counted" if transient else
+                            f"attempt {failed_attempts}/{self.MAX_CONSECUTIVE_UPDATE_FAILURES}",
+                            e,
                         )
                         await asyncio.sleep(3)
                         break

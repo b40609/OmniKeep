@@ -86,9 +86,28 @@ function Get-ServicePort([string]$root) {
 $port = Get-ServicePort $projectRoot
 $healthUrl = "http://127.0.0.1:$port/health"
 
+# Add-Content opens the log read-write; on 2026-11-27 something kept watchdog.log open so that
+# only a write-only open succeeded, Add-Content threw, and with ErrorActionPreference Stop that
+# aborted a restart halfway (killed, not restarted, owner not told). A write-only append that
+# shares everything works then too. Logging must never abort recovery: after 5 tries, give up.
 function Write-WatchdogEvent([string]$message) {
     $line = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $message
-    Add-Content -Path (Join-Path $logDir 'watchdog.log') -Value $line -Encoding UTF8
+    $path = Join-Path $logDir 'watchdog.log'
+    $bytes = [Text.Encoding]::UTF8.GetBytes($line + "`r`n")
+    for ($i = 0; $i -lt 5; $i++) {
+        try {
+            $fs = New-Object IO.FileStream($path, [IO.FileMode]::Append, [IO.FileAccess]::Write,
+                ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+            try {
+                $fs.Write($bytes, 0, $bytes.Length)
+            } finally {
+                $fs.Close()
+            }
+            return
+        } catch {
+            Start-Sleep -Milliseconds 100
+        }
+    }
 }
 
 function Read-WatchdogState {
@@ -201,13 +220,18 @@ function Invoke-OwnerRestartAlert([string]$serviceKey, [string]$oldPids, [string
     try {
         $recoveredStr = if ($recovered) { 'true' } else { 'false' }
         $alertKey = "watchdog-restart-$serviceKey-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        # Start-Process in PowerShell 5.1 refuses an empty string inside -ArgumentList, and the
+        # "killed but could not restart" path has no new PID: leave such flags out (alert_owner.py
+        # defaults them to ""), or the alert most worth sending would never go out.
         $argList = @(
             '-B',
             ('"' + $alertScript + '"'),
             '--event', 'watchdog-restart',
-            '--service', $serviceKey,
-            '--old-pids', $oldPids,
-            '--new-pid', $newPid,
+            '--service', $serviceKey
+        )
+        if (-not [string]::IsNullOrWhiteSpace($oldPids)) { $argList += @('--old-pids', $oldPids) }
+        if (-not [string]::IsNullOrWhiteSpace($newPid)) { $argList += @('--new-pid', $newPid) }
+        $argList += @(
             '--failures', ([string]$failures),
             '--recovered', $recoveredStr,
             '--key', $alertKey

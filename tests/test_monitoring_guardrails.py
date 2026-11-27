@@ -11,10 +11,12 @@ Covers:
 """
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -22,6 +24,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from app.bot.telegram_bot import TelegramBot
@@ -71,6 +74,8 @@ async def test_telegram_polling_skips_poison_update_after_five_failures_and_aler
             bot.running = False
 
     bot.handle_update = handle
+    ticks = itertools.count(0, 150)  # each failure is 150 s after the previous one
+    bot._clock = lambda: float(next(ticks))
     alerts: list[tuple[str, str, str]] = []
 
     def fake_alert_once(key: str, title: str, body: str, tag: str | None = None) -> bool:
@@ -81,6 +86,7 @@ async def test_telegram_polling_skips_poison_update_after_five_failures_and_aler
          patch("app.owner_alert.alert_once", side_effect=fake_alert_once):
         await bot.run_polling()
 
+    # The fifth failure is the first one 10 minutes (600 s) after the first.
     assert seen == [100, 100, 100, 100, 100, 101]
     assert len(alerts) == 1
     alert_id, title, body = alerts[0]
@@ -124,6 +130,112 @@ async def test_telegram_polling_resets_failure_count_after_recovery():
     alert_mock.assert_not_called()
 
 
+def _replaying_bot(failures: int, exc_factory, clock_step: float):
+    """A bot whose update 300 fails `failures` times (then works) and whose 301 stops polling."""
+    bot = TelegramBot(token="test-bot-token")
+    calls = {"300": 0, "polls": 0}
+
+    async def fake_get(url, params=None):
+        calls["polls"] += 1
+        if calls["polls"] > 40:  # an unfixed loop fails the test instead of hanging it
+            bot.running = False
+            return SimpleNamespace(status_code=200, json=lambda: {"ok": True, "result": []})
+        offset = (params or {}).get("offset", 0)
+        updates = [{"update_id": 300}, {"update_id": 301}]
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {"ok": True, "result": [u for u in updates if u["update_id"] >= offset]},
+        )
+
+    bot.get_client = AsyncMock(return_value=MagicMock(get=AsyncMock(side_effect=fake_get)))
+
+    async def handle(update):
+        if update["update_id"] == 300:
+            calls["300"] += 1
+            if calls["300"] <= failures:
+                raise exc_factory()
+        else:
+            bot.running = False
+
+    bot.handle_update = handle
+    ticks = itertools.count(0, clock_step)
+    bot._clock = lambda: float(next(ticks))
+    return bot, calls
+
+
+@pytest.mark.asyncio
+async def test_telegram_polling_does_not_skip_within_ten_minutes_of_the_first_failure():
+    """P1-4: five quick failures (a database locked for a minute) must not drop the message."""
+    bot, calls = _replaying_bot(8, lambda: ValueError("still failing"), clock_step=10)
+    with patch("app.bot.telegram_bot.asyncio.sleep", new=AsyncMock()), \
+         patch("app.owner_alert.alert_once") as alert_mock:
+        await bot.run_polling()
+    assert calls["300"] == 9  # replayed until it worked, never skipped
+    alert_mock.assert_not_called()
+
+
+def _locked_database():
+    return sqlite3.OperationalError("database is locked")
+
+
+def _wrapped_locked_database():
+    try:
+        raise sqlite3.OperationalError("database is locked")
+    except sqlite3.OperationalError as exc:
+        try:
+            raise RuntimeError("could not queue the link") from exc
+        except RuntimeError as wrapped:
+            return wrapped
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc_factory", [
+    _locked_database,
+    lambda: httpx.ConnectError("reply could not be sent"),
+    lambda: httpx.ReadTimeout("reply timed out"),
+    _wrapped_locked_database,
+], ids=["sqlite-locked", "httpx-connect", "httpx-read-timeout", "wrapped-sqlite"])
+async def test_telegram_polling_never_skips_for_a_transient_failure(exc_factory):
+    """P1-4: sqlite3.OperationalError / httpx.TransportError are not the message's fault."""
+    bot, calls = _replaying_bot(7, exc_factory, clock_step=1000)  # far past 10 minutes
+    with patch("app.bot.telegram_bot.asyncio.sleep", new=AsyncMock()), \
+         patch("app.owner_alert.alert_once") as alert_mock:
+        await bot.run_polling()
+    assert calls["300"] == 8
+    alert_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_telegram_skip_alert_is_sent_directly_when_it_cannot_be_recorded():
+    """P1-4: alert_once returns False (the database refused the claim) -> owner_alert.send."""
+    bot, calls = _replaying_bot(99, lambda: ValueError("poison"), clock_step=150)
+    send = AsyncMock(return_value={"telegram": 0, "web_push": 0, "line": 0})
+    with patch("app.bot.telegram_bot.asyncio.sleep", new=AsyncMock()), \
+         patch("app.owner_alert.alert_once", return_value=False) as alert_mock, \
+         patch("app.owner_alert.sent_at", return_value=None), \
+         patch("app.owner_alert.send", new=send):
+        await bot.run_polling()
+    assert calls["300"] == 5
+    alert_mock.assert_called_once()
+    send.assert_awaited_once()
+    title, body = send.await_args.args[:2]
+    assert "跳過" in title and "300" in body
+
+
+@pytest.mark.asyncio
+async def test_telegram_skip_alert_is_not_repeated_when_already_recorded():
+    """alert_once False because it was already sent (replayed after a restart): no second send."""
+    bot, calls = _replaying_bot(99, lambda: ValueError("poison"), clock_step=150)
+    send = AsyncMock()
+    with patch("app.bot.telegram_bot.asyncio.sleep", new=AsyncMock()), \
+         patch("app.owner_alert.alert_once", return_value=False), \
+         patch("app.owner_alert.sent_at", return_value="2026-11-27T00:00:00+00:00"), \
+         patch("app.owner_alert.send", new=send):
+        await bot.run_polling()
+    assert calls["300"] == 5
+    send.assert_not_awaited()
+
+
 def test_alert_owner_cli_formats_watchdog_restart_and_calls_owner_alert(monkeypatch):
     sent: list[tuple[str, str, str]] = []
 
@@ -155,9 +267,33 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
+def _hold_file_share_write_only(path: Path):
+    """Open `path` read+write sharing only FILE_SHARE_WRITE, as the unknown holder seen on
+    2026-11-27 did (cross review P1-1): a read-write open fails, a write-only open succeeds."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                                     wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    generic_read, generic_write, file_share_write, open_always = 0x80000000, 0x40000000, 0x2, 4
+    handle = kernel32.CreateFileW(str(path), generic_read | generic_write, file_share_write, None,
+                                  open_always, 0x80, None)
+    if handle in (None, wintypes.HANDLE(-1).value):
+        raise OSError(ctypes.get_last_error(), f"could not hold {path}")
+    return lambda: kernel32.CloseHandle(handle)
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="watchdog.ps1 is Windows-only")
-def test_watchdog_restarts_hung_process_after_threshold_and_notifies(tmp_path):
-    """Real Windows PowerShell 5.1 integration test for A-08 hung-process restart."""
+@pytest.mark.parametrize("log_held", [False, True], ids=["log-free", "log-held-share-write-only"])
+def test_watchdog_restarts_hung_process_after_threshold_and_notifies(tmp_path, log_held):
+    """Real Windows PowerShell 5.1 integration test for A-08 hung-process restart.
+
+    log-held: watchdog.log is held open (read+write, share write only) during the threshold
+    run, so a failed log write must neither abort the restart nor swallow the alert (P1-1).
+    """
     ps_exe = shutil.which("powershell.exe")
     if not ps_exe:
         pytest.skip("Windows PowerShell 5.1 not available")
@@ -275,8 +411,16 @@ with open({str(alert_log)!r}, "a", encoding="utf-8") as fh:
         assert not alert_log.exists()
 
         # Run 3: reaches threshold (3/3) -> kills hung process, restarts healthy one, alerts owner.
-        run_watchdog()
+        release = _hold_file_share_write_only(logs / "watchdog.log") if log_held else None
+        try:
+            run_watchdog()
+        finally:
+            if release:
+                release()
         assert hung_proc.wait(timeout=5) is not None
+        if log_held:
+            # Write-only append still works while the file is held, so the lines are kept too.
+            assert "OmniKeep hung" in (logs / "watchdog.log").read_text(encoding="utf-8")
 
         lines = started_pids_file.read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 2
@@ -367,3 +511,97 @@ def test_watchdog_respects_startup_grace_window(tmp_path):
                 proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 proc.kill()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="watchdog.ps1 is Windows-only")
+def test_watchdog_alerts_owner_when_hung_process_is_killed_but_cannot_restart(tmp_path):
+    """P1-2: killed but the port is still held by another process -> no restart, owner still told."""
+    ps_exe = shutil.which("powershell.exe")
+    if not ps_exe:
+        pytest.skip("Windows PowerShell 5.1 not available")
+
+    port = _free_port()
+    proj = tmp_path / "proj"
+    logs = tmp_path / "logs"
+    scripts_dir = proj / "scripts"
+    scripts_dir.mkdir(parents=True)
+    logs.mkdir(parents=True)
+    (proj / ".env").write_text(f"PORT={port}\n", encoding="utf-8")
+    alert_log = tmp_path / "alerts.jsonl"
+    ready = tmp_path / "blocker.ready"
+
+    # The "hung" OmniKeep: matches run.py, never answers (it does not even listen).
+    dummy_run = proj / "run.py"
+    dummy_run.write_text("import time\nwhile True:\n    time.sleep(1)\n", encoding="utf-8")
+    # Another program holding the port: listens, never answers; not run.py, so never killed.
+    blocker = tmp_path / "blocker.py"
+    blocker.write_text(
+        f"""import socket, time
+from pathlib import Path
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.bind(("127.0.0.1", {port}))
+sock.listen(5)
+Path({str(ready)!r}).write_text("1", encoding="utf-8")
+while True:
+    time.sleep(1)
+""",
+        encoding="utf-8",
+    )
+    (scripts_dir / "alert_owner.py").write_text(
+        f"""import json, sys
+with open({str(alert_log)!r}, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps(sys.argv[1:]) + "\\n")
+""",
+        encoding="utf-8",
+    )
+
+    procs = [
+        subprocess.Popen([sys.executable, "-B", str(blocker)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
+        subprocess.Popen([sys.executable, "-B", str(dummy_run)], cwd=str(proj),
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
+    ]
+    blocker_proc, hung_proc = procs
+    try:
+        deadline = time.time() + 10
+        while not ready.exists() and time.time() < deadline:
+            time.sleep(0.1)
+        assert ready.exists() and blocker_proc.poll() is None and hung_proc.poll() is None
+
+        env = os.environ.copy()
+        env.update({
+            "OMNIKEEP_WATCHDOG_ROOT": str(proj),
+            "OMNIKEEP_WATCHDOG_LOG_DIR": str(logs),
+            "OMNIKEEP_WATCHDOG_PYTHON": sys.executable,
+            "OMNIKEEP_WATCHDOG_MUTEX_NAME": f"Local\\OmniKeep-PortHeld-{port}",
+            "OMNIKEEP_WATCHDOG_HANG_THRESHOLD": "1",
+            "OMNIKEEP_WATCHDOG_STARTUP_GRACE_SECONDS": "0",
+            "OMNIKEEP_WATCHDOG_HEALTH_TIMEOUT_SECONDS": "1",
+            "OMNIKEEP_WATCHDOG_SKIP_OLLAMA": "1",
+        })
+        ps_out = tmp_path / "portheld.out"
+        with ps_out.open("wb") as out_f:
+            res = subprocess.run(
+                [ps_exe, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                 "-File", str(REPO / "scripts" / "watchdog.ps1")],
+                env=env, stdout=out_f, stderr=out_f, timeout=60, check=False,
+            )
+        log_text = (logs / "watchdog.log").read_text(encoding="utf-8")
+        assert res.returncode == 0, ps_out.read_text(encoding="utf-8", errors="replace") + log_text
+        assert hung_proc.wait(timeout=5) is not None  # the hung process was killed
+        assert blocker_proc.poll() is None  # the other program was left alone
+        assert "belongs to another process" in log_text
+        assert "Owner restart alert failed" not in log_text
+
+        assert alert_log.exists(), log_text
+        calls = [json.loads(line) for line in alert_log.read_text(encoding="utf-8").splitlines()]
+        assert len(calls) == 1
+        argv = calls[0]
+        assert argv[argv.index("--event") + 1] == "watchdog-restart"
+        assert argv[argv.index("--recovered") + 1] == "false"
+        assert str(hung_proc.pid) in argv[argv.index("--old-pids") + 1]
+        assert "--new-pid" not in argv  # nothing was started; alert_owner.py defaults it to ""
+    finally:
+        for proc in procs:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
