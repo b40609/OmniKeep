@@ -79,6 +79,8 @@ def _mask_hint(secret: str) -> str:
 
 def _is_loopback_url(url: str) -> bool:
     parsed = urlparse(url)
+    if parsed.username or parsed.password:
+        return False
     return parsed.scheme in ("http", "https") and (parsed.hostname or "").lower() in ("127.0.0.1", "localhost", "::1")
 
 
@@ -105,7 +107,7 @@ def probe_gateway(
         for port in ports:
             candidates.append(f"http://127.0.0.1:{port}")
 
-    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+    with httpx.Client(timeout=timeout, follow_redirects=False, trust_env=False) as client:
         for origin in candidates:
             try:
                 resp = client.get(f"{origin}/api/auth/status")
@@ -262,9 +264,19 @@ def _upsert_omnikeep_connection(
     slot_order: List[int] = []
     if slot:
         current_entries = ai_connections.slots().get(slot) or []
-        ids = [int(e["connection_id"]) for e in current_entries if int(e["connection_id"]) != conn.id]
-        slot_order = ([conn.id] + ids) if prepend_slot else (ids + [conn.id])
-        ai_connections.set_slots({slot: [{"connection_id": cid} for cid in slot_order]})
+        preserved: List[Dict[str, Any]] = []
+        for e in current_entries:
+            cid = int(e["connection_id"])
+            if cid == conn.id:
+                continue
+            item: Dict[str, Any] = {"connection_id": cid}
+            if e.get("model"):
+                item["model"] = e["model"]
+            preserved.append(item)
+        self_entry: Dict[str, Any] = {"connection_id": conn.id}
+        new_entries = ([self_entry] + preserved) if prepend_slot else (preserved + [self_entry])
+        slot_order = [int(e["connection_id"]) for e in new_entries]
+        ai_connections.set_slots({slot: new_entries})
 
     return {
         "action": action,
@@ -321,7 +333,7 @@ def auto_connect(
             ),
         }
 
-    with httpx.Client(timeout=15.0, follow_redirects=False) as client:
+    with httpx.Client(timeout=15.0, follow_redirects=False, trust_env=False) as client:
         token = _acquire_desktop_session(client, origin)
         headers = {"Authorization": f"Bearer {token}"}
 

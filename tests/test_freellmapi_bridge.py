@@ -64,10 +64,12 @@ def _make_fake_transport(desktop_mode: bool = True):
     return httpx.MockTransport(handler), state
 
 
-def _patch_httpx_client(monkeypatch, transport):
+def _patch_httpx_client(monkeypatch, transport, seen_kwargs=None):
     real_client = httpx.Client
 
     def _client(*args, **kwargs):
+        if seen_kwargs is not None:
+            seen_kwargs.append(dict(kwargs))
         kwargs["transport"] = transport
         return real_client(*args, **kwargs)
 
@@ -75,12 +77,14 @@ def _patch_httpx_client(monkeypatch, transport):
 
 
 def test_auto_connect_wires_keyless_mirrors_only_free_keys_and_never_leaks_secrets(monkeypatch, capsys):
-    # Pre-seed one free-tier key (groq) and one paid/subscription key (vertex) in OmniKeep
+    # Pre-seed one free-tier key (groq, with explicit slot model override) and one paid/subscription key (vertex)
     groq_conn = ai_connections.create({"card": "groq", "key": GROQ_SECRET}, slot="analysis")
+    ai_connections.set_slots({"analysis": [{"connection_id": groq_conn.id, "model": "llama-3.3-70b-versatile"}]})
     ai_connections.create({"card": "vertex", "key": VERTEX_SECRET})
 
     transport, state = _make_fake_transport(desktop_mode=True)
-    _patch_httpx_client(monkeypatch, transport)
+    client_kwargs = []
+    _patch_httpx_client(monkeypatch, transport, seen_kwargs=client_kwargs)
 
     rc = bridge.main([
         "--base-url", "http://127.0.0.1:31415",
@@ -89,11 +93,12 @@ def test_auto_connect_wires_keyless_mirrors_only_free_keys_and_never_leaks_secre
     out = capsys.readouterr().out
 
     assert rc == 0, out
-    # Security invariant: zero plaintext secrets in CLI output
+    # Security invariant: zero plaintext secrets in CLI output and loopback never trusts proxy env vars
     assert UNIFIED_SECRET not in out
     assert SESSION_SECRET not in out
     assert GROQ_SECRET not in out
     assert VERTEX_SECRET not in out
+    assert client_kwargs and all(kw.get("trust_env") is False for kw in client_kwargs)
 
     doc = json.loads(out)
     assert doc["ok"] is True
@@ -104,6 +109,11 @@ def test_auto_connect_wires_keyless_mirrors_only_free_keys_and_never_leaks_secre
     assert doc["connection"]["key_hint"] == "…9876"
     assert doc["connection"]["slot_order"][0] == doc["connection"]["connection_id"]
     assert groq_conn.id in doc["connection"]["slot_order"]
+
+    # Existing peer slot entry preserves its custom model override
+    analysis_entries = ai_connections.slots()["analysis"]
+    groq_slot_entry = next(e for e in analysis_entries if int(e["connection_id"]) == groq_conn.id)
+    assert groq_slot_entry.get("model") == "llama-3.3-70b-versatile"
 
     # FreeLLMAPI received only the free groq key — never the paid vertex key
     assert state["keyless_enabled"] is True
@@ -117,9 +127,11 @@ def test_auto_connect_wires_keyless_mirrors_only_free_keys_and_never_leaks_secre
     assert flm.key == UNIFIED_SECRET
 
 
-def test_auto_connect_refuses_non_loopback_and_handles_non_desktop_mode(monkeypatch):
+def test_auto_connect_refuses_non_loopback_userinfo_and_handles_non_desktop_mode(monkeypatch):
     with pytest.raises(ValueError, match="loopback"):
         bridge.auto_connect(base_url="https://evil.example:31415")
+    with pytest.raises(ValueError, match="loopback"):
+        bridge.auto_connect(base_url="http://user:pass@127.0.0.1:31415")
 
     transport, _ = _make_fake_transport(desktop_mode=False)
     _patch_httpx_client(monkeypatch, transport)

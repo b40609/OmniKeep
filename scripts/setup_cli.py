@@ -139,7 +139,18 @@ async def _dispatch(args: argparse.Namespace) -> Any:
         from app.mcp_server import attach_item_diagram
         result = attach_item_diagram(item_id=args.item_id, path=args.path)
     elif cmd == "connect-freellmapi":
-        from scripts.freellmapi_bridge import auto_connect
+        try:
+            from scripts.freellmapi_bridge import auto_connect
+        except ModuleNotFoundError:
+            import importlib.util
+
+            bridge_path = Path(__file__).resolve().parent / "freellmapi_bridge.py"
+            spec = importlib.util.spec_from_file_location("omnikeep_freellmapi_bridge", bridge_path)
+            if spec is None or spec.loader is None:
+                raise RuntimeError(f"找不到 FreeLLMAPI 接線腳本：{bridge_path}")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            auto_connect = mod.auto_connect
         result = auto_connect(
             base_url=args.base_url,
             launch=args.launch,
