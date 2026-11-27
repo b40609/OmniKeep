@@ -79,11 +79,12 @@ def test_skill_example_answers_pass_parse_answers(block):
 # ── docs/mcp_integration.md lists every MCP tool ────────────────
 
 def test_mcp_doc_lists_every_tool_and_the_right_count():
-    source = (ROOT / "app" / "mcp_server.py").read_text(encoding="utf-8")
-    tools = re.findall(r"@mcp\.tool\(\)\s+async def (\w+)", source)
+    from app import mcp_server
+
+    tools = list(mcp_server.ALL_TOOL_FUNCTIONS.keys())
     doc = MCP_DOC.read_text(encoding="utf-8")
     assert tools and [name for name in tools if f"`{name}`" not in doc] == []
-    assert f"工具清單（{len(tools)} 個）" in doc
+    assert f"預設 `core` {len(mcp_server.CORE_TOOL_NAMES)} 個，完整 {len(tools)} 個" in doc
 
 
 # ── README: internal links ──────────────────────────────────────

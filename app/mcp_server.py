@@ -4,6 +4,8 @@ Allows external AI Agents (ChatGPT App, Claude, Cursor, Antigravity) to query,
 retrieve, synthesize, and write back engineering intelligence into OmniKeep's Second Brain.
 """
 
+import logging
+import os
 import sys
 import json
 import uuid
@@ -39,7 +41,6 @@ mcp = FastMCP(
 
 # ── 1. Search Tool (Lean & Fast) ────────────────────────────────
 
-@mcp.tool()
 async def search_brain(
     query: str,
     category: Optional[str] = None,
@@ -80,7 +81,6 @@ async def search_brain(
 
 # ── 1b. Hybrid Search Tool (FTS5 + sqlite-vec via RRF) ──────────
 
-@mcp.tool()
 async def hybrid_search_brain(
     query: str,
     category: Optional[str] = None,
@@ -145,13 +145,12 @@ async def hybrid_search_brain(
 
     heading = "【關鍵字檢索】" if notice else "【混合檢索 (FTS5 + 向量)】"
     output = f"{heading}找到 {len(results)} 則相關的收藏：\n\n" + "\n\n".join(results) + notice_line
-    output += "\n\n---\n💡 提示：使用 `get_item_architecture(item_id)` 取得完整的重點分析；使用 `read_sql_query(...)` 進行結構化唯讀查詢。"
+    output += "\n\n---\n💡 提示：使用 `get_item_detail(item_id)` 取得完整的重點分析（加 `include_raw=True` 看原文）；使用 `read_sql_query(...)` 進行結構化唯讀查詢。"
     return output
 
 
 # ── 2. Get Architecture Breakdown Tool (Token Optimized) ───────
 
-@mcp.tool()
 async def get_item_architecture(item_id: str) -> str:
     """
     Retrieve high-density L1 takeaway and L2 deep architectural breakdown for an item.
@@ -207,7 +206,6 @@ async def get_item_architecture(item_id: str) -> str:
 
 # ── 3. Get Raw Content Snapshot Tool ────────────────────────────
 
-@mcp.tool()
 async def get_item_raw(item_id: str, max_chars: int = 2500) -> str:
     """
     Retrieve the raw text or source code snapshot of an item.
@@ -230,14 +228,13 @@ async def get_item_raw(item_id: str, max_chars: int = 2500) -> str:
 
 # ── 4. Backward-Compatible Full Detail Tool ─────────────────────
 
-@mcp.tool()
 async def get_item_detail(item_id: str, include_raw: bool = False, raw_limit: int = 8000) -> str:
     """
     Retrieve item details. By default excludes raw snapshots to prevent context explosion.
     Set include_raw=True if raw text is explicitly required (adjust raw_limit as needed).
     """
     base = await get_item_architecture(item_id)
-    if not include_raw or "錯誤：" in base:
+    if not include_raw or base.startswith("錯誤："):
         return base
 
     item = get_item_by_id(item_id)
@@ -251,7 +248,6 @@ async def get_item_detail(item_id: str, include_raw: bool = False, raw_limit: in
 
 # ── 5. Write Back Insight Tool (Agent Memory Loop) ──────────────
 
-@mcp.tool()
 async def writeback_insight(
     title: str,
     summary: str,
@@ -346,7 +342,6 @@ async def writeback_insight(
 
 # ── 6. Ingest URL / Note Tool ───────────────────────────────────
 
-@mcp.tool()
 async def save_to_brain(
     content_or_url: str,
     category: Optional[str] = None
@@ -381,7 +376,7 @@ async def save_to_brain(
             f"- **自動分類**: {item.get('category_name')}\n"
             f"- **技術標籤**: #{tags}\n"
             f"- **白話重點**: {item.get('summary_l1')}\n"
-            f"- **詳情可透過 get_item_architecture('{item.get('id')}') 查看**"
+            f"- **詳情可透過 get_item_detail('{item.get('id')}') 查看**"
         )
     except Exception as e:
         return f"❌ 存入失敗：{str(e)}"
@@ -389,7 +384,6 @@ async def save_to_brain(
 
 # ── 7. List Recent Items Tool ───────────────────────────────────
 
-@mcp.tool()
 async def list_recent_items(
     triage_status: str = "inbox",
     category: Optional[str] = None,
@@ -446,7 +440,6 @@ async def list_recent_items(
 
 # ── 8. Update Status Tool ───────────────────────────────────────
 
-@mcp.tool()
 async def update_item_status(
     item_id: str,
     is_read: Optional[bool] = None,
@@ -479,7 +472,6 @@ async def update_item_status(
 
 # ── 8b. Attach an agent-drawn architecture diagram ──────────────
 
-@mcp.tool()
 async def attach_item_diagram(item_id: str, path: str = "", html: str = "") -> str:
     """
     Keep an architecture diagram you drew for an OmniKeep item (usually a GitHub project) with
@@ -497,7 +489,6 @@ async def attach_item_diagram(item_id: str, path: str = "", html: str = "") -> s
 
 # ── 8c. Mobile Agent Evaluation Closed-Loop Tools ───────────────
 
-@mcp.tool()
 async def list_agent_queue(
     status: str = "needs_decision",
     limit: int = 20,
@@ -535,7 +526,6 @@ async def list_agent_queue(
     return "\n\n".join(out)
 
 
-@mcp.tool()
 async def record_agent_decision(
     item_id: str,
     decision: str,
@@ -569,7 +559,6 @@ async def record_agent_decision(
     )
 
 
-@mcp.tool()
 async def search_on_demand_tools(query: str = "", limit: int = 5) -> str:
     """
     Progressive Disclosure lookup: search tools saved as 'on_demand' (0-token dormant) by
@@ -595,7 +584,6 @@ async def search_on_demand_tools(query: str = "", limit: int = 5) -> str:
 
 # ── 9. Ask Brain Synthesis Tool (Cross-Article Report) ───────────
 
-@mcp.tool()
 async def ask_brain_synthesis(topic: str, top_k: int = 5) -> str:
     """
     Cross-reference multiple items in your brain related to a topic and generate
@@ -642,7 +630,6 @@ async def ask_brain_synthesis(topic: str, top_k: int = 5) -> str:
 
 # ── 10. Watch & Proposal Tools (Local Proposal Engine) ──────────
 
-@mcp.tool()
 async def list_proposals(status: str = "pending", limit: int = 10) -> str:
     """List OmniKeep proposal cards (default: pending ones).
 
@@ -666,7 +653,6 @@ async def list_proposals(status: str = "pending", limit: int = 10) -> str:
         )
     return "\n".join(out)
 
-@mcp.tool()
 async def decide_proposal(
     proposal_id: str,
     approve: bool,
@@ -691,7 +677,6 @@ async def decide_proposal(
     return f"提案 {proposal_id} 已標為 {result['status']}。" + (
         f"（已記錄用戶修正：{corrections}）" if corrections else "")
 
-@mcp.tool()
 async def scan_watch_target(target_id: str = "") -> str:
     """Trigger a scan of watch targets (risk check + fingerprint refresh).
 
@@ -732,7 +717,6 @@ def _read_only_connection() -> sqlite3.Connection:
     return conn
 
 
-@mcp.tool()
 async def read_sql_query(query: str, limit: int = 50) -> str:
     """
     Execute a read-only SQL query against omnikeep.db (SELECT, PRAGMA, EXPLAIN, WITH only).
@@ -787,7 +771,6 @@ async def _setup_call(fn, *args, **kwargs) -> str:
         return _setup_json({"ok": False, "error": str(exc)})
 
 
-@mcp.tool()
 async def omnikeep_scan() -> str:
     """Setup step 1. Scan this machine and OmniKeep without reading personal content:
     CPU/RAM/GPU, OmniKeep version and whether its service runs, item and radar-source
@@ -798,7 +781,6 @@ async def omnikeep_scan() -> str:
     return await _setup_call(setup_flow.scan)
 
 
-@mcp.tool()
 async def omnikeep_peek(url: str, max_chars: int = 3000) -> str:
     """Fetch and parse one link with OmniKeep's parsers (Threads, YouTube, Bilibili, web
     pages) and return its title, author and text excerpt. No AI call and nothing is saved:
@@ -807,7 +789,6 @@ async def omnikeep_peek(url: str, max_chars: int = 3000) -> str:
     return await _setup_call(setup_flow.peek, url, max_chars)
 
 
-@mcp.tool()
 async def omnikeep_check_sources(sources: List[Dict[str, Any]], recent: int = 3) -> str:
     """Verify candidate radar sources before offering them. Each source is
     {"url": ..., "source_type"?: youtube|github|rss|google_news|web_change, "name"?: ...};
@@ -818,7 +799,6 @@ async def omnikeep_check_sources(sources: List[Dict[str, Any]], recent: int = 3)
     return await _setup_call(setup_flow.check_sources, sources, recent)
 
 
-@mcp.tool()
 async def omnikeep_list_provider_options() -> str:
     """AI service options for the user to choose from (address, suggested model, limits,
     signup link, date checked), plus what is configured now. Explain the trade-offs and
@@ -827,7 +807,6 @@ async def omnikeep_list_provider_options() -> str:
     return await _setup_call(setup_flow.list_provider_options)
 
 
-@mcp.tool()
 async def omnikeep_open_settings(card: str = "", tab: str = "ai") -> str:
     """Link to OmniKeep's settings page on the given tab (ai, telegram, line, push, ...).
     Give it to the user to paste a key there themselves: never ask for a key in chat.
@@ -836,7 +815,6 @@ async def omnikeep_open_settings(card: str = "", tab: str = "ai") -> str:
     return await _setup_call(setup_flow.open_settings, card, tab)
 
 
-@mcp.tool()
 async def omnikeep_test_provider(service: str = "analysis", connection_id: str = "") -> str:
     """Test a saved credential with a small real request (a Chinese JSON reply for chat).
     connection_id: one AI connection from omnikeep_list_provider_options "current".
@@ -847,7 +825,6 @@ async def omnikeep_test_provider(service: str = "analysis", connection_id: str =
     return await _setup_call(setup_flow.test_provider, service, connection_id)
 
 
-@mcp.tool()
 async def omnikeep_preview_setup(answers: Dict[str, Any]) -> str:
     """Validate the setup answers and return what would change (before/after), with a
     confirm_code. Nothing is written. answers (JSON):
@@ -874,7 +851,6 @@ async def omnikeep_preview_setup(answers: Dict[str, Any]) -> str:
     return await _setup_call(run)
 
 
-@mcp.tool()
 async def omnikeep_apply_setup(answers: Dict[str, Any], confirm_code: str) -> str:
     """Apply the setup the user approved: the same answers plus the confirm_code from
     omnikeep_preview_setup. Refused if the answers or the settings changed since the preview."""
@@ -883,7 +859,6 @@ async def omnikeep_apply_setup(answers: Dict[str, Any], confirm_code: str) -> st
                              json_body={"answers": answers, "confirm_code": confirm_code})
 
 
-@mcp.tool()
 async def omnikeep_ingest(url: str) -> str:
     """Analyze one link and save it to OmniKeep (the first success: show the result and ask
     about analysis depth). Takes as long as one AI analysis."""
@@ -891,7 +866,6 @@ async def omnikeep_ingest(url: str) -> str:
     return await _setup_call(setup_flow.ingest, url)
 
 
-@mcp.tool()
 async def omnikeep_run_radar() -> str:
     """Run one radar scan now and build a radar digest of what it found; returns the digest
     Markdown. Can take minutes: it fetches every active source and analyzes a few items."""
@@ -899,7 +873,6 @@ async def omnikeep_run_radar() -> str:
     return await _setup_call(setup_flow.call_service, "POST", "/api/setup/run-radar", timeout=900.0)
 
 
-@mcp.tool()
 async def omnikeep_import(kind: str, path: str = "", browser: str = "", profile: str = "",
                           enqueue_ai: bool = False, limit: int = 1000) -> str:
     """Import old data. kind: "bookmarks" (path to an export file, or browser="chrome"/"edge"
@@ -908,6 +881,149 @@ async def omnikeep_import(kind: str, path: str = "", browser: str = "", profile:
     enqueue_ai=true, which queues every link for AI analysis and uses quota."""
     from app import setup_flow
     return await _setup_call(setup_flow.import_data, kind, path, browser, profile, enqueue_ai, limit)
+
+
+# ── 10d. Tiered Tool Profiles (Lean Default: 7 Core Tools) ──────
+# Keep every tool function importable at module level for tests and direct callers,
+# while registering only the active profile on `mcp` so everyday agent sessions do
+# not pay schema token overhead for one-time setup or disabled experimental tools.
+
+CORE_TOOL_NAMES = (
+    "hybrid_search_brain",
+    "get_item_detail",
+    "list_recent_items",
+    "save_to_brain",
+    "writeback_insight",
+    "update_item_status",
+    "read_sql_query",
+)
+REVIEW_TOOL_NAMES = (
+    "list_agent_queue",
+    "record_agent_decision",
+    "search_on_demand_tools",
+)
+SETUP_TOOL_NAMES = (
+    "omnikeep_scan",
+    "omnikeep_peek",
+    "omnikeep_check_sources",
+    "omnikeep_list_provider_options",
+    "omnikeep_open_settings",
+    "omnikeep_test_provider",
+    "omnikeep_preview_setup",
+    "omnikeep_apply_setup",
+    "omnikeep_ingest",
+    "omnikeep_run_radar",
+    "omnikeep_import",
+)
+LABS_TOOL_NAMES = (
+    "list_proposals",
+    "decide_proposal",
+    "scan_watch_target",
+)
+LEGACY_TOOL_NAMES = (
+    "search_brain",
+    "get_item_architecture",
+    "get_item_raw",
+    "ask_brain_synthesis",
+    "attach_item_diagram",
+)
+
+ALL_TOOL_FUNCTIONS = {
+    "hybrid_search_brain": hybrid_search_brain,
+    "get_item_detail": get_item_detail,
+    "list_recent_items": list_recent_items,
+    "save_to_brain": save_to_brain,
+    "writeback_insight": writeback_insight,
+    "update_item_status": update_item_status,
+    "read_sql_query": read_sql_query,
+    "list_agent_queue": list_agent_queue,
+    "record_agent_decision": record_agent_decision,
+    "search_on_demand_tools": search_on_demand_tools,
+    "omnikeep_scan": omnikeep_scan,
+    "omnikeep_peek": omnikeep_peek,
+    "omnikeep_check_sources": omnikeep_check_sources,
+    "omnikeep_list_provider_options": omnikeep_list_provider_options,
+    "omnikeep_open_settings": omnikeep_open_settings,
+    "omnikeep_test_provider": omnikeep_test_provider,
+    "omnikeep_preview_setup": omnikeep_preview_setup,
+    "omnikeep_apply_setup": omnikeep_apply_setup,
+    "omnikeep_ingest": omnikeep_ingest,
+    "omnikeep_run_radar": omnikeep_run_radar,
+    "omnikeep_import": omnikeep_import,
+    "list_proposals": list_proposals,
+    "decide_proposal": decide_proposal,
+    "scan_watch_target": scan_watch_target,
+    "search_brain": search_brain,
+    "get_item_architecture": get_item_architecture,
+    "get_item_raw": get_item_raw,
+    "ask_brain_synthesis": ask_brain_synthesis,
+    "attach_item_diagram": attach_item_diagram,
+}
+
+PROFILE_GROUPS = {
+    "core": CORE_TOOL_NAMES,
+    "review": CORE_TOOL_NAMES + REVIEW_TOOL_NAMES,
+    "setup": CORE_TOOL_NAMES + SETUP_TOOL_NAMES,
+    "labs": CORE_TOOL_NAMES + LABS_TOOL_NAMES,
+    "legacy": CORE_TOOL_NAMES + LEGACY_TOOL_NAMES,
+    "full": tuple(ALL_TOOL_FUNCTIONS.keys()),
+    "all": tuple(ALL_TOOL_FUNCTIONS.keys()),
+}
+
+_active_profile = "core"
+_logger = logging.getLogger("omnikeep.mcp")
+
+
+def _parse_profile_tokens(profile: Optional[str] = None) -> List[str]:
+    raw = (
+        profile
+        if profile is not None
+        else (os.environ.get("OMNIKEEP_MCP_PROFILE") or settings.MCP_PROFILE or "core")
+    )
+    tokens = [part.strip().lower() for part in str(raw).split(",") if part.strip()]
+    if not tokens:
+        tokens = ["core"]
+    unknown = [t for t in tokens if t not in PROFILE_GROUPS]
+    if unknown:
+        valid = ", ".join(sorted(PROFILE_GROUPS))
+        raise ValueError(f"不認得的 MCP profile：{', '.join(unknown)}（可用：{valid}）")
+    return list(dict.fromkeys(tokens))
+
+
+def resolve_tool_names(profile: Optional[str] = None) -> List[str]:
+    """Resolve a profile name (or comma-separated profile list) into ordered tool names."""
+    tokens = _parse_profile_tokens(profile)
+    selected = set()
+    for token in tokens:
+        selected.update(PROFILE_GROUPS[token])
+    return [name for name in ALL_TOOL_FUNCTIONS if name in selected]
+
+
+def configure_mcp_profile(profile: Optional[str] = None) -> List[str]:
+    """Re-register tools on the shared FastMCP instance for the requested profile."""
+    global _active_profile
+    tokens = _parse_profile_tokens(profile)
+    selected = set()
+    for token in tokens:
+        selected.update(PROFILE_GROUPS[token])
+    tool_names = [name for name in ALL_TOOL_FUNCTIONS if name in selected]
+    for existing in [t.name for t in mcp._tool_manager.list_tools()]:
+        mcp.remove_tool(existing)
+    for name in tool_names:
+        mcp.add_tool(ALL_TOOL_FUNCTIONS[name])
+    _active_profile = ",".join(tokens)
+    return tool_names
+
+
+def active_mcp_profile() -> str:
+    return _active_profile
+
+
+try:
+    configure_mcp_profile()
+except ValueError as exc:
+    _logger.warning("無效的 MCP profile 設定，已自動退回 core：%s", exc)
+    configure_mcp_profile("core")
 
 
 # ── 11. Resources ───────────────────────────────────────────────
@@ -1087,8 +1203,15 @@ def _preload_before_stdin() -> None:
 def main():
     parser = argparse.ArgumentParser(description="OmniKeep MCP Server")
     parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio", help="MCP transport mode")
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="MCP tool profile (core, review, setup, labs, full, or comma-separated; default: OMNIKEEP_MCP_PROFILE or core)",
+    )
     args = parser.parse_args()
     configure_logging()  # stderr; stdout belongs to the stdio transport
+    if args.profile is not None:
+        configure_mcp_profile(args.profile)
 
     if args.transport == "sse":
         import uvicorn

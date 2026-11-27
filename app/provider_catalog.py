@@ -23,6 +23,7 @@ task slot naming it, gets them (app/ai_connections.py extra_body_for).
 """
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 VERIFIED = "2026-11-05"
 
@@ -310,6 +311,20 @@ CARDS: List[Dict[str, Any]] = [
         "verified": "2026-11-23",
     },
     {
+        "id": "freellmapi", "label": "FreeLLMAPI 本機閘道", "kind": "openai",
+        "base_url": "http://127.0.0.1:31415/v1", "model": "auto",
+        "models": ["auto", "auto:fast", "auto:smart", "auto:balanced"],
+        "embedding_model": "auto",
+        "key_mode": "required", "key_url": "https://github.com/tashfeenahmed/freellmapi",
+        "editable_url": True,
+        "cost": "0（自動聚合多家免費層 API，由 FreeLLMAPI 統一維護）",
+        "limits": "Windows／macOS 桌面版預設連本機 127.0.0.1:31415/v1（Docker 版為 127.0.0.1:3001/v1）；內建多家免費服務商自動路由、429 降級與額度追蹤，不必逐一維護每張免費卡片。",
+        "notes": "可請 agent 執行 scripts/freellmapi_bridge.py 一鍵自動啟用免金鑰來源、同步本機免費金鑰並自動接好 unified key，完全不必手動複製貼上；手動設定時請到 FreeLLMAPI 的 Keys 頁複製 freellmapi- 開頭的 unified key。若拿來做語意向量，auto 會隨預設 family 變動，建議改填固定向量模型名避免維度不一致。",
+        "min_interval": 0.5, "max_concurrency": 2,
+        "caps": {"json_mode": True, "embeddings": True},
+        "verified": "2026-11-27",
+    },
+    {
         "id": "omniroute", "label": "OmniRoute 閘道", "kind": "openai",
         "base_url": "http://127.0.0.1:20128/v1", "model": "",
         "models": [],
@@ -398,12 +413,12 @@ GROUP_BY_CARD: Dict[str, str] = {
     "inception": "grant", "itera": "grant",
     "vertex": "subscription",
     "ollama": "local",
-    "omniroute": "paid", "deepseek": "paid", "openai": "paid", "custom": "paid",
+    "freellmapi": "paid", "omniroute": "paid", "deepseek": "paid", "openai": "paid", "custom": "paid",
 }
 
 # Raise it whenever a card's data changes (YYYYMMDDNN), then run `python -m app.catalog_remote --write`:
 # installs fetch catalog/omnikeep-catalog.json and use it only when its revision is higher than theirs.
-CATALOG_REVISION = 2026112302
+CATALOG_REVISION = 2026112703
 
 # The fallback order the picker suggests first (2026-11-23, layout D): a person who does not
 # want to compare 23 services gets three free connections that cover for each other, in order.
@@ -425,7 +440,16 @@ def guess_card(base_url: str, kind: str = "openai") -> str:
     """The card an existing address most likely came from (used when migrating .env settings)."""
     if kind == "gemini":
         return "gemini"
-    url = (base_url or "").lower()
+    raw = (base_url or "").strip()
+    url = raw.lower()
+    try:
+        parsed = urlparse(raw)
+        host = (parsed.hostname or "").lower()
+        port = parsed.port
+    except ValueError:
+        host, port = "", None
+    if host in ("127.0.0.1", "localhost", "::1") and port in (31415, 3001):
+        return "freellmapi"
     for card_id, marker in (("agnes", "agnes-ai.com"), ("groq", "api.groq.com"),
                             ("cloudflare", "api.cloudflare.com"), ("openrouter", "openrouter.ai"),
                             ("zai", "api.z.ai"), ("inception", "inceptionlabs.ai"), ("tokenharbor", "tokenharbor.ai"),

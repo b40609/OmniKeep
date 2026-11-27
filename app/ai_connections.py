@@ -560,7 +560,7 @@ def model_switch_info(connection_id: int) -> Optional[Dict[str, str]]:
 def replace_retired_model(connection_id: int, dead_model: str, *, now: Optional[float] = None) -> Optional[Dict[str, str]]:
     """Switch a connection (and matching slot overrides) off a retired catalog model on 404.
 
-    Only cards with a fixed `models` list qualify (never custom, omniroute, or local ollama).
+    Only cards with a fixed `models` list qualify (never custom, freellmapi, omniroute, or local ollama).
     Switches only when `dead_model` is no longer in the card's current `models`, the card's
     current default `model` differs, and this connection has not auto-switched within
     MODEL_SWITCH_COOLDOWN seconds. Clears cooldown and rebuilds cached providers on switch.
@@ -576,7 +576,7 @@ def replace_retired_model(connection_id: int, dead_model: str, *, now: Optional[
         if row is None:
             return None
         card_id = row["card"]
-        if row["kind"] == "ollama" or card_id in ("custom", "omniroute", "ollama"):
+        if row["kind"] == "ollama" or card_id in ("custom", "freellmapi", "omniroute", "ollama"):
             return None
         card = provider_catalog.card(card_id)
         if card is None:
