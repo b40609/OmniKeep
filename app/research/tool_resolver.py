@@ -7,7 +7,6 @@ Features:
 - Dual-track confidence categorization (verified >= 0.7, candidate 0.4-0.7, rejected < 0.4)
 """
 
-import json
 import logging
 import re
 from typing import List, Dict, Any, Optional
@@ -114,7 +113,7 @@ async def _fetch_github_api(clean_query: str, limit: int = 5) -> List[Dict[str, 
             else:
                 logger.debug(f"[ToolResolver] GitHub API returned status {resp.status_code} for query: {clean_query}")
                 return []
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - GitHub search is best effort
         logger.warning(f"[ToolResolver] GitHub search failed for '{clean_query}': {e}")
         return []
 
@@ -198,7 +197,7 @@ async def search_huggingface_models(query: str, limit: int = 5) -> List[Dict[str
                                 "topics": [tag, "huggingface"],
                                 "platform": "huggingface"
                             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - Hugging Face search is best effort
             logger.warning(f"[ToolResolver] HuggingFace search failed for '{q_var}': {e}")
 
     merged_candidates.sort(key=lambda x: (x.get("downloads", 0), x["stars"]), reverse=True)
@@ -287,7 +286,7 @@ async def judge_best_matching_repo(
     # Exact name fast-path only when candidate metadata actually aligns with mention_context;
     # otherwise defer to the LLM judge so same-name repos in other domains are not linked blindly.
     clean_target = target_name.strip().lower()
-    for idx, c in enumerate(candidates):
+    for c in candidates:
         c_name = c["name"].lower()
         if (c_name == clean_target or c["full_name"].lower().endswith("/" + clean_target)) and (c["stars"] >= 20 or c.get("downloads", 0) >= 100):
             if _context_aligns_with_candidate(target_name, mention_context, c):
@@ -338,7 +337,7 @@ async def judge_best_matching_repo(
                 "confidence": confidence,
                 "reason": reason
             }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - the judge is best effort; no match is a valid answer
         logger.warning(f"[ToolResolver] LLM judge failed: {e}")
 
     # Fallback when LLM judge returns inconclusive
@@ -369,7 +368,7 @@ async def extract_tool_query_from_content(
         q_obj = sanitize_and_validate_query(res_raw)
         if q_obj.has_tool and q_obj.search_query:
             return {"tool_name": q_obj.tool_name or q_obj.search_query, "search_query": q_obj.search_query}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - extraction is best effort
         logger.warning(f"[ToolResolver] Query extraction failed: {e}")
 
     return None

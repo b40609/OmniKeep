@@ -10,7 +10,7 @@ from app.database import get_db_connection, get_radar_settings, update_radar_set
 from app.main import app
 
 HEADERS = {"Authorization": f"Bearer {settings.API_KEY}"}
-KEYS = ("EXPERIMENT_RADAR", "EXPERIMENT_WATCH", "EXPERIMENT_DAILY_REVIEW")
+KEYS = ("EXPERIMENT_RADAR", "EXPERIMENT_WATCH", "EXPERIMENT_DAILY_REVIEW", "EXPERIMENT_EVAL")
 
 
 def _labs(body):
@@ -38,7 +38,8 @@ def test_switches_are_saved_one_by_one_in_the_existing_table():
         res = _put(client, {"EXPERIMENT_RADAR": True})
         assert res.status_code == 200, res.text
         values = {field["key"]: field["value"] for field in _labs(res.json())["fields"]}
-        assert values == {"EXPERIMENT_RADAR": True, "EXPERIMENT_WATCH": False, "EXPERIMENT_DAILY_REVIEW": False}
+        assert values == {"EXPERIMENT_RADAR": True, "EXPERIMENT_WATCH": False, "EXPERIMENT_DAILY_REVIEW": False,
+                          "EXPERIMENT_EVAL": False}
         assert settings.EXPERIMENT_RADAR is True
         # A row in the key-value table every other setting uses: no schema change.
         with closing(get_db_connection()) as conn:

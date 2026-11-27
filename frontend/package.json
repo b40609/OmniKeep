@@ -5,6 +5,7 @@
   "scripts": {
     "lint": "oxlint src && stylelint \"src/**/*.{css,vue}\"",
     "test": "node --test tests/*.test.mjs",
+    "precommit": "npm run lint && node --test tests/mobile-guardrails.test.mjs tests/pwa-contract.test.mjs",
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "generate-pwa-assets": "pwa-assets-generator",

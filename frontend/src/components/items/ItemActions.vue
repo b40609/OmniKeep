@@ -7,6 +7,7 @@ import { useMutations } from '@/composables/useMutations'
 import { useSignal } from '@/composables/useSignal'
 import { isWebUrl } from '@/lib/originLink'
 import { useEvaluationsStore } from '@/stores/evaluations'
+import { useExperimentsStore } from '@/stores/experiments'
 import { useUiStore } from '@/stores/ui'
 
 /**
@@ -18,6 +19,7 @@ const props = defineProps<{ item: Item; allowDelete?: boolean; compact?: boolean
 const { toggleStar, toggleRead, openSnapshot, removeItem } = useMutations()
 const { tuneItem } = useSignal()
 const evaluations = useEvaluationsStore()
+const experiments = useExperimentsStore()
 const ui = useUiStore()
 
 async function sendToEvaluation() {
@@ -73,7 +75,7 @@ async function copyTakeaway() {
       <DropdownMenuPortal>
         <DropdownMenuContent class="app-menu" align="end" :side-offset="4" :collision-padding="12" @click.stop @keydown.stop>
           <DropdownMenuItem class="app-menu__item" @select="copyTakeaway"><Copy />複製重點</DropdownMenuItem>
-          <DropdownMenuItem class="app-menu__item" @select="sendToEvaluation"><Scale />送去評估</DropdownMenuItem>
+          <DropdownMenuItem v-if="experiments.flags.eval" class="app-menu__item" @select="sendToEvaluation"><Scale />送去評估</DropdownMenuItem>
           <DropdownMenuItem v-if="isWebUrl(item.url)" class="app-menu__item" @select="openSnapshot(item)"><Camera />開啟離線快照</DropdownMenuItem>
           <DropdownMenuItem v-if="isWebUrl(item.url)" as-child><a :href="item.url" target="_blank" rel="noopener noreferrer" class="app-menu__item"><ExternalLink />開啟原始連結</a></DropdownMenuItem>
           <DropdownMenuSeparator class="app-menu__rule" />

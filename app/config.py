@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     EXPERIMENT_RADAR: bool = False
     EXPERIMENT_WATCH: bool = False
     EXPERIMENT_DAILY_REVIEW: bool = False
+    # 待決 (agent evaluations): 2 evaluations in the owner's own database by 2026-11-26, and a new
+    # install has no use for a tab in the phone's five-slot bar (2026-11-26 review, KEEP-B-07).
+    EXPERIMENT_EVAL: bool = False
     # Extra host names MCP over HTTP accepts besides loopback and the Tailscale names found at
     # startup, comma-separated (app/mcp_http.py).
     MCP_ALLOWED_HOSTS: str = ""

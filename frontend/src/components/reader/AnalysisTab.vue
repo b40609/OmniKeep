@@ -10,6 +10,7 @@ import { isNotAnalysed, plainSummary } from '@/lib/wall'
 import { originLink } from '@/lib/originLink'
 import { useItemsStore } from '@/stores/items'
 import { useEvaluationsStore } from '@/stores/evaluations'
+import { useExperimentsStore } from '@/stores/experiments'
 import { AGENT_STATUS_LABELS, resolveBadgeUi } from '@/lib/evalUi'
 import { cleanHost, displayCategory, formatRelativeTime, estimateReadTime, sourceMeta } from '@/lib/format'
 import { renderMarkdown, useCodeCopy, extractToc } from '@/lib/markdown'
@@ -25,6 +26,7 @@ import { useSnapshotAvailable } from '@/composables/useSnapshotAvailable'
 const ui = useUiStore()
 const itemsStore = useItemsStore()
 const evaluationsStore = useEvaluationsStore()
+const experiments = useExperimentsStore()
 const { openSnapshot } = useMutations()
 const hasSnapshot = useSnapshotAvailable()
 const requestingEval = ref(false)
@@ -228,7 +230,7 @@ function openItem(id: number | string) {
 
     <!-- User note & Agent evaluation bridge -->
     <section
-      v-if="ui.activeItem.user_note || ui.activeItem.latest_evaluation || (ui.activeItem.agent_status && ui.activeItem.agent_status !== 'none') || isGithubProject"
+      v-if="ui.activeItem.user_note || ui.activeItem.latest_evaluation || (ui.activeItem.agent_status && ui.activeItem.agent_status !== 'none') || (isGithubProject && experiments.flags.eval)"
       class="border-t border-hairline pt-6 space-y-3"
       aria-label="備忘與工具評估"
     >
@@ -237,7 +239,10 @@ function openItem(id: number | string) {
         <p class="mt-1 text-sm leading-relaxed text-foreground">{{ ui.activeItem.user_note }}</p>
       </div>
 
-      <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-hairline bg-card px-4 py-3">
+      <div
+        v-if="experiments.flags.eval || ui.activeItem.latest_evaluation || (ui.activeItem.agent_status && ui.activeItem.agent_status !== 'none')"
+        class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-hairline bg-card px-4 py-3"
+      >
         <div class="min-w-0 text-xs">
           <div class="flex flex-wrap items-center gap-2 font-semibold text-foreground">
             <Scale class="size-3.5 text-primary" aria-hidden="true" />
@@ -264,6 +269,7 @@ function openItem(id: number | string) {
             開啟拍板報告
           </button>
           <button
+            v-if="experiments.flags.eval"
             type="button"
             :disabled="requestingEval"
             class="inline-flex min-h-10 cursor-pointer items-center gap-1 rounded-lg border border-hairline px-3 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"

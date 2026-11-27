@@ -4,7 +4,7 @@
  * simply has none, which reads as off. No runtime imports: the node tests load this file.
  */
 
-export type ExperimentId = 'radar' | 'watch' | 'daily'
+export type ExperimentId = 'radar' | 'watch' | 'daily' | 'eval'
 
 export interface Experiment {
   id: ExperimentId
@@ -39,11 +39,19 @@ export const EXPERIMENTS: Experiment[] = [
     description: '每天挑幾則未讀和值得重看的舊收藏，一則一則看過。挑選方式還在調整。',
     background: '沒有背景工作，關掉就不會執行。',
   },
+  {
+    // 2026-11-26 review (KEEP-B-07): a tab in the phone's five-slot bar that a new install has no use for.
+    id: 'eval',
+    key: 'EXPERIMENT_EVAL',
+    label: '待決評估',
+    description: '在手機底部列與側欄顯示「待決」，收藏選單多一項「送去評估」：agent 先替你預研工具類收藏，再由你拍板要不要用。',
+    background: '這個開關只決定介面上看不看得到。agent 已經送來的評估仍會完成，通知裡的連結也打得開。',
+  },
 ]
 
 export type ExperimentFlags = Record<ExperimentId, boolean>
 
-export const NO_EXPERIMENTS: ExperimentFlags = { radar: false, watch: false, daily: false }
+export const NO_EXPERIMENTS: ExperimentFlags = { radar: false, watch: false, daily: false, eval: false }
 
 interface FieldLike {
   key: string

@@ -12,6 +12,7 @@ settings page.
 """
 import logging
 import re
+import sqlite3
 import threading
 from contextlib import closing
 from dataclasses import dataclass
@@ -167,6 +168,9 @@ SPECS: Tuple[Spec, ...] = (
          help="在側欄顯示專案監看。只決定介面上看不看得到；已加入的專案仍會和探索找到的內容比對。"),
     Spec("EXPERIMENT_DAILY_REVIEW", "labs", "每日回顧", "bool",
          help="在側欄顯示每日回顧。它沒有背景工作。"),
+    Spec("EXPERIMENT_EVAL", "labs", "待決評估", "bool",
+         help="在手機底部列與側欄顯示「待決」，收藏選單也多一項「送去評估」。只決定介面上看不看得到："
+              "agent 已送來的評估仍會完成，通知裡的連結也打得開。"),
 )
 
 SPEC_BY_KEY: Dict[str, Spec] = {spec.key: spec for spec in SPECS}
@@ -279,7 +283,7 @@ def _deserialize(spec: Spec, stored: str) -> Any:
 def _read_rows(conn) -> Dict[str, Tuple[str, bool]]:
     try:
         rows = conn.execute("SELECT key, value, is_secret FROM app_settings").fetchall()
-    except Exception:
+    except sqlite3.Error:  # a database from before the table existed
         return {}
     return {row["key"]: (row["value"], bool(row["is_secret"])) for row in rows}
 

@@ -94,7 +94,6 @@ async function login(explicitKey?: string, isAuto = false): Promise<boolean> {
     credential.value = ''
     signedIn.value = true
     void experiments.load()
-    void evaluations.loadEvaluations('needs_decision')
     await items.refreshAll()
     await maybeShowSessionHint()
     await checkOpenRouterOAuthCallback()
@@ -283,6 +282,15 @@ watch(
       }
     }
   },
+)
+
+// 待決 is an experiment (KEEP-B-07): its list is fetched only while it is shown.
+watch(
+  () => [experiments.flags.eval, signedIn.value] as const,
+  ([on, ready]) => {
+    if (on && ready) void evaluations.loadEvaluations('needs_decision')
+  },
+  { immediate: true },
 )
 
 // An experimental view that has been switched off is not somewhere to be left in.

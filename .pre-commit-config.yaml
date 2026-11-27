@@ -17,7 +17,10 @@ repos:
 
       - id: frontend-mobile-guardrails
         name: Frontend oxlint + stylelint + mobile/PWA contract guardrails
-        entry: pwsh -NoProfile -Command "Set-Location frontend; npm run lint; node --test tests/mobile-guardrails.test.mjs tests/pwa-contract.test.mjs"
+        # npm runs the script with cmd.exe on Windows and sh elsewhere: `&&` stops at the first
+        # failure in both. The old `pwsh -Command "...; npm run lint; node --test ..."` took only
+        # the last command's exit code, so a lint error passed (2026-11-26 review, KEEP-X-01).
+        entry: npm --prefix frontend run precommit
         language: system
         files: ^frontend/(src/|index\.html|vite\.config\.ts)
         pass_filenames: false

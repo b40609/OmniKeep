@@ -3,10 +3,12 @@ import { Inbox, Scale, Star, Plus, Search, Loader2 } from 'lucide-vue-next'
 import { useItemsStore, type TriageView } from '@/stores/items'
 import { useUiStore } from '@/stores/ui'
 import { useEvaluationsStore } from '@/stores/evaluations'
+import { useExperimentsStore } from '@/stores/experiments'
 
 const items = useItemsStore()
 const ui = useUiStore()
 const evaluations = useEvaluationsStore()
+const experiments = useExperimentsStore()
 
 function setView(view: TriageView) {
   items.triageView = view
@@ -26,7 +28,7 @@ function setView(view: TriageView) {
       </span>
       <span>收件匣</span>
     </button>
-    <button type="button" class="bottom-tab" :aria-pressed="ui.showEvalModal" @click="ui.openEvaluations()">
+    <button v-if="experiments.flags.eval" type="button" class="bottom-tab" :aria-pressed="ui.showEvalModal" @click="ui.openEvaluations()">
       <span class="bottom-tab__icon">
         <Scale aria-hidden="true" />
         <span

@@ -114,6 +114,7 @@ const menu = useMenuAction()
           <component :is="v.icon" aria-hidden="true" />
         </SidebarRow>
         <SidebarRow
+          v-if="experiments.flags.eval"
           label="待決評估"
           :count="evaluations.counts.needs_decision"
           :active="ui.showEvalModal"

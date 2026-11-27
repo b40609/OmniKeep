@@ -45,29 +45,29 @@ const labs = (values) => [{ fields: [{ key: 'PRIMARY_MODEL', value: 'x' }] },
   { fields: EXPERIMENTS.map((e, i) => ({ key: e.key, value: values[i] })) }]
 
 test('experiments are read from the settings the server describes', () => {
-  assert.deepEqual(readExperiments(labs([true, false, true])), { radar: true, watch: false, daily: true })
-  assert.equal(experimentsSupported(labs([false, false, false])), true)
+  assert.deepEqual(readExperiments(labs([true, false, true, false])), { radar: true, watch: false, daily: true, eval: false })
+  assert.equal(experimentsSupported(labs([false, false, false, false])), true)
   // Only a real true counts as on.
-  assert.deepEqual(readExperiments(labs(['true', 1, undefined])), { radar: false, watch: false, daily: false })
+  assert.deepEqual(readExperiments(labs(['true', 1, undefined, 'yes'])), { radar: false, watch: false, daily: false, eval: false })
 })
 
 test('a server from before the switches existed reads as everything off', () => {
   const older = [{ fields: [{ key: 'PRIMARY_MODEL', value: 'x' }] }]
-  assert.deepEqual(readExperiments(older), { radar: false, watch: false, daily: false })
+  assert.deepEqual(readExperiments(older), { radar: false, watch: false, daily: false, eval: false })
   assert.equal(experimentsSupported(older), false)
-  assert.deepEqual(readExperiments(null), { radar: false, watch: false, daily: false })
-  assert.deepEqual(readExperiments([]), { radar: false, watch: false, daily: false })
+  assert.deepEqual(readExperiments(null), { radar: false, watch: false, daily: false, eval: false })
+  assert.deepEqual(readExperiments([]), { radar: false, watch: false, daily: false, eval: false })
 })
 
 test('each experiment says what it does and what switching it off does not stop', () => {
-  assert.deepEqual(EXPERIMENTS.map((e) => e.id), ['radar', 'watch', 'daily'])
+  assert.deepEqual(EXPERIMENTS.map((e) => e.id), ['radar', 'watch', 'daily', 'eval'])
   for (const e of EXPERIMENTS) assert.ok(e.label && e.description && e.background, e.id)
   assert.match(EXPERIMENTS[0].background, /背景檢查/)
 })
 
 test('shortcut keys belong to their experiment', () => {
-  const off = { radar: false, watch: false, daily: false }
-  const on = { radar: true, watch: true, daily: true }
+  const off = { radar: false, watch: false, daily: false, eval: false }
+  const on = { radar: true, watch: true, daily: true, eval: true }
   assert.equal(blockedShortcut('r', off), 'radar')
   assert.equal(blockedShortcut('R', off), 'radar')
   assert.equal(blockedShortcut('d', off), 'radar')
@@ -75,4 +75,19 @@ test('shortcut keys belong to their experiment', () => {
   for (const k of ['r', 'R', 'd', 'D']) assert.equal(blockedShortcut(k, on), null)
   assert.equal(blockedShortcut('D', { ...off, radar: true }), 'daily')
   for (const k of ['n', 'b', 'j', '?', 'Escape']) assert.equal(blockedShortcut(k, off), null)
+})
+
+// KEEP-B-07 (2026-11-26 review): 待決 took a slot of the phone's five-tab bar on every install.
+test('待決 is shown only while its experiment is on', async () => {
+  const src = (path) => readFile(new URL(`../src/${path}`, import.meta.url), 'utf8')
+  const bar = await src('components/layout/MobileBottomBar.vue')
+  assert.match(bar, /<button v-if="experiments\.flags\.eval"[^>]*@click="ui\.openEvaluations\(\)"/)
+  const sidebar = await src('components/layout/AppSidebar.vue')
+  assert.match(sidebar, /v-if="experiments\.flags\.eval"\s+label="待決評估"/)
+  const menu = await src('components/items/ItemActions.vue')
+  assert.match(menu, /v-if="experiments\.flags\.eval"[^>]*@select="sendToEvaluation"/)
+  const app = await src('App.vue')
+  // the list is not fetched at sign-in any more, only while the experiment is on
+  assert.doesNotMatch(app, /experiments\.load\(\)\s*void evaluations\.loadEvaluations/)
+  assert.match(app, /if \(on && ready\) void evaluations\.loadEvaluations\('needs_decision'\)/)
 })
