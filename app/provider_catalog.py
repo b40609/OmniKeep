@@ -310,6 +310,20 @@ CARDS: List[Dict[str, Any]] = [
         "verified": "2026-11-23",
     },
     {
+        "id": "freellmapi", "label": "FreeLLMAPI 本機閘道", "kind": "openai",
+        "base_url": "http://127.0.0.1:3001/v1", "model": "auto",
+        "models": ["auto", "auto:fast", "auto:smart", "auto:balanced"],
+        "embedding_model": "auto",
+        "key_mode": "optional", "key_url": "https://github.com/TashAhmed/FreeLLMAPI",
+        "editable_url": True,
+        "cost": "0（自動聚合多家免費層 API，由 FreeLLMAPI 統一維護）",
+        "limits": "預設連到本機 127.0.0.1:3001/v1；支援多家免費服務商自動路由、429 降級與額度追蹤，不必逐一維護每張免費卡片。",
+        "notes": "先安裝並啟動本機 FreeLLMAPI（Windows 可用 winget install 9PBN6G8K2B7F），在桌面程式內填入你的免費服務商金鑰後即可使用 auto 路由；若有設自訂金鑰或埠號再修改此處欄位。",
+        "min_interval": 0.5, "max_concurrency": 2,
+        "caps": {"json_mode": True, "embeddings": True},
+        "verified": "2026-11-27",
+    },
+    {
         "id": "omniroute", "label": "OmniRoute 閘道", "kind": "openai",
         "base_url": "http://127.0.0.1:20128/v1", "model": "",
         "models": [],
@@ -398,12 +412,12 @@ GROUP_BY_CARD: Dict[str, str] = {
     "inception": "grant", "itera": "grant",
     "vertex": "subscription",
     "ollama": "local",
-    "omniroute": "paid", "deepseek": "paid", "openai": "paid", "custom": "paid",
+    "freellmapi": "paid", "omniroute": "paid", "deepseek": "paid", "openai": "paid", "custom": "paid",
 }
 
 # Raise it whenever a card's data changes (YYYYMMDDNN), then run `python -m app.catalog_remote --write`:
 # installs fetch catalog/omnikeep-catalog.json and use it only when its revision is higher than theirs.
-CATALOG_REVISION = 2026112302
+CATALOG_REVISION = 2026112701
 
 # The fallback order the picker suggests first (2026-11-23, layout D): a person who does not
 # want to compare 23 services gets three free connections that cover for each other, in order.
@@ -433,7 +447,7 @@ def guess_card(base_url: str, kind: str = "openai") -> str:
                             ("aihubmix", "aihubmix.com"), ("sealion", "api.sea-lion.ai"),
                             ("itera", "iteracompute.com"), ("kilo", "api.kilo.ai"), ("blockrun", "blockrun.ai"),
                             ("bazaarlink", "bazaarlink.ai"), ("cheapllm", "cheapllm.shop"), ("ovh", "endpoints.kepler.ai.cloud.ovh.net"),
-                            ("omniroute", ":20128"), ("deepseek", "api.deepseek.com"),
+                            ("freellmapi", ":3001"), ("omniroute", ":20128"), ("deepseek", "api.deepseek.com"),
                             ("openai", "api.openai.com"), ("ollama", ":11434")):
         if marker in url:
             return card_id

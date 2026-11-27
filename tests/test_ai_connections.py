@@ -47,8 +47,8 @@ def test_catalog_lists_options_without_a_default_or_subscription_routes():
         cards = client.get("/api/ai/catalog", headers=HEADERS).json()["cards"]
     ids = [c["id"] for c in cards]
     for wanted in ("agnes", "gemini", "groq", "cloudflare", "openrouter", "zai", "inception", "tokenharbor",
-                   "requesty", "nvidia", "aihubmix", "sealion", "itera", "kilo", "ovh", "omniroute", "ollama",
-                   "deepseek", "openai", "custom"):
+                   "requesty", "nvidia", "aihubmix", "sealion", "itera", "kilo", "ovh", "freellmapi", "omniroute",
+                   "ollama", "deepseek", "openai", "custom"):
         assert wanted in ids
     assert len(set(ids)) == len(ids)
     for card in cards:

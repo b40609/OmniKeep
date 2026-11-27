@@ -15,10 +15,12 @@ description: 在桌機開發對話處理 OmniKeep 手機端送出的待決／核
 
 ## 標準工作流程
 
+> 呼叫方式：若目前 session 的 MCP 以 `review`／`full` profile 啟動，直接呼叫下列 MCP 工具；若為預設精簡 `core`（7 工具）模式，請以專案 `.venv` Python 呼叫 `<OmniKeep>/scripts/setup_cli.py` 對應子指令（`queue`、`decide`、`on-demand`），並用預設核心工具 `get_item_detail`、`writeback_insight`。
+
 ### 1. 拉取待實測項目
 
-- 呼叫 MCP 工具 `list_agent_queue(status="approved_l2")` 查看使用者在手機核准進 Layer 2 的工單。
-- 對要處理的項目呼叫 `get_item_architecture(item_id)`；若需要檢查貼文一樓指令或社群留言反例細節，再呼叫 `get_item_detail(item_id, include_raw=True)`。
+- 呼叫 `list_agent_queue(status="approved_l2")`（或執行 `scripts/setup_cli.py queue --status approved_l2`）查看使用者在手機核准進 Layer 2 的工單。
+- 對要處理的項目呼叫 `get_item_detail(item_id)`；若需要檢查貼文一樓指令或社群留言反例細節，呼叫 `get_item_detail(item_id, include_raw=True)`。
 
 ### 2. 在隔離環境執行 Layer 2 驗證
 

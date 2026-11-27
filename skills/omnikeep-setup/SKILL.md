@@ -34,10 +34,12 @@ description: 安裝 OmniKeep（自架的連結收藏工具：在 Telegram 丟連
 
 ## 0. 安裝（還沒裝 OmniKeep 時）
 
-先判斷有沒有裝好：
+先判斷有沒有裝好與呼叫管道：
 
-- 這個 session 裡有 `omnikeep_scan` 工具（Claude Code 裡叫 `mcp__omnikeep__omnikeep_scan`）：已安裝也已註冊，直接到第 1 步。
-- 沒有工具，但使用者說已經裝了：問 OmniKeep 資料夾在哪，在那裡跑 `python scripts/register_agents.py`（有 `.venv` 就用 `.venv` 裡的 Python），然後請使用者開新的 session 再說「繼續設定 OmniKeep」。
+- **MCP 與本機 CLI 雙管道**（OmniKeep MCP 預設以精簡 `core` 7 工具啟動以省常駐 token，不常駐載入 11 個 `omnikeep_*` 設定工具）：
+  - 如果這個 session 裡有 `omnikeep_scan` MCP 工具（以 `--profile setup`／`full` 啟動）：直接呼叫 `omnikeep_*` MCP 工具。
+  - 如果這個 session 只有精簡核心工具（例如 `hybrid_search_brain`）或剛裝好尚未重開 session，且 OmniKeep 就在這台電腦上：直接用專案 `.venv` 的 Python 執行 `<OmniKeep>/scripts/setup_cli.py <子指令>`（例如 `scan`、`list-provider-options`、`open-settings`、`test-provider`、`preview-setup`、`apply-setup`、`ingest`、`import`、`peek`、`check-sources`、`run-radar`），輸入輸出 JSON、預覽與確認碼契約和 MCP 工具完全相同，且不印金鑰。
+- 沒有工具也沒有本機資料夾，但使用者說已經裝了：問 OmniKeep 資料夾在哪，在那裡跑 `python scripts/register_agents.py`（有 `.venv` 就用 `.venv` 裡的 Python），即可用 `scripts/setup_cli.py` 繼續設定。
 - 都沒有：照下面安裝。
 
 安裝步驟（預設裝在家目錄的 `OmniKeep` 資料夾；使用者要別的位置就換掉路徑）：

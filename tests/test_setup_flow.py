@@ -456,9 +456,9 @@ def test_streamable_http_needs_the_key_and_an_allowed_host(monkeypatch):
         client.post("/mcp-http", json={"jsonrpc": "2.0", "method": "notifications/initialized"}, headers=session)
         listed = client.post("/mcp-http", json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, headers=session)
         tools = {t["name"] for t in json.loads(listed.text.split("data: ", 1)[1])["result"]["tools"]}
-        assert {"omnikeep_scan", "omnikeep_peek", "omnikeep_check_sources", "omnikeep_list_provider_options",
-                "omnikeep_open_settings", "omnikeep_test_provider", "omnikeep_preview_setup",
-                "omnikeep_apply_setup", "omnikeep_ingest", "omnikeep_run_radar", "omnikeep_import"} <= tools
+        from app import mcp_server
+        assert tools == set(mcp_server.CORE_TOOL_NAMES)
+        assert not any(name.startswith("omnikeep_") for name in tools)
     with TestClient(app, base_url="http://box.tail1234.ts.net") as client:
         assert client.post("/mcp-http", json=INIT, headers=auth).status_code == 421
         mcp_http.allow_hosts(["box.tail1234.ts.net."])
@@ -481,7 +481,7 @@ async def test_stdio_server_answers_a_tool_that_loads_the_pipeline():
     from mcp.client.stdio import stdio_client
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    params = StdioServerParameters(command=sys.executable, args=[os.path.join(root, "mcp_server.py")],
+    params = StdioServerParameters(command=sys.executable, args=[os.path.join(root, "mcp_server.py"), "--profile", "setup"],
                                    env={**os.environ, "OMNIKEEP_TESTING": "1"}, cwd=root)
 
     async def run():
@@ -489,6 +489,9 @@ async def test_stdio_server_answers_a_tool_that_loads_the_pipeline():
             async with stdio_client(params, errlog=quiet) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
+                    listed = await session.list_tools()
+                    names = {t.name for t in listed.tools}
+                    assert "omnikeep_peek" in names and "hybrid_search_brain" in names
                     # peek imports app.pipeline (and with it numpy) before rejecting the scheme.
                     result = await session.call_tool("omnikeep_peek", {"url": "ftp://example.com/x"})
                     return json.loads(result.content[0].text)

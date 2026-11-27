@@ -89,33 +89,45 @@ claude mcp add --transport http omnikeep --scope user https://<主機名>.<tailn
 
 ---
 
-## 工具清單（29 個）
+## 工具分層與清單（預設 `core` 7 個，完整 29 個）
 
-以 `app/mcp_server.py` 裡的 `@mcp.tool()` 為準。工具名稱與參數是程式識別字，維持原文（例如 `search_brain`、`omnikeep_run_radar`）；名稱裡的 brain 指你的收藏，radar 指探索，proposal 指專案監看的建議。
+為了避免 29 個工具 schema 在每次 agent 對話一開始就吃掉大量常駐 context token，OmniKeep MCP 預設以 **`core`（7 個核心日常工具）** 啟動，並可用環境變數 `OMNIKEEP_MCP_PROFILE`（或 `.env` 的 `MCP_PROFILE`、CLI 參數 `--profile`）按需展開：
 
-### 查詢（8 個）
+| Profile | 工具數 | 內容 |
+| :--- | :--- | :--- |
+| `core`（預設） | 7 | 日常檢索、讀詳情（含選用原文）、列近期收藏、寫入／回寫、更新狀態、唯讀 SQL |
+| `review` | 10 | `core` ＋ 工具評估閉環 3 個工具（給 `omnikeep-review`） |
+| `setup` | 18 | `core` ＋ 首次設定 11 個 `omnikeep_*` 工具（給 `omnikeep-setup`） |
+| `labs` | 10 | `core` ＋ 實驗功能（專案監看與提案）3 個工具 |
+| `full` | 29 | 全部 29 個工具（含舊版相容別名 `search_brain`、`get_item_architecture`、`get_item_raw` 等） |
+
+也支援逗號組合，例如 `OMNIKEEP_MCP_PROFILE=core,review` 或 `python mcp_server.py --profile setup`。在預設 `core` 模式下，`omnikeep-setup` 與 `omnikeep-review` Skill 可直接透過 `python scripts/setup_cli.py <子指令>` 完成首次設定與工具評估閉環，平日維持 0 額外常駐 token。
+
+以 `app/mcp_server.py` 裡的 `ALL_TOOL_FUNCTIONS` 為準。工具名稱與參數是程式識別字，維持原文（例如 `hybrid_search_brain`、`omnikeep_run_radar`）；名稱裡的 brain 指你的收藏，radar 指探索，proposal 指專案監看的建議。
+
+### 預設核心工具（`core`，7 個）
 
 | 工具 | 參數 | 說明 |
 | :--- | :--- | :--- |
-| `search_brain` | `query`、`category`、`limit`（預設 5，最多 20）、`is_starred` | 全文檢索，回傳精簡的摘要卡（標題、標籤、白話核心） |
-| `hybrid_search_brain` | `query`、`category`、`is_starred`、`is_read`、`limit`（預設 5） | 全文檢索加向量語意檢索，用 RRF 合併；關鍵字對不上時也找得到相關內容 |
-| `get_item_architecture` | `item_id` | 單一則收藏的摘要與重點分析，不含原文 |
-| `get_item_raw` | `item_id`、`max_chars`（預設 2500） | 原文節錄；要看原始程式碼或逐字引述時才用 |
-| `get_item_detail` | `item_id`、`include_raw`（預設 false）、`raw_limit`（預設 8000） | 同 `get_item_architecture`；`include_raw=true` 時附上原文節錄 |
+| `hybrid_search_brain` | `query`、`category`、`is_starred`、`is_read`、`limit`（預設 5） | 全文檢索加向量語意檢索（RRF 合併）；沒向量時自動退回關鍵字並附提示 |
+| `get_item_detail` | `item_id`、`include_raw`（預設 false）、`raw_limit`（預設 8000） | 單一則收藏的摘要、重點分析、反例與子項目；設 `include_raw=true` 才附原文節錄 |
 | `list_recent_items` | `triage_status`（`inbox`、`starred`、`archived`、`all`）、`category`、`limit`（預設 5） | 列出最近的收藏 |
-| `read_sql_query` | `query`、`limit`（預設 50） | 唯讀 SQL（`SELECT`、`PRAGMA`、`EXPLAIN`、`WITH`）；連線本身是唯讀的，寫入會被拒絕 |
-| `ask_brain_synthesis` | `topic`、`top_k`（預設 5） | 找出和主題相關的多則收藏，交給 AI 寫跨篇比較 |
-
-### 寫入（4 個）
-
-| 工具 | 參數 | 說明 |
-| :--- | :--- | :--- |
 | `save_to_brain` | `content_or_url`、`category` | 存入網址、筆記或程式碼片段，照一般流程分析 |
 | `writeback_insight` | `title`、`summary`、`architecture_details`、`category`、`tech_tags`、`related_item_id` | 把和 agent 討論出的結論寫成一則新收藏；給 `related_item_id` 會建立引用關聯 |
 | `update_item_status` | `item_id`、`is_read`、`is_starred` | 封存（標記已讀）或加星 |
-| `attach_item_diagram` | `item_id`、`path` 或 `html` | 把 agent 用 Archify 畫好的架構圖 HTML 存進收藏，分析頁的「agent 架構圖」會在隔離框裡顯示（上限 8 MB） |
+| `read_sql_query` | `query`、`limit`（預設 50） | 唯讀 SQL（`SELECT`、`PRAGMA`、`EXPLAIN`、`WITH`）；連線本身是唯讀的，寫入會被拒絕 |
 
-### 工具評估閉環（3 個）
+### 舊版相容與低頻工具（`legacy` / `full`，5 個）
+
+| 工具 | 參數 | 說明 |
+| :--- | :--- | :--- |
+| `search_brain` | `query`、`category`、`limit`（預設 5，最多 20）、`is_starred` | 純全文檢索（日常請改用 `hybrid_search_brain`） |
+| `get_item_architecture` | `item_id` | 單一則收藏的摘要與重點分析（日常請改用 `get_item_detail`） |
+| `get_item_raw` | `item_id`、`max_chars`（預設 2500） | 原文節錄（日常請改用 `get_item_detail(..., include_raw=True)`） |
+| `ask_brain_synthesis` | `topic`、`top_k`（預設 5） | 呼叫 OmniKeep 內建 AI 寫跨篇比較 |
+| `attach_item_diagram` | `item_id`、`path` 或 `html` | 把 agent 用 Archify 畫好的架構圖 HTML 存進收藏（上限 8 MB） |
+
+### 工具評估閉環（`review` / `full`，3 個；或用 `scripts/setup_cli.py`）
 
 配合 `omnikeep-review` Skill，在桌機開發對話檢視手機端核准實測的工具或按情境動態召回備案工具。
 

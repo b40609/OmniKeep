@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "revision": 2026112302,
+ "revision": 2026112701,
  "cards": {
   "agnes": {
    "label": "Agnes",
@@ -333,6 +333,22 @@
    "min_interval": 12.0,
    "max_concurrency": 1
   },
+  "freellmapi": {
+   "label": "FreeLLMAPI 本機閘道",
+   "cost": "0（自動聚合多家免費層 API，由 FreeLLMAPI 統一維護）",
+   "limits": "預設連到本機 127.0.0.1:3001/v1；支援多家免費服務商自動路由、429 降級與額度追蹤，不必逐一維護每張免費卡片。",
+   "notes": "先安裝並啟動本機 FreeLLMAPI（Windows 可用 winget install 9PBN6G8K2B7F），在桌面程式內填入你的免費服務商金鑰後即可使用 auto 路由；若有設自訂金鑰或埠號再修改此處欄位。",
+   "model": "auto",
+   "models": [
+    "auto",
+    "auto:fast",
+    "auto:smart",
+    "auto:balanced"
+   ],
+   "verified": "2026-11-27",
+   "min_interval": 0.5,
+   "max_concurrency": 2
+  },
   "omniroute": {
    "label": "OmniRoute 閘道",
    "cost": "0（看你接的服務商）",
@@ -413,6 +429,7 @@
   "itera": "grant",
   "vertex": "subscription",
   "ollama": "local",
+  "freellmapi": "paid",
   "omniroute": "paid",
   "deepseek": "paid",
   "openai": "paid",
