@@ -1303,9 +1303,13 @@ class TelegramBot:
 
 
 
+    MAX_CONSECUTIVE_UPDATE_FAILURES = 5
+
     async def run_polling(self):
         self.running = True
         offset = 0
+        failed_update_id: Optional[int] = None
+        failed_attempts = 0
         client = await self.get_client()
 
         logger.warning("Telegram polling started (authorized users: %d)", len(settings.telegram_allowed_ids))
@@ -1328,15 +1332,46 @@ class TelegramBot:
                     continue
 
                 for update in data.get("result", []):
+                    update_id = update.get("update_id")
                     try:
                         await self.handle_update(update)
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 - isolate poison update from crashing poller
+                        if update_id is not None and update_id == failed_update_id:
+                            failed_attempts += 1
+                        else:
+                            failed_update_id = update_id
+                            failed_attempts = 1
+
+                        if update_id is not None and failed_attempts >= self.MAX_CONSECUTIVE_UPDATE_FAILURES:
+                            logger.error(
+                                "Telegram update %s failed %d consecutive times (%s); skipping to unblock polling",
+                                update_id, failed_attempts, type(e).__name__,
+                            )
+                            from app import owner_alert
+                            owner_alert.alert_once(
+                                f"telegram-skip-{update_id}",
+                                "Telegram 訊息連續失敗，已跳過",
+                                f"訊息 update_id={update_id} 連續失敗 {failed_attempts} 次（{type(e).__name__}），"
+                                "已自動跳過以免卡住後續收錄。請檢查伺服器日誌或重新傳送連結。",
+                                tag="omnikeep-tg-skip",
+                            )
+                            offset = update_id + 1
+                            failed_update_id = None
+                            failed_attempts = 0
+                            continue
+
                         # Keep the failing update unacknowledged so it can be
                         # replayed; earlier updates have durable dedupe keys.
-                        logger.exception("Telegram update %s not yet persisted: %s", update.get("update_id"), e)
+                        logger.exception(
+                            "Telegram update %s not yet persisted (attempt %d/%d): %s",
+                            update_id, failed_attempts, self.MAX_CONSECUTIVE_UPDATE_FAILURES, e,
+                        )
                         await asyncio.sleep(3)
                         break
-                    offset = update["update_id"] + 1
+                    if update_id is not None:
+                        offset = update_id + 1
+                    failed_update_id = None
+                    failed_attempts = 0
 
             except httpx.TimeoutException:
                 continue
