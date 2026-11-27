@@ -63,14 +63,22 @@ def redact(message: str) -> str:
 def record_success(service: str, label: str = "") -> None:
     with _lock:
         was_quota = _state.get(service, {}).get("kind") == "quota"
+        # The first success of a process clears the told-once key as well: the cap may have been
+        # raised before a restart, and then nothing in memory remembers it was hit (P1-3).
+        first_here = service not in _seen_success
+        _seen_success.add(service)
         _state[service] = {"ok": True, "at": _now(), "status": None, "message": "", "hint": "",
                            "kind": "", "action_required": False, "fix_url": None,
                            "cooldown_until": 0.0, "cooldown_reason": "",
                            "label": label or _state.get(service, {}).get("label", "")}
-    if was_quota:  # the cap was raised or the balance topped up: a new one is worth telling again
-        _quota_alerted.discard(service)
-        from app import owner_alert
-        owner_alert.forget(_QUOTA_ALERT + service)
+    if was_quota or first_here:  # the cap was raised or the balance topped up: worth telling again
+        _forget_quota_alert(service)
+
+
+def _forget_quota_alert(service: str) -> None:
+    _quota_alerted.discard(service)
+    from app import owner_alert  # forget never raises
+    owner_alert.forget(_QUOTA_ALERT + service)
 
 
 def record_failure(service: str, status: Optional[int], message: str, label: str = "") -> None:
@@ -94,6 +102,7 @@ def record_failure(service: str, status: Optional[int], message: str, label: str
 # refused call; _quota_alerted saves the database lookup after the first one in this process.
 _QUOTA_ALERT = "quota."
 _quota_alerted: set = set()
+_seen_success: set = set()  # connections that have worked at least once in this process
 
 
 def _alert_quota(service: str, label: str, info: Dict[str, Any]) -> None:
@@ -133,14 +142,20 @@ def unusable(service: str) -> bool:
 
 
 def forget(*services: str) -> None:
-    """Drop stale outcomes after the settings for these services change."""
+    """Drop stale outcomes after the settings for these services change.
+
+    The spend-cap notice is forgotten in the database too: an edited connection (a new key, a
+    new project) that hits a cap again is worth telling about again (P1-3).
+    """
     with _lock:
-        for service in services or list(_state):
+        targets = set(services) if services else (set(_state) | set(_streaks) | set(_quota_alerted)
+                                                  | set(_seen_success))
+        for service in targets:
             _state.pop(service, None)
-        for service in services or list(_streaks):
             _streaks.pop(service, None)
-        for service in services or list(_quota_alerted):
-            _quota_alerted.discard(service)
+            _seen_success.discard(service)
+    for service in targets:
+        _forget_quota_alert(service)
 
 
 # Failures in a row per connection (app/providers/chain.py pauses one that keeps failing);

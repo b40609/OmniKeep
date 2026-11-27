@@ -56,15 +56,56 @@ def test_a_spend_cap_is_a_quota_that_needs_a_person():
     assert translate(403, "403 PERMISSION_DENIED. Permission denied on resource")["kind"] == "auth"
 
 
+def _restart():
+    """What a new process starts with: nothing in memory, the database as it was."""
+    for name in ("_state", "_streaks", "_quota_alerted", "_seen_success"):
+        state = getattr(ai_status, name, None)
+        if state is not None:
+            state.clear()
+
+
 def test_the_owner_is_told_once_until_the_connection_works_again(sent):
     ai_status.record_failure("c99", 403, SPEND_CAP, "Google Vertex AI（帳號 2）")
     ai_status.record_failure("c99", 403, SPEND_CAP, "Google Vertex AI（帳號 2）")
     assert len(sent) == 1 and "帳號 2" in sent[0][0]
-    ai_status.forget()  # as after a restart: the database still knows it was sent
+    _restart()  # the database still knows it was sent
     ai_status.record_failure("c99", 403, SPEND_CAP)
     assert len(sent) == 1
     ai_status.record_success("c99")  # the cap was raised
     ai_status.record_failure("c99", 403, SPEND_CAP)
+    assert len(sent) == 2
+
+
+def test_a_cap_that_came_back_across_a_restart_is_told_again(sent):
+    """Cross review P1-3 path 1: raised the cap, the service restarted, the first call worked."""
+    ai_status.record_failure("c96", 403, SPEND_CAP, "帳號 4")
+    assert len(sent) == 1
+    _restart()
+    ai_status.record_success("c96")  # nothing in memory says it was over its cap
+    assert owner_alert.sent_at(ai_status._QUOTA_ALERT + "c96") is None
+    ai_status.record_failure("c96", 403, SPEND_CAP)
+    assert len(sent) == 2
+
+
+def test_later_successes_in_the_same_process_do_not_touch_the_database(sent, monkeypatch):
+    forgotten = []
+    monkeypatch.setattr(owner_alert, "forget", lambda key: forgotten.append(key))
+    ai_status.record_success("c95")
+    ai_status.record_success("c95")
+    ai_status.record_success("c95")
+    assert forgotten == [ai_status._QUOTA_ALERT + "c95"]
+
+
+def test_editing_the_connection_lets_the_next_cap_be_told(vertex, sent):
+    """Cross review P1-3 path 2: forget() (editing a connection) clears the database key too."""
+    from app import ai_connections
+    a, _ = vertex
+    ai_status.record_failure(a.status_key, 403, SPEND_CAP, "帳號 2")
+    assert len(sent) == 1
+    assert owner_alert.sent_at(ai_status._QUOTA_ALERT + a.status_key) is not None
+    ai_connections.update(a.id, {"label": "帳號 2（新上限）"})
+    assert owner_alert.sent_at(ai_status._QUOTA_ALERT + a.status_key) is None
+    ai_status.record_failure(a.status_key, 403, SPEND_CAP, "帳號 2")
     assert len(sent) == 2
 
 
