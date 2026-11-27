@@ -311,14 +311,14 @@ CARDS: List[Dict[str, Any]] = [
     },
     {
         "id": "freellmapi", "label": "FreeLLMAPI 本機閘道", "kind": "openai",
-        "base_url": "http://127.0.0.1:3001/v1", "model": "auto",
+        "base_url": "http://127.0.0.1:31415/v1", "model": "auto",
         "models": ["auto", "auto:fast", "auto:smart", "auto:balanced"],
         "embedding_model": "auto",
         "key_mode": "required", "key_url": "https://github.com/tashfeenahmed/freellmapi",
         "editable_url": True,
         "cost": "0（自動聚合多家免費層 API，由 FreeLLMAPI 統一維護）",
-        "limits": "預設連到本機 127.0.0.1:3001/v1；支援多家免費服務商自動路由、429 降級與額度追蹤，不必逐一維護每張免費卡片。",
-        "notes": "先安裝並啟動本機 FreeLLMAPI（Windows 可用 winget install 9PBN6G8K2B7F），在桌面程式內填入免費服務商金鑰，再到 Keys 頁複製 freellmapi- 開頭的 unified key 貼到此處。若拿來做語意向量，auto 會隨預設 family 變動，建議改填固定向量模型名避免維度不一致。",
+        "limits": "Windows／macOS 桌面版預設連本機 127.0.0.1:31415/v1（Docker 版為 127.0.0.1:3001/v1）；內建多家免費服務商自動路由、429 降級與額度追蹤，不必逐一維護每張免費卡片。",
+        "notes": "可請 agent 執行 scripts/freellmapi_bridge.py 一鍵自動啟用免金鑰來源、同步本機免費金鑰並自動接好 unified key，完全不必手動複製貼上；手動設定時請到 FreeLLMAPI 的 Keys 頁複製 freellmapi- 開頭的 unified key。若拿來做語意向量，auto 會隨預設 family 變動，建議改填固定向量模型名避免維度不一致。",
         "min_interval": 0.5, "max_concurrency": 2,
         "caps": {"json_mode": True, "embeddings": True},
         "verified": "2026-11-27",
@@ -417,7 +417,7 @@ GROUP_BY_CARD: Dict[str, str] = {
 
 # Raise it whenever a card's data changes (YYYYMMDDNN), then run `python -m app.catalog_remote --write`:
 # installs fetch catalog/omnikeep-catalog.json and use it only when its revision is higher than theirs.
-CATALOG_REVISION = 2026112702
+CATALOG_REVISION = 2026112703
 
 # The fallback order the picker suggests first (2026-11-23, layout D): a person who does not
 # want to compare 23 services gets three free connections that cover for each other, in order.
@@ -447,6 +447,7 @@ def guess_card(base_url: str, kind: str = "openai") -> str:
                             ("aihubmix", "aihubmix.com"), ("sealion", "api.sea-lion.ai"),
                             ("itera", "iteracompute.com"), ("kilo", "api.kilo.ai"), ("blockrun", "blockrun.ai"),
                             ("bazaarlink", "bazaarlink.ai"), ("cheapllm", "cheapllm.shop"), ("ovh", "endpoints.kepler.ai.cloud.ovh.net"),
+                            ("freellmapi", "127.0.0.1:31415"), ("freellmapi", "localhost:31415"),
                             ("freellmapi", "127.0.0.1:3001"), ("freellmapi", "localhost:3001"),
                             ("omniroute", ":20128"), ("deepseek", "api.deepseek.com"),
                             ("openai", "api.openai.com"), ("ollama", ":11434")):

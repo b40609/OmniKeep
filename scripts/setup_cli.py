@@ -138,6 +138,18 @@ async def _dispatch(args: argparse.Namespace) -> Any:
     elif cmd == "attach-diagram":
         from app.mcp_server import attach_item_diagram
         result = attach_item_diagram(item_id=args.item_id, path=args.path)
+    elif cmd == "connect-freellmapi":
+        from scripts.freellmapi_bridge import auto_connect
+        result = auto_connect(
+            base_url=args.base_url,
+            launch=args.launch,
+            enable_keyless=not args.no_keyless,
+            sync_existing_keys=args.sync_existing_keys,
+            model=args.model,
+            slot=args.slot,
+            prepend_slot=not args.append,
+            dry_run=args.dry_run,
+        )
     else:
         raise ValueError(f"不認得的子指令：{cmd}")
 
@@ -208,6 +220,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_diag = sub.add_parser("attach-diagram", help="把本機 Archify 產出的架構圖 HTML 存進收藏")
     p_diag.add_argument("item_id")
     p_diag.add_argument("--path", required=True, help="獨立 HTML 檔案的絕對路徑")
+
+    p_flm = sub.add_parser("connect-freellmapi", help="一鍵免手動貼上接線本機 FreeLLMAPI 桌面版")
+    p_flm.add_argument("--base-url", default="")
+    p_flm.add_argument("--launch", action="store_true")
+    p_flm.add_argument("--no-keyless", action="store_true")
+    p_flm.add_argument("--sync-existing-keys", action="store_true")
+    p_flm.add_argument("--model", default="auto")
+    p_flm.add_argument("--slot", default="analysis")
+    p_flm.add_argument("--append", action="store_true")
+    p_flm.add_argument("--dry-run", action="store_true")
 
     return parser
 

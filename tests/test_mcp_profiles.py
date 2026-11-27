@@ -129,12 +129,14 @@ def test_freellmapi_card_contract_and_retirement_guard():
     card = provider_catalog.card("freellmapi")
     assert card is not None
     assert card["kind"] == "openai"
-    assert card["base_url"] == "http://127.0.0.1:3001/v1"
+    assert card["base_url"] == "http://127.0.0.1:31415/v1"
     assert card["model"] == "auto"
     assert card["key_mode"] == "required"
     assert card["key_url"] == "https://github.com/tashfeenahmed/freellmapi"
     assert card["editable_url"] is True
     assert card["caps"]["embeddings"] is True
+    assert provider_catalog.guess_card("http://127.0.0.1:31415/v1") == "freellmapi"
+    assert provider_catalog.guess_card("http://localhost:31415/v1") == "freellmapi"
     assert provider_catalog.guess_card("http://127.0.0.1:3001/v1") == "freellmapi"
     assert provider_catalog.guess_card("http://localhost:3001/v1") == "freellmapi"
     assert provider_catalog.guess_card("http://example.com:30010/v1") == "custom"
